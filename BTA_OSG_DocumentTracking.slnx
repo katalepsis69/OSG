@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BTA_OSG_DocumentTracking/BTA_OSG_DocumentTracking.vbproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BTA_OSG_DocumentTracking.Tests/BTA_OSG_DocumentTracking.Tests.vbproj" />
+  </Folder>
+</Solution>

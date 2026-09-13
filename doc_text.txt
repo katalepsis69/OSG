@@ -1,0 +1,1046 @@
+# DOCUMENT 1 — PATH A
+Suggested file name:
+```text
+BTA_OSG_Path_A_Full_Production_Implementation_Plan.docx
+```
+---
+# BTA OSG Document Status Tracking & Monitoring System  
+## Path A: Full Production Modular Implementation Plan  
+### Version 2.1
+---
+## 1. Purpose
+This document defines the full production-grade implementation plan for the **BTA OSG Document Status Tracking & Monitoring System**.
+Path A is intended for official deployment and long-term use by the Office of the Secretary-General.
+It provides:
+```text
+Full VB.NET WinForms implementation
+SQL Server production database
+Role-Based Access Control
+RFID authentication
+SG directive tracking
+Routing history
+Storage landmark tracking
+Google Drive PDF access
+Append-only audit trail
+Automated self-test mode
+Deployment and UAT readiness
+```
+Path A is the recommended path if the system is intended for real production use.
+---
+## 2. Recommended Defaults Applied
+The following working defaults are applied in this plan.
+These defaults may be overridden by official OSG policy or security policy.
+---
+### 2.1 Technology Defaults
+| Item | Default |
+|---|---|
+| Language | VB.NET |
+| UI | WinForms |
+| Target framework | `net10.0-windows` if approved; otherwise `net8.0-windows` |
+| Project style | SDK-style `.vbproj` |
+| Output type | WinExe |
+| Publish target | `win-x64` |
+| Publish mode | Self-contained by default |
+| Database | SQL Server |
+| Development database | SQL Server Express LocalDB |
+---
+### 2.2 Database Defaults
+| Item | Default |
+|---|---|
+| Production database | SQL Server Standard/Enterprise or SQL Server Express |
+| Development database | SQL Server Express LocalDB |
+| Authentication | Windows Authentication |
+| Encryption | Enabled |
+| XML storage | Demo fallback only, not production source of truth |
+Recommended production database name:
+```text
+BTA_OSG_DB
+```
+---
+### 2.3 RFID and Login Defaults
+| Item | Default |
+|---|---|
+| Login method | RFID card tap only for first release |
+| PIN after tap | Optional future enhancement |
+| RFID simulator | Disabled in production |
+| Failed tap logging | Enabled |
+| User lockout threshold | 5 failed user-linked taps |
+| Unknown card attempts | Logged separately |
+| Card ID normalization | Trim and uppercase |
+| Hardcoded card IDs | Not allowed |
+---
+### 2.4 Session Defaults
+| Item | Default |
+|---|---|
+| Session timeout | 15 minutes |
+| Manual logout | Required |
+| New card tap while active | Auto-switch to new user with audit entry |
+| Session user in audit | Required |
+---
+### 2.5 Document Coding Defaults
+| Item | Default |
+|---|---|
+| Code format | `PREFIX-yyyy-###` |
+| Sequence reset | Yearly |
+| Year used | Registration year |
+| Padding | 3 digits, expand automatically if needed |
+| Code reuse | Not allowed |
+| Concurrency method | Sequence table + transaction + unique constraint |
+Example document codes:
+```text
+RES-2026-001
+BLL-2026-001
+REP-2026-001
+EXC-2026-001
+MEM-2026-001
+END-2026-001
+```
+---
+### 2.6 Document Status Defaults
+| Item | Default |
+|---|---|
+| Default status after registration | `LOGGED` |
+| Status source | `tbl_DocumentStatuses` |
+| Status update by directive | Allowed if directive type maps to result status |
+| Status history | Stored in routing/history tables |
+---
+### 2.7 Storage Defaults
+| Item | Default |
+|---|---|
+| Storage style | Controlled lookup |
+| Current storage location | Foreign key to `tbl_StorageLocations` |
+| Movement history | Stored in `tbl_DocumentMovements` |
+| Cabinet | Required if storage assigned |
+| Shelf and box | Optional unless OSG requires otherwise |
+---
+### 2.8 PDF Link Defaults
+| Item | Default |
+|---|---|
+| Scheme | HTTPS only |
+| Allowed hosts | `drive.google.com`, `docs.google.com` |
+| Empty URL | Friendly message |
+| Invalid URL | Block launch and show friendly error |
+| Audit PDF launch | Yes |
+| Browser failure | Catch exception and show manual link |
+---
+### 2.9 Audit Defaults
+| Item | Default |
+|---|---|
+| Audit style | Append-only |
+| Audit login events | Yes |
+| Audit logout | Yes |
+| Audit session timeout | Yes |
+| Audit document events | Yes |
+| Audit directive events | Yes |
+| Audit routing events | Yes |
+| Audit storage events | Yes |
+| Audit PDF launch | Yes |
+| Audit ordinary searches | No by default |
+| Audit admin changes | Yes |
+| Database protection | Application login should not update/delete audit table |
+---
+### 2.10 Deletion Defaults
+| Item | Default |
+|---|---|
+| Document deletion | Soft-delete only |
+| Who can delete/disable documents | `SYSADMIN` only |
+| Hard delete | Not allowed through normal application |
+---
+## 3. Scope of Path A
+### 3.1 In Scope
+Path A shall support:
+1. RFID-based user sign-in.
+2. Role-based access control.
+3. Document registration.
+4. Automatic document coding.
+5. Secretary-General directive recording.
+6. Routing and assignment history.
+7. Physical storage landmark tracking.
+8. Google Drive PDF soft-copy launching.
+9. Search and filtering.
+10. Audit trail.
+11. SQL Server production storage.
+12. Local test mode.
+13. Automated self-test.
+14. Basic administrative management of users, cards, roles, and reference data.
+---
+### 3.2 Out of Scope Unless Approved Later
+The following are not included unless explicitly approved:
+- Full document imaging/scanning module
+- Full electronic signature
+- Workflow automation beyond SG directives
+- Mobile application
+- Public web portal
+- Email notifications
+- SMS notifications
+- Blockchain audit storage
+- Automatic Google Drive upload
+- Google Drive permission management
+- OCR or full-text indexing of scanned documents
+---
+## 4. Production Architecture
+Path A shall use a modular architecture.
+```text
+UI
+ ↓
+Services / Business Rules
+ ↓
+Repositories / Data Access
+ ↓
+SQL Server
+```
+The UI must not directly execute SQL queries.
+All business rules shall be enforced in the service layer.
+All data access shall be performed through repositories.
+---
+## 5. Recommended Project Structure
+```text
+BTA_OSG_DocumentTracking/
+│
+├── BTA_OSG_DocumentTracking.sln
+│
+├── src/
+│   └── BTA_OSG_DocumentTracking/
+│       ├── BTA_OSG_DocumentTracking.vbproj
+│       ├── Program.vb
+│       ├── AppStartup.vb
+│       ├── AppGlobalExceptionHandler.vb
+│       │
+│       ├── Configuration/
+│       │   ├── AppSettings.vb
+│       │   ├── DatabaseSettings.vb
+│       │   ├── RfidSettings.vb
+│       │   ├── PdfLinkSettings.vb
+│       │   └── SessionSettings.vb
+│       │
+│       ├── Models/
+│       │   ├── User.vb
+│       │   ├── Role.vb
+│       │   ├── Permission.vb
+│       │   ├── RfidCard.vb
+│       │   ├── Document.vb
+│       │   ├── DocumentType.vb
+│       │   ├── DocumentStatus.vb
+│       │   ├── ActionDirective.vb
+│       │   ├── RoutingLog.vb
+│       │   ├── StorageLocation.vb
+│       │   ├── AuditEntry.vb
+│       │   └── SessionContext.vb
+│       │
+│       ├── Security/
+│       │   ├── RfidInputListener.vb
+│       │   ├── AuthenticationService.vb
+│       │   ├── SessionManager.vb
+│       │   ├── PermissionService.vb
+│       │   └── RbacPolicy.vb
+│       │
+│       ├── Services/
+│       │   ├── DocumentService.vb
+│       │   ├── DocumentCodingService.vb
+│       │   ├── DirectiveService.vb
+│       │   ├── RoutingService.vb
+│       │   ├── StorageService.vb
+│       │   ├── SearchService.vb
+│       │   ├── PdfLinkService.vb
+│       │   ├── UserService.vb
+│       │   ├── RfidCardService.vb
+│       │   └── AuditService.vb
+│       │
+│       ├── Data/
+│       │   ├── IDbConnectionFactory.vb
+│       │   ├── SqlConnectionFactory.vb
+│       │   ├── UserRepository.vb
+│       │   ├── DocumentRepository.vb
+│       │   ├── DirectiveRepository.vb
+│       │   ├── RoutingRepository.vb
+│       │   ├── StorageRepository.vb
+│       │   ├── AuditRepository.vb
+│       │   ├── SequenceRepository.vb
+│       │   └── ReferenceDataRepository.vb
+│       │
+│       ├── Forms/
+│       │   ├── FormLogin.vb
+│       │   ├── FormMain.vb
+│       │   ├── FormDocumentRegister.vb
+│       │   ├── FormDocumentDetail.vb
+│       │   ├── FormDirectiveEntry.vb
+│       │   ├── FormSearch.vb
+│       │   ├── FormAuditViewer.vb
+│       │   ├── FormUserAdmin.vb
+│       │   ├── FormRfidAdmin.vb
+│       │   └── FormSettings.vb
+│       │
+│       └── Resources/
+│           ├── appsettings.json
+│           └── appsettings.Production.json
+│
+├── db/
+│   └── scripts/
+│       ├── 001_create_database.sql
+│       ├── 002_create_reference_tables.sql
+│       ├── 003_create_security_tables.sql
+│       ├── 004_create_document_tables.sql
+│       ├── 005_create_audit_tables.sql
+│       ├── 006_create_indexes.sql
+│       ├── 007_create_seed_data.sql
+│       └── 008_create_stored_procedures_optional.sql
+│
+├── tests/
+│   └── BTA_OSG_DocumentTracking.Tests/
+│       ├── DocumentCodingTests.vb
+│       ├── RbacTests.vb
+│       ├── PdfLinkValidationTests.vb
+│       ├── DirectiveWorkflowTests.vb
+│       └── AuditServiceTests.vb
+│
+└── docs/
+    ├── user-manual.md
+    ├── admin-manual.md
+    ├── deployment.md
+    └── uat-test-script.md
+```
+---
+## 6. Database Strategy
+### 6.1 Production Database
+Production shall use SQL Server.
+Recommended database name:
+```text
+BTA_OSG_DB
+```
+Recommended SQL Server edition:
+```text
+SQL Server Standard/Enterprise, or
+SQL Server Express if data volume and concurrency are within Express limits
+```
+---
+### 6.2 Development Database
+Development shall preferably use:
+```text
+SQL Server Express LocalDB
+```
+This gives the closest compatibility with production SQL Server.
+---
+### 6.3 Connection Approach
+Recommended development connection:
+```text
+Server=(localdb)\MSSQLLocalDB;Database=BTA_OSG_DB;Integrated Security=true;Encrypt=true;TrustServerCertificate=true;
+```
+Recommended production connection:
+```text
+Server=OSG-SQL-01;Database=BTA_OSG_DB;Integrated Security=true;Encrypt=true;TrustServerCertificate=false;
+```
+SQL authentication should only be used if Windows Authentication is not possible.
+If SQL authentication is used:
+```text
+Do not store password in source code.
+Use protected configuration.
+Restrict access to configuration files.
+Use strong passwords.
+```
+---
+## 7. Revised Database Schema for Path A
+The following schema revisions are applied for Path A.
+---
+## 7.1 Security Tables
+### tbl_Roles
+```text
+RoleID              INT IDENTITY PRIMARY KEY
+RoleCode            VARCHAR(50) NOT NULL UNIQUE
+RoleName            NVARCHAR(100) NOT NULL
+Description         NVARCHAR(255) NULL
+IsSystemRole        BIT NOT NULL DEFAULT 0
+IsActive            BIT NOT NULL DEFAULT 1
+CreatedByUserID     INT NULL
+CreatedAtUTC        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+ModifiedByUserID    INT NULL
+ModifiedAtUTC       DATETIME2 NULL
+```
+Default roles:
+```text
+SG              Secretary-General
+SYSADMIN        System Administrator
+OSG_CHIEF       OSG Chief
+ADMIN_STAFF     Administrative Staff
+```
+---
+### tbl_Permissions
+```text
+PermissionID        INT IDENTITY PRIMARY KEY
+PermissionCode      VARCHAR(50) NOT NULL UNIQUE
+PermissionName      NVARCHAR(100) NOT NULL
+Description         NVARCHAR(255) NULL
+IsActive            BIT NOT NULL DEFAULT 1
+```
+Recommended permission codes:
+```text
+DOCUMENT_VIEW_ALL
+DOCUMENT_VIEW_ASSIGNED
+DOCUMENT_CREATE
+DOCUMENT_UPDATE
+DOCUMENT_DELETE_OR_DISABLE
+DIRECTIVE_ISSUE
+ROUTING_CREATE
+STORAGE_UPDATE
+PDF_OPEN
+AUDIT_VIEW
+USER_MANAGE
+RFID_MANAGE
+ROLE_MANAGE
+REFERENCE_MANAGE
+REPORT_EXPORT
+```
+---
+### tbl_RolePermissions
+```text
+RolePermissionID    INT IDENTITY PRIMARY KEY
+RoleID              INT NOT NULL FK -> tbl_Roles
+PermissionID        INT NOT NULL FK -> tbl_Permissions
+IsActive            BIT NOT NULL DEFAULT 1
+UNIQUE (RoleID, PermissionID)
+```
+---
+### tbl_Users
+```text
+UserID              INT IDENTITY PRIMARY KEY
+Username            NVARCHAR(50) NOT NULL UNIQUE
+FullName            NVARCHAR(150) NOT NULL
+Office              NVARCHAR(150) NULL
+Email               NVARCHAR(150) NULL
+IsActive            BIT NOT NULL DEFAULT 1
+IsLocked            BIT NOT NULL DEFAULT 0
+FailedTapCount      INT NOT NULL DEFAULT 0
+LastFailedTapUTC    DATETIME2 NULL
+CreatedByUserID     INT NULL
+CreatedAtUTC        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+ModifiedByUserID    INT NULL
+ModifiedAtUTC       DATETIME2 NULL
+RowVersion          ROWVERSION
+```
+---
+### tbl_UserRoles
+```text
+UserRoleID          INT IDENTITY PRIMARY KEY
+UserID              INT NOT NULL FK -> tbl_Users
+RoleID              INT NOT NULL FK -> tbl_Roles
+AssignedByUserID    INT NULL
+AssignedAtUTC       DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+IsActive            BIT NOT NULL DEFAULT 1
+UNIQUE (UserID, RoleID)
+```
+---
+### tbl_RfidCards
+```text
+RfidCardID          INT IDENTITY PRIMARY KEY
+UserID              INT NOT NULL FK -> tbl_Users
+CardPublicID        VARCHAR(50) NOT NULL UNIQUE
+CardLabel           NVARCHAR(100) NULL
+IsActive            BIT NOT NULL DEFAULT 1
+IssuedAtUTC         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+RevokedAtUTC        DATETIME2 NULL
+RevokedByUserID     INT NULL
+RevocationReason    NVARCHAR(255) NULL
+CreatedByUserID     INT NULL
+CreatedAtUTC        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+ModifiedByUserID    INT NULL
+ModifiedAtUTC       DATETIME2 NULL
+RowVersion          ROWVERSION
+```
+Card IDs shall be normalized:
+```text
+Trim + Uppercase
+```
+Hardcoded card IDs are not allowed.
+---
+### tbl_RfidFailedAttempts
+```text
+FailedAttemptID     BIGINT IDENTITY PRIMARY KEY
+CardPublicID        VARCHAR(50) NULL
+UserID              INT NULL FK -> tbl_Users
+AttemptAtUTC        DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+MachineName         NVARCHAR(100) NULL
+Reason              VARCHAR(100) NOT NULL
+Success             BIT NOT NULL DEFAULT 0
+```
+Recommended failure reasons:
+```text
+UNKNOWN_CARD
+INACTIVE_CARD
+INACTIVE_USER
+LOCKED_USER
+SESSION_ERROR
+```
+---
+## 7.2 Reference Tables
+### tbl_DocumentTypes
+```text
+DocumentTypeID      INT IDENTITY PRIMARY KEY
+TypeCode            VARCHAR(10) NOT NULL UNIQUE
+TypeName            NVARCHAR(100) NOT NULL
+Prefix              VARCHAR(10) NOT NULL
+IsActive            BIT NOT NULL DEFAULT 1
+SortOrder           INT NOT NULL DEFAULT 0
+```
+Seed defaults:
+```text
+RES     Resolution              RES
+BLL     Bill                    BLL
+REP     Report                  REP
+EXC     Executive Document      EXC
+MEM     Memorandum              MEM
+END     Endorsement             END
+```
+---
+### tbl_DocumentStatuses
+```text
+StatusID            INT IDENTITY PRIMARY KEY
+StatusCode          VARCHAR(50) NOT NULL UNIQUE
+StatusName          NVARCHAR(100) NOT NULL
+SortOrder           INT NOT NULL DEFAULT 0
+IsActive            BIT NOT NULL DEFAULT 1
+```
+Seed defaults:
+```text
+RECEIVED
+LOGGED
+PENDING_SG
+DIRECTIVE_ISSUED
+ROUTED
+IN_PROGRESS
+COMPLETED
+ARCHIVED
+CANCELLED
+```
+Default status:
+```text
+LOGGED
+```
+---
+### tbl_DirectiveTypes
+```text
+DirectiveTypeID     INT IDENTITY PRIMARY KEY
+DirectiveCode       VARCHAR(50) NOT NULL UNIQUE
+DirectiveName       NVARCHAR(150) NOT NULL
+ResultStatusID      INT NULL FK -> tbl_DocumentStatuses
+IsActive            BIT NOT NULL DEFAULT 1
+```
+Default directive behavior:
+```text
+If ResultStatusID is set:
+    update document to that status
+Else:
+    update document to DIRECTIVE_ISSUED
+```
+---
+## 7.3 Document Tables
+### tbl_Documents
+```text
+DocumentID                  INT IDENTITY PRIMARY KEY
+DocCode                     VARCHAR(30) NOT NULL UNIQUE
+Title                       NVARCHAR(300) NOT NULL
+DocumentTypeID              INT NOT NULL FK -> tbl_DocumentTypes
+OriginOffice                NVARCHAR(200) NULL
+DestinationOffice           NVARCHAR(200) NULL
+StatusID                    INT NOT NULL FK -> tbl_DocumentStatuses
+RegisteredByUserID          INT NOT NULL FK -> tbl_Users
+RegisteredAtUTC             DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+ReceivedDate                DATE NULL
+CurrentStorageLocationID    INT NULL FK -> tbl_StorageLocations
+GoogleDriveUrl              NVARCHAR(1000) NULL
+Remarks                     NVARCHAR(MAX) NULL
+IsDeleted                   BIT NOT NULL DEFAULT 0
+DeletedByUserID             INT NULL
+DeletedAtUTC                DATETIME2 NULL
+DeletionReason              NVARCHAR(255) NULL
+CreatedByUserID             INT NOT NULL
+CreatedAtUTC                DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+ModifiedByUserID            INT NULL
+ModifiedAtUTC               DATETIME2 NULL
+RowVersion                  ROWVERSION
+```
+Indexes:
+```text
+UNIQUE INDEX UX_Documents_DocCode
+INDEX IX_Documents_StatusID
+INDEX IX_Documents_TypeID
+INDEX IX_Documents_RegisteredAtUTC
+INDEX IX_Documents_Title
+INDEX IX_Documents_CurrentStorageLocationID
+```
+---
+### tbl_DocumentSequences
+```text
+DocumentTypeCode        VARCHAR(10) NOT NULL
+SequenceYear            SMALLINT NOT NULL
+LastNumber              INT NOT NULL DEFAULT 0
+UpdatedAtUTC            DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+PRIMARY KEY (DocumentTypeCode, SequenceYear)
+```
+This table is required for concurrency-safe document coding.
+---
+### tbl_DocumentAssignments
+```text
+AssignmentID            INT IDENTITY PRIMARY KEY
+DocumentID              INT NOT NULL FK -> tbl_Documents
+AssignedUserID          INT NULL FK -> tbl_Users
+AssignedOffice          NVARCHAR(200) NULL
+AssignedRoleID          INT NULL FK -> tbl_Roles
+AssignedByUserID        INT NOT NULL FK -> tbl_Users
+AssignedAtUTC           DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+IsActive                BIT NOT NULL DEFAULT 1
+Remarks                 NVARCHAR(500) NULL
+```
+---
+### tbl_ActionDirectives
+```text
+DirectiveID             INT IDENTITY PRIMARY KEY
+DocumentID              INT NOT NULL FK -> tbl_Documents
+DirectiveTypeID         INT NOT NULL FK -> tbl_DirectiveTypes
+DirectiveText           NVARCHAR(1000) NULL
+IssuedByUserID          INT NOT NULL FK -> tbl_Users
+IssuedAtUTC             DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+IsActive                BIT NOT NULL DEFAULT 1
+SupersededByDirectiveID INT NULL
+Remarks                 NVARCHAR(MAX) NULL
+```
+Directives shall be append-only.
+Corrections shall be made by adding a new directive and marking the previous directive superseded or inactive.
+---
+### tbl_RoutingLogs
+```text
+RoutingLogID            INT IDENTITY PRIMARY KEY
+DocumentID              INT NOT NULL FK -> tbl_Documents
+FromStatusID            INT NULL FK -> tbl_DocumentStatuses
+ToStatusID              INT NOT NULL FK -> tbl_DocumentStatuses
+FromOffice              NVARCHAR(200) NULL
+ToOffice                NVARCHAR(200) NULL
+RoutingRemarks          NVARCHAR(1000) NULL
+RoutedByUserID          INT NOT NULL FK -> tbl_Users
+RoutedAtUTC             DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+```
+Routing history shall not be deleted through normal application use.
+---
+## 7.4 Storage Tables
+### tbl_StorageLocations
+```text
+StorageLocationID       INT IDENTITY PRIMARY KEY
+CabinetID               NVARCHAR(50) NOT NULL
+ShelfNo                 NVARCHAR(50) NULL
+BoxCode                 NVARCHAR(50) NULL
+Description             NVARCHAR(200) NULL
+LocationKey             AS (CabinetID + '|' + ISNULL(ShelfNo, '') + '|' + ISNULL(BoxCode, ''))
+IsActive                BIT NOT NULL DEFAULT 1
+CreatedByUserID         INT NULL
+CreatedAtUTC            DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+ModifiedByUserID        INT NULL
+ModifiedAtUTC           DATETIME2 NULL
+```
+Unique index:
+```text
+UNIQUE INDEX UX_StorageLocations_LocationKey
+```
+---
+### tbl_DocumentMovements
+```text
+MovementID              INT IDENTITY PRIMARY KEY
+DocumentID              INT NOT NULL FK -> tbl_Documents
+StorageLocationID       INT NOT NULL FK -> tbl_StorageLocations
+MovedByUserID           INT NOT NULL FK -> tbl_Users
+MovedAtUTC              DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+MovementReason          NVARCHAR(500) NULL
+```
+---
+## 7.5 Audit Table
+### tbl_AuditTrail
+```text
+AuditID                 BIGINT IDENTITY PRIMARY KEY
+EventAtUTC              DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+SessionID               UNIQUEIDENTIFIER NULL
+UserID                  INT NULL
+UsernameSnapshot        NVARCHAR(50) NULL
+FullNameSnapshot        NVARCHAR(150) NULL
+RoleSnapshot            NVARCHAR(200) NULL
+ActionType              VARCHAR(100) NOT NULL
+EntityType              VARCHAR(100) NULL
+EntityID                VARCHAR(100) NULL
+DocumentCode            VARCHAR(30) NULL
+OldValuesJson           NVARCHAR(MAX) NULL
+NewValuesJson           NVARCHAR(MAX) NULL
+MachineName             NVARCHAR(100) NULL
+ClientInfo              NVARCHAR(200) NULL
+Success                 BIT NOT NULL DEFAULT 1
+FailureReason           NVARCHAR(500) NULL
+CorrelationId           UNIQUEIDENTIFIER NULL
+CardPublicIDMasked      VARCHAR(50) NULL
+ApplicationVersion      NVARCHAR(50) NULL
+```
+Indexes:
+```text
+INDEX IX_Audit_EventAtUTC
+INDEX IX_Audit_UserID
+INDEX IX_Audit_ActionType
+INDEX IX_Audit_EntityType_EntityID
+INDEX IX_Audit_DocumentCode
+```
+Audit event types:
+```text
+LOGIN_SUCCESS
+LOGIN_FAILURE
+LOGOUT
+SESSION_TIMEOUT
+DOCUMENT_CREATED
+DOCUMENT_UPDATED
+DOCUMENT_STATUS_CHANGED
+DIRECTIVE_ADDED
+ROUTING_LOG_ADDED
+STORAGE_LOCATION_CHANGED
+PDF_LINK_OPENED
+USER_CREATED
+USER_DISABLED
+RFID_CARD_ISSUED
+RFID_CARD_REVOKED
+ADMIN_REFERENCE_CHANGED
+```
+---
+## 8. Default RBAC Matrix for Path A
+| Permission | SG | SYSADMIN | OSG_CHIEF | ADMIN_STAFF |
+|---|---:|---:|---:|---:|
+| DOCUMENT_VIEW_ALL | Yes | Yes | Yes | No |
+| DOCUMENT_VIEW_ASSIGNED | Yes | Yes | Yes | Yes |
+| DOCUMENT_CREATE | Yes | Yes | Yes | Yes |
+| DOCUMENT_UPDATE | Yes | Yes | Yes | Yes, assigned only |
+| DOCUMENT_DELETE_OR_DISABLE | No | Yes | No | No |
+| DIRECTIVE_ISSUE | Yes | No | No | No |
+| ROUTING_CREATE | Yes | Yes | Yes | No by default |
+| STORAGE_UPDATE | Yes | Yes | Yes | Yes |
+| PDF_OPEN | Yes | Yes | Yes | Yes |
+| AUDIT_VIEW | Yes | Yes | Yes | No |
+| USER_MANAGE | No | Yes | No | No |
+| RFID_MANAGE | No | Yes | No | No |
+| ROLE_MANAGE | No | Yes | No | No |
+| REFERENCE_MANAGE | No | Yes | No | No |
+| REPORT_EXPORT | Yes | Yes | Yes | No |
+---
+## 9. Data Visibility Rule
+For document queries:
+```text
+IF user has DOCUMENT_VIEW_ALL
+    return filtered documents according to search criteria
+ELSE
+    return only documents assigned to:
+        - the user directly, or
+        - one of the user's roles, or
+        - the user's office
+```
+Administrative Staff shall not see all documents by default.
+---
+## 10. Functional Modules Required in Path A
+### 10.1 Login Module
+Required features:
+```text
+RFID card tap login
+Card normalization
+Card lookup
+User active check
+User locked check
+Session creation
+Audit login success/failure
+Auto-switch if another valid card taps while session active
+```
+---
+### 10.2 Session Module
+Required features:
+```text
+15-minute inactivity timeout
+Manual logout
+Session user included in audit entries
+Session state cleared on timeout/logout
+```
+---
+### 10.3 Document Registration Module
+Required fields:
+```text
+Title
+Document Type
+Origin Office
+Destination Office
+Received Date, optional
+Remarks, optional
+Google Drive URL, optional
+```
+System-generated fields:
+```text
+DocCode
+RegisteredByUserID
+RegisteredAtUTC
+StatusID = LOGGED
+```
+Validation:
+```text
+Title required
+Document type required
+Google Drive URL must be valid if entered
+Duplicate DocCode prevented by database
+```
+---
+### 10.4 Document Auto-Coding Module
+Code format:
+```text
+PREFIX-yyyy-###
+```
+Examples:
+```text
+RES-2026-001
+BLL-2026-001
+REP-2026-001
+```
+Concurrency-safe method:
+```text
+1. Begin transaction
+2. Lock sequence row for DocumentTypeCode + SequenceYear
+3. Insert sequence row if missing
+4. Increment LastNumber
+5. Generate DocCode
+6. Insert document
+7. Commit transaction
+8. Retry on unique constraint violation
+```
+Do not generate code by counting rows.
+---
+### 10.5 SG Directive Module
+Allowed users:
+```text
+SG by default
+Other roles only if explicitly granted DIRECTIVE_ISSUE
+```
+Behavior:
+```text
+Select document
+Select directive type
+Enter directive remarks
+Save directive
+Update document status if directive type maps to a status
+Write audit entry
+Display directive history
+```
+Directives are append-only.
+---
+### 10.6 Routing Module
+Behavior:
+```text
+Change document status
+Assign destination office
+Assign responsible user or office, optional
+Add routing remarks
+Save routing log
+Update document status
+Write audit entry
+```
+Routing history shall not be deleted.
+---
+### 10.7 Storage Module
+Behavior:
+```text
+Select controlled storage location
+Assign current storage location
+Save movement history
+Write audit entry
+Display storage history
+```
+Current location shall be stored using:
+```text
+tbl_Documents.CurrentStorageLocationID
+```
+Historical movements shall be stored in:
+```text
+tbl_DocumentMovements
+```
+---
+### 10.8 Google Drive PDF Module
+Validation rules:
+```text
+URL must not be empty
+URL must be absolute
+URL must use HTTPS
+Host must be allowed
+```
+Allowed hosts:
+```text
+drive.google.com
+docs.google.com
+```
+Behavior:
+```text
+If valid:
+    launch browser
+    audit success
+If invalid:
+    block launch
+    show friendly message
+    audit failure
+```
+---
+### 10.9 Search Module
+Search fields:
+```text
+DocCode
+Title
+Document Type
+Status
+Origin Office
+Destination Office
+Storage Location
+Registered Date Range
+```
+RBAC rule:
+```text
+Users with DOCUMENT_VIEW_ALL see all permitted search results.
+Users without DOCUMENT_VIEW_ALL see only assigned documents.
+```
+Pagination is required for production.
+---
+### 10.10 Audit Module
+Audit viewer requirements:
+```text
+Read-only
+Searchable
+Restricted by AUDIT_VIEW permission
+No edit button
+No delete button
+```
+Audit service shall be separate from business forms.
+---
+## 11. Security Requirements for Path A
+Path A must enforce:
+```text
+1. Parameterized SQL only.
+2. No hardcoded RFID card IDs.
+3. No hardcoded admin users.
+4. RBAC enforced in service and repository layers.
+5. RFID simulator disabled in production.
+6. Audit trail append-only.
+7. Audit table protected at SQL permission level.
+8. PDF URLs validated before launch.
+9. Technical errors not shown raw to end users.
+10. Session timeout enforced.
+11. Failed RFID attempts logged.
+12. Document codes protected by unique constraint.
+13. Sequence generation protected by transaction.
+14. Soft-delete only for documents.
+```
+---
+## 12. Automated Self-Test Mode
+Path A must include `/test` mode.
+Recommended command:
+```bash
+dotnet run --project src/BTA_OSG_DocumentTracking -- /test
+```
+The `/test` mode should:
+```text
+Use a test database or isolated test data
+Not modify production data
+Print pass/fail output
+Return exit code 0 on success
+Return non-zero exit code on failure
+```
+Recommended checks:
+```text
+Database connection works.
+Seed reference data exists.
+RFID card lookup works.
+Invalid RFID card fails.
+RBAC filtering works.
+Document code generation works.
+Document code duplicate prevention works.
+Directive updates status correctly.
+Audit record is created.
+PDF URL validation works.
+Storage movement is recorded.
+Application exits cleanly.
+```
+---
+## 13. Build and Publish
+Build:
+```bash
+dotnet restore
+dotnet build
+```
+Publish self-contained:
+```bash
+dotnet publish src/BTA_OSG_DocumentTracking -c Release -r win-x64 --self-contained true
+```
+Expected output location:
+```text
+src/BTA_OSG_DocumentTracking/bin/Release/net10.0-windows/win-x64/publish/BTA_OSG_DocumentTracking.exe
+```
+Framework-dependent publish:
+```bash
+dotnet publish src/BTA_OSG_DocumentTracking -c Release -r win-x64 --self-contained false
+```
+---
+## 14. Deployment Requirements
+Before deployment, prepare:
+```text
+Production appsettings
+Production connection string
+SQL Server backup plan
+Restore test
+Administrator manual
+User manual
+UAT script
+Rollback procedure
+```
+Recommended environments:
+```text
+Development
+UAT
+Production
+```
+Each environment should have:
+```text
+Its own database
+Its own configuration file
+Its own test data
+Its own RFID simulator setting
+```
+---
+## 15. Definition of Done for Path A
+Path A is ready for UAT when:
+```text
+1. Application builds without errors.
+2. Database script runs cleanly.
+3. Seed data is correct.
+4. RFID login works.
+5. Session timeout works.
+6. RBAC filtering works.
+7. Document registration works.
+8. Document auto-coding is duplicate-safe.
+9. Directive entry works.
+10. Routing history works.
+11. Storage location assignment works.
+12. PDF link validation works.
+13. Audit trail records required events.
+14. /test mode passes.
+15. Deployment configuration is prepared.
+```
+Path A is production-ready only after:
+```text
+UAT sign-off
+Backup/restore test
+Security review
+Production configuration review
+Administrator/user manuals delivered
+```
+---
+## 16. Open Items to Confirm Before Production
+Even with defaults applied, confirm these before go-live:
+1. Is `.NET 10` approved in the production environment?
+2. Which SQL Server instance will be used?
+3. Should PIN be required after RFID tap?
+4. Should OSG Chief retain full document visibility?
+5. Should Administrative Staff be allowed to route documents?
+6. Should PDF hosts be limited to `drive.google.com` only?
+7. Should ordinary search actions be audited?
+8. Should document codes ever be manually corrected by administrators?
+9. What is the official backup and retention policy?
+10. What is the approved deployment method for government endpoints?
+---

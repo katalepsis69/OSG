@@ -4,3 +4,4 @@ obj/
 *.suo
 .vs/
 bta_osg_db.xml
+dist/

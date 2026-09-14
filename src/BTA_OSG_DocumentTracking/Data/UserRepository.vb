@@ -12,7 +12,7 @@ Namespace BTA_OSG
 
         Public Function GetByCardPublicID(cardId As String) As User
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT u.* FROM tbl_Users u JOIN tbl_RfidCards c ON u.UserID = c.UserID WHERE c.CardPublicID = @id AND c.IsActive = 1 AND u.IsActive = 1"
+                Dim sql = "SELECT u.UserID, u.Username, u.FullName, u.Office, u.Email, u.IsActive, u.IsLocked, u.FailedTapCount, u.LastFailedTapUTC, u.CreatedByUserID, u.CreatedAtUTC, u.ModifiedByUserID, u.ModifiedAtUTC, u.RowVersion FROM tbl_Users u JOIN tbl_RfidCards c ON u.UserID = c.UserID WHERE c.CardPublicID = @id AND c.IsActive = 1 AND u.IsActive = 1"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", cardId.Trim().ToUpper())
                     Using reader = cmd.ExecuteReader()
@@ -27,7 +27,7 @@ Namespace BTA_OSG
 
         Public Function GetById(userId As Integer) As User
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Users WHERE UserID = @id"
+                Dim sql = "SELECT UserID, Username, FullName, Office, Email, IsActive, IsLocked, FailedTapCount, LastFailedTapUTC, CreatedByUserID, CreatedAtUTC, ModifiedByUserID, ModifiedAtUTC, RowVersion FROM tbl_Users WHERE UserID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", userId)
                     Using reader = cmd.ExecuteReader()
@@ -43,7 +43,7 @@ Namespace BTA_OSG
         Public Function GetAll() As List(Of User)
             Dim list As New List(Of User)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Users"
+                Dim sql = "SELECT UserID, Username, FullName, Office, Email, IsActive, IsLocked, FailedTapCount FROM tbl_Users"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -57,16 +57,16 @@ Namespace BTA_OSG
 
         Public Function Insert(user As User, createdBy As Integer?) As Integer
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_Users (Username, DisplayName, Email, OfficeName, IsActive, CreatedBy, CreatedDate) " &
-                          "OUTPUT INSERTED.UserID " &
-                          "VALUES (@Username, @DisplayName, @Email, @OfficeName, @IsActive, @CreatedBy, GETDATE())"
+                Dim sql = "INSERT INTO tbl_Users (Username, FullName, Email, Office, IsActive, CreatedByUserID, CreatedAtUTC) " &
+                           "OUTPUT INSERTED.UserID " &
+                           "VALUES (@Username, @FullName, @Email, @Office, @IsActive, @CreatedByUserID, SYSUTCDATETIME())"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@Username", user.Username)
-                    cmd.Parameters.AddWithValue("@DisplayName", If(user.FullName, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FullName", If(user.FullName, DBNull.Value))
                     cmd.Parameters.AddWithValue("@Email", If(user.Email, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@OfficeName", If(user.Office, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Office", If(user.Office, DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", user.IsActive)
-                    cmd.Parameters.AddWithValue("@CreatedBy", If(CType(createdBy, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CreatedByUserID", If(CType(createdBy, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using
@@ -74,16 +74,16 @@ Namespace BTA_OSG
 
         Public Sub Update(user As User, modifiedBy As Integer?)
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Users SET Username = @Username, DisplayName = @DisplayName, Email = @Email, " &
-                          "OfficeName = @OfficeName, IsActive = @IsActive, ModifiedBy = @ModifiedBy, ModifiedDate = GETDATE() " &
-                          "WHERE UserID = @id"
+                Dim sql = "UPDATE tbl_Users SET Username = @Username, FullName = @FullName, Email = @Email, " &
+                           "Office = @Office, IsActive = @IsActive, ModifiedByUserID = @ModifiedByUserID, ModifiedAtUTC = SYSUTCDATETIME() " &
+                           "WHERE UserID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@Username", user.Username)
-                    cmd.Parameters.AddWithValue("@DisplayName", If(user.FullName, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FullName", If(user.FullName, DBNull.Value))
                     cmd.Parameters.AddWithValue("@Email", If(user.Email, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@OfficeName", If(user.Office, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Office", If(user.Office, DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", user.IsActive)
-                    cmd.Parameters.AddWithValue("@ModifiedBy", If(CType(modifiedBy, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ModifiedByUserID", If(CType(modifiedBy, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", user.UserID)
                     cmd.ExecuteNonQuery()
                 End Using
@@ -93,8 +93,8 @@ Namespace BTA_OSG
         Public Function GetUserRoles(userId As Integer) As List(Of Role)
             Dim list As New List(Of Role)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT r.* FROM tbl_Roles r JOIN tbl_UserRoles ur ON r.RoleID = ur.RoleID " &
-                          "WHERE ur.UserID = @id AND ur.IsActive = 1 AND r.IsActive = 1"
+                Dim sql = "SELECT r.RoleID, r.RoleCode, r.RoleName, r.Description, r.IsActive FROM tbl_Roles r JOIN tbl_UserRoles ur ON r.RoleID = ur.RoleID " &
+                           "WHERE ur.UserID = @id AND ur.IsActive = 1 AND r.IsActive = 1"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", userId)
                     Using reader = cmd.ExecuteReader()
@@ -134,7 +134,7 @@ Namespace BTA_OSG
 
         Public Sub IncrementFailedTaps(userId As Integer)
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Users SET FailedTapAttempts = ISNULL(FailedTapAttempts, 0) + 1 WHERE UserID = @id"
+                Dim sql = "UPDATE tbl_Users SET FailedTapCount = ISNULL(FailedTapCount, 0) + 1, LastFailedTapUTC = SYSUTCDATETIME() WHERE UserID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", userId)
                     cmd.ExecuteNonQuery()
@@ -154,7 +154,7 @@ Namespace BTA_OSG
 
         Public Sub ResetFailedTaps(userId As Integer)
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Users SET FailedTapAttempts = 0, IsLocked = 0 WHERE UserID = @id"
+                Dim sql = "UPDATE tbl_Users SET FailedTapCount = 0, IsLocked = 0 WHERE UserID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", userId)
                     cmd.ExecuteNonQuery()
@@ -166,10 +166,10 @@ Namespace BTA_OSG
             Return New User With {
                 .UserID = Convert.ToInt32(reader("UserID")),
                 .Username = Convert.ToString(reader("Username")),
-                .FullName = If(IsDBNull(reader("DisplayName")), Nothing, Convert.ToString(reader("DisplayName"))),
+                .FullName = If(IsDBNull(reader("FullName")), Nothing, Convert.ToString(reader("FullName"))),
                 .Email = If(IsDBNull(reader("Email")), Nothing, Convert.ToString(reader("Email"))),
-                .Office = If(IsDBNull(reader("OfficeName")), Nothing, Convert.ToString(reader("OfficeName"))),
-                .FailedTapCount = If(IsDBNull(reader("FailedTapAttempts")), 0, Convert.ToInt32(reader("FailedTapAttempts"))),
+                .Office = If(IsDBNull(reader("Office")), Nothing, Convert.ToString(reader("Office"))),
+                .FailedTapCount = If(IsDBNull(reader("FailedTapCount")), 0, Convert.ToInt32(reader("FailedTapCount"))),
                 .IsLocked = If(IsDBNull(reader("IsLocked")), False, Convert.ToBoolean(reader("IsLocked"))),
                 .IsActive = If(IsDBNull(reader("IsActive")), True, Convert.ToBoolean(reader("IsActive")))
             }

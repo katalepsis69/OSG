@@ -12,9 +12,9 @@ Namespace BTA_OSG
 
         Public Function Insert(entry As AuditEntry) As Long
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_AuditLogs (EventAtUTC, UserID, UsernameSnapshot, FullNameSnapshot, RoleSnapshot, ActionType, EntityType, EntityID, DocumentCode, MachineName, Success, FailureReason) " &
-                          "OUTPUT INSERTED.AuditID " &
-                          "VALUES (@EventAtUTC, @UserID, @UsernameSnapshot, @FullNameSnapshot, @RoleSnapshot, @ActionType, @EntityType, @EntityID, @DocumentCode, @MachineName, @Success, @FailureReason)"
+                Dim sql = "INSERT INTO tbl_AuditTrail (EventAtUTC, UserID, UsernameSnapshot, FullNameSnapshot, RoleSnapshot, ActionType, EntityType, EntityID, DocumentCode, MachineName, Success, FailureReason) " &
+                           "OUTPUT INSERTED.AuditID " &
+                           "VALUES (@EventAtUTC, @UserID, @UsernameSnapshot, @FullNameSnapshot, @RoleSnapshot, @ActionType, @EntityType, @EntityID, @DocumentCode, @MachineName, @Success, @FailureReason)"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@EventAtUTC", entry.EventAtUTC)
                     cmd.Parameters.AddWithValue("@UserID", If(CType(entry.UserID, Object), DBNull.Value))
@@ -36,7 +36,9 @@ Namespace BTA_OSG
         Public Function GetByFilter(userIdFilter As Integer?, actionType As String, entityType As String, dateFrom As DateTime?, dateTo As DateTime?, pageSize As Integer, pageNumber As Integer) As List(Of AuditEntry)
             Dim list As New List(Of AuditEntry)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_AuditLogs WHERE 1=1 "
+                Dim sql = "SELECT AuditID, EventAtUTC, UserID, UsernameSnapshot, FullNameSnapshot, RoleSnapshot, ActionType, EntityType, EntityID, DocumentCode, MachineName, Success, FailureReason FROM tbl_AuditTrail WHERE 1=1 "
+                pageSize = Math.Max(1, Math.Min(100, pageSize))
+                pageNumber = Math.Max(1, pageNumber)
                 If userIdFilter.HasValue Then sql &= " AND UserID = @userId "
                 If Not String.IsNullOrEmpty(actionType) Then sql &= " AND ActionType = @actionType "
                 If Not String.IsNullOrEmpty(entityType) Then sql &= " AND EntityType = @entityType "

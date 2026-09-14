@@ -1,4 +1,5 @@
 Imports System
+Imports System.Collections.Generic
 Imports System.IO
 Imports System.Text.Json
 
@@ -48,22 +49,25 @@ Namespace BTA_OSG
         Private Shared Function Load() As AppSettings
             Dim settings As New AppSettings()
             Try
-                Dim configPath As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Resources", "appsettings.json")
-                If File.Exists(configPath) Then
+                Dim baseDir = AppDomain.CurrentDomain.BaseDirectory
+                Dim env = Environment.GetEnvironmentVariable("BTA_ENVIRONMENT")
+                Dim paths As New List(Of String) From {Path.Combine(baseDir, "Resources", "appsettings.json")}
+                If Not String.IsNullOrWhiteSpace(env) Then paths.Add(Path.Combine(baseDir, "Resources", $"appsettings.{env}.json"))
+                ' ponytail: Production fallback if no ENV var
+                If String.IsNullOrWhiteSpace(env) Then paths.Add(Path.Combine(baseDir, "Resources", "appsettings.Production.json"))
+                Dim options As New JsonSerializerOptions With {.PropertyNameCaseInsensitive = True}
+                For Each configPath In paths
+                    If Not File.Exists(configPath) Then Continue For
                     Dim json As String = File.ReadAllText(configPath)
-                    Dim options As New JsonSerializerOptions With {
-                        .PropertyNameCaseInsensitive = True
-                    }
                     Dim root As AppSettingsRoot = JsonSerializer.Deserialize(Of AppSettingsRoot)(json, options)
-                    If root IsNot Nothing Then
-                        If root.Database IsNot Nothing Then settings.DatabaseSettings = root.Database
-                        If root.Rfid IsNot Nothing Then settings.RfidSettings = root.Rfid
-                        If root.PdfLink IsNot Nothing Then settings.PdfLinkSettings = root.PdfLink
-                        If root.Session IsNot Nothing Then settings.SessionSettings = root.Session
-                    End If
-                End If
+                    If root Is Nothing Then Continue For
+                    If root.Database IsNot Nothing Then settings.DatabaseSettings = root.Database
+                    If root.Rfid IsNot Nothing Then settings.RfidSettings = root.Rfid
+                    If root.PdfLink IsNot Nothing Then settings.PdfLinkSettings = root.PdfLink
+                    If root.Session IsNot Nothing Then settings.SessionSettings = root.Session
+                Next
             Catch ex As Exception
-                ' Silently fall back to defaults if error reading or parsing
+                System.Diagnostics.Trace.TraceWarning($"AppSettings load failed: {ex.Message}")
             End Try
             Return settings
         End Function

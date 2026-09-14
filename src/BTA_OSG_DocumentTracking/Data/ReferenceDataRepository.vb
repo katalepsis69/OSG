@@ -13,7 +13,7 @@ Namespace BTA_OSG
         Public Function GetDocumentTypes() As List(Of DocumentType)
             Dim list As New List(Of DocumentType)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DocumentTypes WHERE IsActive = 1"
+                Dim sql = "SELECT DocumentTypeID, TypeCode, TypeName, Prefix, IsActive, SortOrder FROM tbl_DocumentTypes WHERE IsActive = 1"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -35,7 +35,7 @@ Namespace BTA_OSG
         Public Function GetDocumentStatuses() As List(Of DocumentStatus)
             Dim list As New List(Of DocumentStatus)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DocumentStatuses WHERE IsActive = 1"
+                Dim sql = "SELECT StatusID, StatusCode, StatusName, IsActive FROM tbl_DocumentStatuses WHERE IsActive = 1"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -55,7 +55,7 @@ Namespace BTA_OSG
         Public Function GetDirectiveTypes() As List(Of DirectiveType)
             Dim list As New List(Of DirectiveType)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DirectiveTypes WHERE IsActive = 1"
+                Dim sql = "SELECT DirectiveTypeID, DirectiveCode, DirectiveName, ResultStatusID, IsActive FROM tbl_DirectiveTypes WHERE IsActive = 1"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -76,7 +76,7 @@ Namespace BTA_OSG
         Public Function GetRoles() As List(Of Role)
             Dim list As New List(Of Role)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Roles WHERE IsActive = 1"
+                Dim sql = "SELECT RoleID, RoleCode, RoleName, Description, IsActive FROM tbl_Roles WHERE IsActive = 1"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -95,7 +95,7 @@ Namespace BTA_OSG
 
         Public Function GetStatusByCode(code As String) As DocumentStatus
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DocumentStatuses WHERE StatusCode = @code"
+                Dim sql = "SELECT StatusID, StatusCode, StatusName, IsActive FROM tbl_DocumentStatuses WHERE StatusCode = @code"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@code", code)
                     Using reader = cmd.ExecuteReader()
@@ -115,7 +115,7 @@ Namespace BTA_OSG
 
         Public Function GetDocumentTypeByCode(code As String) As DocumentType
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DocumentTypes WHERE TypeCode = @code"
+                Dim sql = "SELECT DocumentTypeID, TypeCode, TypeName, Prefix, IsActive, SortOrder FROM tbl_DocumentTypes WHERE TypeCode = @code"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@code", code)
                     Using reader = cmd.ExecuteReader()

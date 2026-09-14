@@ -26,7 +26,8 @@ Namespace BTA_OSG
                 Dim isAllowed = False
                 If _settings.AllowedHosts IsNot Nothing Then
                     For Each allowedHost In _settings.AllowedHosts
-                        If host = allowedHost.ToLowerInvariant() OrElse host.EndsWith("." & allowedHost.ToLowerInvariant()) Then
+                        Dim ah = allowedHost.ToLowerInvariant().Trim()
+                        If host = ah Then
                             isAllowed = True
                             Exit For
                         End If

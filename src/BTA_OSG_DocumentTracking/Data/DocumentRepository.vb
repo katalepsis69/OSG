@@ -10,9 +10,10 @@ Namespace BTA_OSG
             _connectionFactory = connectionFactory
         End Sub
 
+        Private Const DOC_COLS As String = "DocumentID, DocCode, Title, DocumentTypeID, OriginOffice, DestinationOffice, StatusID, ReceivedDate, CurrentStorageLocationID, Remarks, IsDeleted"
         Public Function GetById(docId As Integer) As Document
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Documents WHERE DocumentID = @id"
+                Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", docId)
                     Using reader = cmd.ExecuteReader()
@@ -27,7 +28,7 @@ Namespace BTA_OSG
 
         Public Function GetByDocCode(code As String) As Document
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Documents WHERE DocumentCode = @code"
+                Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE DocCode = @code"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@code", code)
                     Using reader = cmd.ExecuteReader()
@@ -43,7 +44,7 @@ Namespace BTA_OSG
         Public Function GetAll(includeDeleted As Boolean) As List(Of Document)
             Dim list As New List(Of Document)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Documents"
+                Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents"
                 If Not includeDeleted Then
                     sql &= " WHERE IsDeleted = 0"
                 End If
@@ -59,17 +60,19 @@ Namespace BTA_OSG
         End Function
 
         Public Function GetByFilter(titleLike As String, typeId As Integer?, statusId As Integer?, originLike As String, destLike As String, storageId As Integer?, dateFrom As Date?, dateTo As Date?, pageSize As Integer, pageNumber As Integer) As List(Of Document)
+            pageSize = Math.Max(1, Math.Min(100, pageSize))
+            pageNumber = Math.Max(1, pageNumber)
             Dim list As New List(Of Document)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_Documents WHERE IsDeleted = 0 "
+                Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE IsDeleted = 0 "
                 If Not String.IsNullOrEmpty(titleLike) Then sql &= " AND Title LIKE @title "
                 If typeId.HasValue Then sql &= " AND DocumentTypeID = @typeId "
                 If statusId.HasValue Then sql &= " AND StatusID = @statusId "
-                If Not String.IsNullOrEmpty(originLike) Then sql &= " AND OriginatingOffice LIKE @origin "
+                If Not String.IsNullOrEmpty(originLike) Then sql &= " AND OriginOffice LIKE @origin "
                 If Not String.IsNullOrEmpty(destLike) Then sql &= " AND DestinationOffice LIKE @dest "
-                If storageId.HasValue Then sql &= " AND CurrentStorageID = @storageId "
-                If dateFrom.HasValue Then sql &= " AND DocumentDate >= @dateFrom "
-                If dateTo.HasValue Then sql &= " AND DocumentDate <= @dateTo "
+                If storageId.HasValue Then sql &= " AND CurrentStorageLocationID = @storageId "
+                If dateFrom.HasValue Then sql &= " AND ReceivedDate >= @dateFrom "
+                If dateTo.HasValue Then sql &= " AND ReceivedDate <= @dateTo "
                 
                 sql &= " ORDER BY DocumentID OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY"
 
@@ -102,19 +105,20 @@ Namespace BTA_OSG
 
         Public Function Insert(doc As Document) As Integer
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_Documents (DocumentCode, Title, DocumentTypeID, StatusID, OriginatingOffice, DestinationOffice, CurrentStorageID, DocumentDate, Description) " &
-                          "OUTPUT INSERTED.DocumentID " &
-                          "VALUES (@DocumentCode, @Title, @DocumentTypeID, @StatusID, @OriginatingOffice, @DestinationOffice, @CurrentStorageID, @DocumentDate, @Description)"
+                Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID) " &
+                           "OUTPUT INSERTED.DocumentID " &
+                           "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID)"
                 Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@DocumentCode", doc.DocCode)
+                    cmd.Parameters.AddWithValue("@DocCode", doc.DocCode)
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
                     cmd.Parameters.AddWithValue("@DocumentTypeID", doc.DocumentTypeID)
                     cmd.Parameters.AddWithValue("@StatusID", doc.StatusID)
-                    cmd.Parameters.AddWithValue("@OriginatingOffice", If(doc.OriginOffice, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice, DBNull.Value))
                     cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@CurrentStorageID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@DocumentDate", doc.ReceivedDate)
-                    cmd.Parameters.AddWithValue("@Description", If(doc.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ReceivedDate", If(CType(doc.ReceivedDate, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CreatedByUserID", doc.RegisteredByUserID)
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using
@@ -123,18 +127,19 @@ Namespace BTA_OSG
         Public Sub Update(doc As Document, modifiedBy As Integer?)
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "UPDATE tbl_Documents SET Title = @Title, DocumentTypeID = @DocumentTypeID, StatusID = @StatusID, " &
-                          "OriginatingOffice = @OriginatingOffice, DestinationOffice = @DestinationOffice, CurrentStorageID = @CurrentStorageID, " &
-                          "DocumentDate = @DocumentDate, Description = @Description " &
-                          "WHERE DocumentID = @id"
+                           "OriginOffice = @OriginOffice, DestinationOffice = @DestinationOffice, CurrentStorageLocationID = @CurrentStorageLocationID, " &
+                           "ReceivedDate = @ReceivedDate, Remarks = @Remarks, ModifiedByUserID=@ModifiedByUserID, ModifiedAtUTC=SYSUTCDATETIME() " &
+                           "WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
                     cmd.Parameters.AddWithValue("@DocumentTypeID", doc.DocumentTypeID)
                     cmd.Parameters.AddWithValue("@StatusID", doc.StatusID)
-                    cmd.Parameters.AddWithValue("@OriginatingOffice", If(doc.OriginOffice, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice, DBNull.Value))
                     cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@CurrentStorageID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@DocumentDate", doc.ReceivedDate)
-                    cmd.Parameters.AddWithValue("@Description", If(doc.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ReceivedDate", If(CType(doc.ReceivedDate, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ModifiedByUserID", If(CType(modifiedBy, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", doc.DocumentID)
                     cmd.ExecuteNonQuery()
                 End Using
@@ -143,7 +148,7 @@ Namespace BTA_OSG
 
         Public Sub SoftDelete(docId As Integer, deletedBy As Integer, reason As String)
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Documents SET IsDeleted = 1, DeletedBy = @deletedBy, DeletedDate = GETDATE(), DeletionReason = @reason WHERE DocumentID = @id"
+                Dim sql = "UPDATE tbl_Documents SET IsDeleted = 1, DeletedByUserID = @deletedBy, DeletedAtUTC = SYSUTCDATETIME(), DeletionReason = @reason WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@deletedBy", deletedBy)
                     cmd.Parameters.AddWithValue("@reason", If(reason, DBNull.Value))
@@ -156,7 +161,7 @@ Namespace BTA_OSG
         Public Function GetAssignments(docId As Integer) As List(Of DocumentAssignment)
             Dim list As New List(Of DocumentAssignment)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DocumentAssignments WHERE DocumentID = @id"
+                Dim sql = "SELECT AssignmentID, DocumentID, AssignedUserID, AssignedAtUTC, Remarks FROM tbl_DocumentAssignments WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", docId)
                     Using reader = cmd.ExecuteReader()
@@ -164,9 +169,9 @@ Namespace BTA_OSG
                             list.Add(New DocumentAssignment With {
                                 .AssignmentID = Convert.ToInt32(reader("AssignmentID")),
                                 .DocumentID = Convert.ToInt32(reader("DocumentID")),
-                                .AssignedUserID = Convert.ToInt32(reader("AssignedToUserID")),
-                                .AssignedAtUTC = Convert.ToDateTime(reader("AssignedDate")),
-                                .Remarks = If(IsDBNull(reader("Notes")), Nothing, Convert.ToString(reader("Notes")))
+                                .AssignedUserID = If(IsDBNull(reader("AssignedUserID")), CType(Nothing, Integer?), Convert.ToInt32(reader("AssignedUserID"))),
+                                .AssignedAtUTC = Convert.ToDateTime(reader("AssignedAtUTC")),
+                                .Remarks = If(IsDBNull(reader("Remarks")), Nothing, Convert.ToString(reader("Remarks")))
                             })
                         End While
                     End Using
@@ -177,13 +182,14 @@ Namespace BTA_OSG
 
         Public Sub AddAssignment(assignment As DocumentAssignment)
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_DocumentAssignments (DocumentID, AssignedToUserID, AssignedDate, Notes) " &
-                          "VALUES (@DocumentID, @AssignedToUserID, @AssignedDate, @Notes)"
+                Dim sql = "INSERT INTO tbl_DocumentAssignments (DocumentID, AssignedUserID, AssignedByUserID, AssignedAtUTC, Remarks) " &
+                           "VALUES (@DocumentID, @AssignedUserID, @AssignedByUserID, @AssignedAtUTC, @Remarks)"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@DocumentID", assignment.DocumentID)
-                    cmd.Parameters.AddWithValue("@AssignedToUserID", assignment.AssignedUserID)
-                    cmd.Parameters.AddWithValue("@AssignedDate", assignment.AssignedAtUTC)
-                    cmd.Parameters.AddWithValue("@Notes", If(assignment.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@AssignedUserID", If(CType(assignment.AssignedUserID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@AssignedByUserID", assignment.AssignedByUserID)
+                    cmd.Parameters.AddWithValue("@AssignedAtUTC", assignment.AssignedAtUTC)
+                    cmd.Parameters.AddWithValue("@Remarks", If(assignment.Remarks, DBNull.Value))
                     cmd.ExecuteNonQuery()
                 End Using
             End Using
@@ -192,15 +198,15 @@ Namespace BTA_OSG
         Private Function MapDocument(reader As IDataReader) As Document
             Return New Document With {
                 .DocumentID = Convert.ToInt32(reader("DocumentID")),
-                .DocCode = Convert.ToString(reader("DocumentCode")),
+                .DocCode = Convert.ToString(reader("DocCode")),
                 .Title = Convert.ToString(reader("Title")),
                 .DocumentTypeID = Convert.ToInt32(reader("DocumentTypeID")),
                 .StatusID = Convert.ToInt32(reader("StatusID")),
-                .OriginOffice = If(IsDBNull(reader("OriginatingOffice")), Nothing, Convert.ToString(reader("OriginatingOffice"))),
+                .OriginOffice = If(IsDBNull(reader("OriginOffice")), Nothing, Convert.ToString(reader("OriginOffice"))),
                 .DestinationOffice = If(IsDBNull(reader("DestinationOffice")), Nothing, Convert.ToString(reader("DestinationOffice"))),
-                .CurrentStorageLocationID = If(IsDBNull(reader("CurrentStorageID")), CType(Nothing, Integer?), Convert.ToInt32(reader("CurrentStorageID"))),
-                .ReceivedDate = If(IsDBNull(reader("DocumentDate")), CType(Nothing, Date?), Convert.ToDateTime(reader("DocumentDate"))),
-                .Remarks = If(IsDBNull(reader("Description")), Nothing, Convert.ToString(reader("Description"))),
+                .CurrentStorageLocationID = If(IsDBNull(reader("CurrentStorageLocationID")), CType(Nothing, Integer?), Convert.ToInt32(reader("CurrentStorageLocationID"))),
+                .ReceivedDate = If(IsDBNull(reader("ReceivedDate")), CType(Nothing, Date?), Convert.ToDateTime(reader("ReceivedDate"))),
+                .Remarks = If(IsDBNull(reader("Remarks")), Nothing, Convert.ToString(reader("Remarks"))),
                 .IsDeleted = If(IsDBNull(reader("IsDeleted")), False, Convert.ToBoolean(reader("IsDeleted")))
             }
         End Function

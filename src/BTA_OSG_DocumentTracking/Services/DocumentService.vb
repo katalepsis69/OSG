@@ -17,9 +17,8 @@ Namespace BTA_OSG
 
         Public Function RegisterDocument(title As String, typeCode As String, originOffice As Integer, destOffice As Integer, receivedDate As DateTime, googleDriveUrl As String, remarks As String, registeredByUserId As Integer) As Object
             If String.IsNullOrWhiteSpace(title) Then Throw New ArgumentException("Title is required.")
-            ' Mock get type
-            Dim prefix As String = "DOC" 
-            Dim code As String = _seqRepo.GetNextDocCode(prefix, DateTime.Now.Year)
+            Dim prefix As String = If(String.IsNullOrWhiteSpace(typeCode), "DOC", typeCode.Trim().ToUpper())
+            Dim code As String = _seqRepo.GetNextDocCode(prefix, prefix, CShort(DateTime.Now.Year))
             
             Dim doc As Object = Nothing ' New Document with details
             _docRepo.Insert(doc)

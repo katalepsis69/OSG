@@ -1044,3 +1044,10 @@ Even with defaults applied, confirm these before go-live:
 9. What is the official backup and retention policy?
 10. What is the approved deployment method for government endpoints?
 ---
+
+
+
+
+unrelated
+problem during account creation on free tier. ive alr made an account using bfffpt@gmail.com and charged for it but i still havent received anything to log in
+and the charged hasnt been refunded to my bank

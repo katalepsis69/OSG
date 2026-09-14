@@ -15,9 +15,8 @@ Namespace BTA_OSG
             Dim card = Nothing ' New RfidCard
             cardPublicId = cardPublicId.Trim().ToUpper()
             
-            Using conn As SqlConnection = _connFactory.GetConnection()
-                conn.Open()
-                Using cmd As New SqlCommand("INSERT INTO RfidCards (UserID, CardPublicID, CardLabel, IssuedBy, IssuedDate, IsActive) VALUES (@u, @c, @l, @ib, @d, 1); SELECT SCOPE_IDENTITY();", conn)
+            Using conn As SqlConnection = _connFactory.CreateConnection()
+                Using cmd As New SqlCommand("INSERT INTO tbl_RfidCards (UserID, CardPublicID, CardLabel, CreatedByUserID, CreatedAtUTC, IsActive) VALUES (@u, @c, @l, @ib, SYSUTCDATETIME(), 1); SELECT SCOPE_IDENTITY();", conn)
                     cmd.Parameters.AddWithValue("@u", userId)
                     cmd.Parameters.AddWithValue("@c", cardPublicId)
                     cmd.Parameters.AddWithValue("@l", cardLabel)
@@ -33,9 +32,8 @@ Namespace BTA_OSG
         End Function
 
         Public Sub RevokeCard(cardId As Integer, revokedBy As Integer, reason As String)
-            Using conn As SqlConnection = _connFactory.GetConnection()
-                conn.Open()
-                Using cmd As New SqlCommand("UPDATE RfidCards SET IsActive = 0, RevokedBy = @rb, RevokeReason = @rr, RevokeDate = @d WHERE CardID = @id", conn)
+            Using conn As SqlConnection = _connFactory.CreateConnection()
+                Using cmd As New SqlCommand("UPDATE tbl_RfidCards SET IsActive = 0, RevokedByUserID = @rb, RevocationReason = @rr, RevokedAtUTC = SYSUTCDATETIME() WHERE RfidCardID = @id", conn)
                     cmd.Parameters.AddWithValue("@rb", revokedBy)
                     cmd.Parameters.AddWithValue("@rr", reason)
                     cmd.Parameters.AddWithValue("@d", DateTime.Now)

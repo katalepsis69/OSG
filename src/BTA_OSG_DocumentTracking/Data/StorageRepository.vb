@@ -13,7 +13,7 @@ Namespace BTA_OSG
         Public Function GetAll() As List(Of StorageLocation)
             Dim list As New List(Of StorageLocation)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_StorageLocations"
+                Dim sql = "SELECT StorageLocationID, CabinetID, ShelfNo, BoxCode, Description, IsActive FROM tbl_StorageLocations"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -27,7 +27,7 @@ Namespace BTA_OSG
 
         Public Function GetById(id As Integer) As StorageLocation
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_StorageLocations WHERE StorageID = @id"
+                Dim sql = "SELECT StorageLocationID, CabinetID, ShelfNo, BoxCode, Description, IsActive FROM tbl_StorageLocations WHERE StorageLocationID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", id)
                     Using reader = cmd.ExecuteReader()
@@ -59,7 +59,7 @@ Namespace BTA_OSG
         Public Function GetMovements(docId As Integer) As List(Of DocumentMovement)
             Dim list As New List(Of DocumentMovement)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_DocumentMovements WHERE DocumentID = @id ORDER BY MovedAtUTC DESC"
+                Dim sql = "SELECT MovementID, DocumentID, StorageLocationID, MovedByUserID, MovedAtUTC, MovementReason FROM tbl_DocumentMovements WHERE DocumentID = @id ORDER BY MovedAtUTC DESC"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", docId)
                     Using reader = cmd.ExecuteReader()

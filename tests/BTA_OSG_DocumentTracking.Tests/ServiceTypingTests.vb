@@ -40,5 +40,13 @@ Namespace BTA_OSG.Tests
             Assert.AreEqual("For Immediate Review", d.DirectiveText)
             Assert.IsTrue(d.IsActive)
         End Sub
+
+        <TestMethod>
+        Public Sub FormMain_InitializesWithCivicCalmColors()
+            Dim form As New FormMain()
+            Assert.AreEqual(CivicCalmTheme.ColorCanvas, form.BackColor)
+            Assert.IsFalse(form.Text.Contains("—"))
+            form.Dispose()
+        End Sub
     End Class
 End Namespace

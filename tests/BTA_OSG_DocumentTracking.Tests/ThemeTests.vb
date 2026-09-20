@@ -63,5 +63,53 @@ Namespace BTA_OSG.Tests
                 End Using
             End Using
         End Sub
+
+        <TestMethod>
+        Public Sub DataGridStyler_FormatOtherTables_SetsHeadersAndFillColumns()
+            ' Directives formatting test
+            Using dgvDir As New DataGridView()
+                DataGridStyler.ApplyCivicStyle(dgvDir)
+                Using dtDir As New DataTable()
+                    dtDir.Columns.Add("DirectiveID", GetType(Integer))
+                    dtDir.Columns.Add("Notes", GetType(String))
+                    dtDir.Rows.Add(1, "Test Note")
+                    dgvDir.BindingContext = New BindingContext()
+                    dgvDir.DataSource = dtDir
+                    DataGridStyler.FormatDirectiveColumns(dgvDir)
+                    Assert.AreEqual("ID", dgvDir.Columns("DirectiveID").HeaderText)
+                    Assert.AreEqual(DataGridViewAutoSizeColumnMode.Fill, dgvDir.Columns("Notes").AutoSizeMode)
+                End Using
+            End Using
+
+            ' Users formatting test
+            Using dgvUser As New DataGridView()
+                DataGridStyler.ApplyCivicStyle(dgvUser)
+                Using dtUser As New DataTable()
+                    dtUser.Columns.Add("UserID", GetType(Integer))
+                    dtUser.Columns.Add("FullName", GetType(String))
+                    dtUser.Rows.Add(1, "Test User")
+                    dgvUser.BindingContext = New BindingContext()
+                    dgvUser.DataSource = dtUser
+                    DataGridStyler.FormatUserColumns(dgvUser)
+                    Assert.AreEqual("User ID", dgvUser.Columns("UserID").HeaderText)
+                    Assert.AreEqual(DataGridViewAutoSizeColumnMode.Fill, dgvUser.Columns("FullName").AutoSizeMode)
+                End Using
+            End Using
+
+            ' Audit formatting test
+            Using dgvAudit As New DataGridView()
+                DataGridStyler.ApplyCivicStyle(dgvAudit)
+                Using dtAudit As New DataTable()
+                    dtAudit.Columns.Add("AuditID", GetType(Integer))
+                    dtAudit.Columns.Add("ActionDescription", GetType(String))
+                    dtAudit.Rows.Add(1, "Test Action")
+                    dgvAudit.BindingContext = New BindingContext()
+                    dgvAudit.DataSource = dtAudit
+                    DataGridStyler.FormatAuditColumns(dgvAudit)
+                    Assert.AreEqual("Audit ID", dgvAudit.Columns("AuditID").HeaderText)
+                    Assert.AreEqual(DataGridViewAutoSizeColumnMode.Fill, dgvAudit.Columns("ActionDescription").AutoSizeMode)
+                End Using
+            End Using
+        End Sub
     End Class
 End Namespace

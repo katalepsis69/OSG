@@ -309,14 +309,17 @@ Namespace BTA_OSG
             Dim dvDir As New DataView(EmbeddedDB.DataSet.Tables("Directives"))
             dvDir.RowFilter = "DocumentID = " & DocID
             dgvDirectives.DataSource = dvDir.ToTable()
+            DataGridStyler.FormatDirectiveColumns(dgvDirectives)
 
             Dim dvRoute As New DataView(EmbeddedDB.DataSet.Tables("RoutingLogs"))
             dvRoute.RowFilter = "DocumentID = " & DocID
             dgvRouting.DataSource = dvRoute.ToTable()
+            DataGridStyler.FormatRoutingColumns(dgvRouting)
 
             Dim dvMove As New DataView(EmbeddedDB.DataSet.Tables("Movements"))
             dvMove.RowFilter = "DocumentID = " & DocID
             dgvMovements.DataSource = dvMove.ToTable()
+            DataGridStyler.FormatMovementColumns(dgvMovements)
         End Sub
 
         Private Sub OnRouteDocument(sender As Object, e As EventArgs)

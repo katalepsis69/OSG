@@ -1155,11 +1155,13 @@ Namespace BTA_OSG
             Dim dt = EmbeddedDB.DataSet.Tables("AuditTrail")
             If String.IsNullOrEmpty(q) Then
                 dgvAudit.DataSource = dt
+                DataGridStyler.FormatAuditColumns(dgvAudit)
                 lblStatusMessage.Text = "Displaying complete audit trail."
             Else
                 Dim dv As New DataView(dt)
                 dv.RowFilter = String.Format("UserName LIKE '%{0}%' OR ActionDescription LIKE '%{0}%'", q)
                 dgvAudit.DataSource = dv.ToTable()
+                DataGridStyler.FormatAuditColumns(dgvAudit)
                 lblStatusMessage.Text = String.Format("Audit log filtered for '{0}'.", txtAuditSearch.Text.Trim())
             End If
 
@@ -1232,6 +1234,7 @@ Namespace BTA_OSG
                     If cmbDirDocs.Items.Count > 0 Then cmbDirDocs.SelectedIndex = 0
                     Dim dtDirectives = EmbeddedDB.DataSet.Tables("Directives")
                     dgvDirectives.DataSource = dtDirectives
+                    DataGridStyler.FormatDirectiveColumns(dgvDirectives)
                     If dgvDirectives.Rows.Count = 0 Then
                         DataGridStyler.SetEmptyState(dgvDirectives, lblDirectivesWatermark, "No active action directives found.")
                     Else
@@ -1250,6 +1253,7 @@ Namespace BTA_OSG
                 Case 4 ' Admin View
                     Dim dtUsers = EmbeddedDB.DataSet.Tables("Users")
                     dgvUsers.DataSource = dtUsers
+                    DataGridStyler.FormatUserColumns(dgvUsers)
                     If dgvUsers.Rows.Count = 0 Then
                         DataGridStyler.SetEmptyState(dgvUsers, lblUsersWatermark, "No users registered.")
                     Else
@@ -1259,6 +1263,7 @@ Namespace BTA_OSG
                 Case 5 ' Audit View
                     Dim dtAudit = EmbeddedDB.DataSet.Tables("AuditTrail")
                     dgvAudit.DataSource = dtAudit
+                    DataGridStyler.FormatAuditColumns(dgvAudit)
                     If dgvAudit.Rows.Count = 0 Then
                         DataGridStyler.SetEmptyState(dgvAudit, lblAuditWatermark, "No audit trail events recorded.")
                     Else

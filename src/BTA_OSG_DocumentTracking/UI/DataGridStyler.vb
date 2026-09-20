@@ -151,5 +151,225 @@ Namespace BTA_OSG
                 dgv.ResumeLayout()
             End Try
         End Sub
+
+        Public Shared Sub FormatDirectiveColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "DirectiveID"
+                            col.HeaderText = "ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 50
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "DocumentID"
+                            col.HeaderText = "Doc ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 60
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "SGDirective"
+                            col.HeaderText = "Directive Action"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 180
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "AssignedTo"
+                            col.HeaderText = "Assigned Staff"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 160
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "Notes"
+                            col.HeaderText = "Directive Notes / Remarks"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                        Case "LogUser"
+                            col.HeaderText = "Issued By"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 160
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "Timestamp"
+                            col.HeaderText = "Date / Time Issued"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                    End Select
+                Next
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
+
+        Public Shared Sub FormatUserColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "UserID"
+                            col.HeaderText = "User ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 65
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "RFID_UID"
+                            col.HeaderText = "RFID Badge UID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 140
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            col.DefaultCellStyle.Font = CivicCalmTheme.FontIdentifier
+                        Case "FullName"
+                            col.HeaderText = "Full Name"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                        Case "Role"
+                            col.HeaderText = "Designated Role"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 200
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "IsActive"
+                            col.HeaderText = "Active"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 70
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+                    End Select
+                Next
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
+
+        Public Shared Sub FormatAuditColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "AuditID"
+                            col.HeaderText = "Audit ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 70
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "UserName"
+                            col.HeaderText = "User Account"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 180
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "ActionDescription"
+                            col.HeaderText = "Action Description"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                        Case "Timestamp"
+                            col.HeaderText = "Timestamp (UTC)"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 160
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                    End Select
+                Next
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
+
+        Public Shared Sub FormatRoutingColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "RoutingID"
+                            col.HeaderText = "Log ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 60
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "DocumentID"
+                            col.Visible = False
+                        Case "FromOffice"
+                            col.HeaderText = "Originating Office"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "ToOffice"
+                            col.HeaderText = "Destination Office"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "ActionTaken"
+                            col.HeaderText = "Action Taken"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 140
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "Remarks"
+                            col.HeaderText = "Routing Remarks"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                        Case "RoutedBy"
+                            col.HeaderText = "Routed By"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "Timestamp"
+                            col.HeaderText = "Date Transmitted"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                    End Select
+                Next
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
+
+        Public Shared Sub FormatMovementColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "MovementID"
+                            col.HeaderText = "Move ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 60
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "DocumentID"
+                            col.Visible = False
+                        Case "FromLocation"
+                            col.HeaderText = "Prior Storage Landmark"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 160
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "ToLocation"
+                            col.HeaderText = "New Storage Landmark"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 160
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "MovedBy"
+                            col.HeaderText = "Transferred By"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                        Case "Reason"
+                            col.HeaderText = "Transfer Reason / Justification"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                        Case "Timestamp"
+                            col.HeaderText = "Date Transferred"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                    End Select
+                Next
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
     End Class
 End Namespace

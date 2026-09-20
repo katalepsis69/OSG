@@ -48,5 +48,13 @@ Namespace BTA_OSG.Tests
             Assert.IsFalse(form.Text.Contains("—"))
             form.Dispose()
         End Sub
+
+        <TestMethod>
+        Public Sub FormLogin_HasAcceptAndCancelButtons()
+            Dim dlg As New FormLogin()
+            Assert.IsNotNull(dlg.CancelButton)
+            Assert.AreEqual(CivicCalmTheme.ColorCanvas, dlg.BackColor)
+            dlg.Dispose()
+        End Sub
     End Class
 End Namespace

@@ -1,3 +1,6 @@
+Option Explicit On
+Option Strict On
+
 Imports System
 Imports System.Data
 Imports System.Diagnostics
@@ -28,6 +31,7 @@ Namespace BTA_OSG
         Private dgvMovements As DataGridView
 
         Private pnlOverviewTable As TableLayoutPanel
+        Private btnClose As Button
 
         Public Sub New(id As Integer, parentForm As FormMain)
             DocID = id
@@ -38,94 +42,142 @@ Namespace BTA_OSG
         Private Sub InitializeForm()
             If Not LoadDocData() Then Return
 
-            Me.Text = String.Format("Document Details & Specifications — [{0}] {1}", DocRow("DocCode"), DocRow("Title"))
+            Me.Text = String.Format("Document Details & Specifications : [{0}] {1}", DocRow("DocCode"), DocRow("Title"))
             Me.Size = New Size(1080, 760)
             Me.MinimumSize = New Size(920, 640)
             Me.StartPosition = FormStartPosition.CenterParent
-            Me.Font = New Font("Segoe UI", 9.5F, FontStyle.Regular)
-            Me.BackColor = Color.FromArgb(15, 23, 42)
+            Me.Font = CivicCalmTheme.FontBody
+            Me.BackColor = CivicCalmTheme.ColorCanvas
 
             ' Top Header Panel
             pnlHeader = New Panel With {
                 .Dock = DockStyle.Top,
-                .Height = 135,
-                .BackColor = Color.FromArgb(30, 41, 59),
-                .Padding = New Padding(20, 12, 20, 12)
+                .Height = 125,
+                .BackColor = CivicCalmTheme.ColorSurface,
+                .Padding = New Padding(20, 16, 20, 16)
+            }
+
+            Dim pnlBorderBottom As New Panel With {
+                .Dock = DockStyle.Bottom,
+                .Height = 1,
+                .BackColor = CivicCalmTheme.ColorBorder
+            }
+            pnlHeader.Controls.Add(pnlBorderBottom)
+
+            Dim tblHeader As New TableLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .ColumnCount = 2,
+                .RowCount = 1,
+                .BackColor = CivicCalmTheme.ColorSurface
+            }
+            tblHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 65.0F))
+            tblHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 35.0F))
+
+            Dim pnlTitles As New FlowLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .FlowDirection = FlowDirection.TopDown,
+                .WrapContents = False,
+                .BackColor = CivicCalmTheme.ColorSurface
             }
 
             lblCode = New Label With {
-                .Text = String.Format("DOC CODE: {0}   |   TYPE: {1}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpper()),
-                .Font = New Font("Segoe UI", 12.0F, FontStyle.Bold),
-                .ForeColor = Color.FromArgb(129, 140, 248),
-                .Location = New Point(20, 12),
-                .AutoSize = True
+                .Text = String.Format("DOC CODE: {0}   |   TYPE: {1}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpperInvariant()),
+                .Font = CivicCalmTheme.FontFormTitle,
+                .ForeColor = CivicCalmTheme.ColorPrimary,
+                .AutoSize = True,
+                .Margin = New Padding(0, 0, 0, 4)
             }
 
             lblTitle = New Label With {
                 .Text = DocRow("Title").ToString(),
-                .Font = New Font("Segoe UI", 10.5F, FontStyle.Bold),
-                .ForeColor = Color.White,
-                .Location = New Point(20, 42),
-                .Size = New Size(640, 44)
+                .Font = CivicCalmTheme.FontSectionHeader,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .AutoSize = True,
+                .MaximumSize = New Size(620, 40),
+                .Margin = New Padding(0, 0, 0, 4)
             }
 
             lblStatusBadge = New Label With {
                 .Text = String.Format("Status: {0}  |  Assigned Staff: {1}", DocRow("CurrentStatus"), DocRow("AssignedStaff")),
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
-                .ForeColor = Color.FromArgb(52, 211, 153),
-                .Location = New Point(20, 92),
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .ForeColor = CivicCalmTheme.ColorInkMuted,
                 .AutoSize = True
+            }
+            pnlTitles.Controls.AddRange(New Control() {lblCode, lblTitle, lblStatusBadge})
+
+            Dim pnlActions As New FlowLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .FlowDirection = FlowDirection.RightToLeft,
+                .WrapContents = True,
+                .BackColor = CivicCalmTheme.ColorSurface
             }
 
             Dim btnRoute As New Button With {
-                .Text = "Route Office Step",
-                .Location = New Point(700, 14),
-                .Size = New Size(220, 34),
-                .BackColor = Color.FromArgb(79, 70, 229),
+                .Text = "&Route Document",
+                .Size = New Size(150, 34),
+                .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right
+                .Margin = New Padding(6, 4, 0, 4)
             }
             btnRoute.FlatAppearance.BorderSize = 0
             AddHandler btnRoute.Click, AddressOf OnRouteDocument
 
             Dim btnMove As New Button With {
-                .Text = "Transfer Physical Storage",
-                .Location = New Point(700, 52),
-                .Size = New Size(220, 34),
-                .BackColor = Color.FromArgb(14, 165, 233),
-                .ForeColor = Color.White,
+                .Text = "&Transfer Storage",
+                .Size = New Size(150, 34),
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right
+                .Margin = New Padding(6, 4, 0, 4)
             }
-            btnMove.FlatAppearance.BorderSize = 0
+            btnMove.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnMove.Click, AddressOf OnMoveStorage
 
             Dim btnLaunchPdf As New Button With {
-                .Text = "Launch Google Drive PDF",
-                .Location = New Point(700, 90),
-                .Size = New Size(220, 34),
-                .BackColor = Color.FromArgb(16, 185, 129),
-                .ForeColor = Color.White,
+                .Text = "&Launch PDF",
+                .Size = New Size(120, 34),
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
+                .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right
+                .Margin = New Padding(6, 4, 0, 4)
             }
-            btnLaunchPdf.FlatAppearance.BorderSize = 0
+            btnLaunchPdf.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnLaunchPdf.Click, AddressOf OnLaunchPDF
 
-            pnlHeader.Controls.AddRange(New Control() {lblCode, lblTitle, lblStatusBadge, btnRoute, btnMove, btnLaunchPdf})
+            btnClose = New Button With {
+                .Text = "&Close",
+                .Size = New Size(90, 34),
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .Cursor = Cursors.Hand,
+                .Margin = New Padding(6, 4, 0, 4)
+            }
+            btnClose.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            AddHandler btnClose.Click, Sub() Me.Close()
+
+            Me.CancelButton = btnClose
+
+            pnlActions.Controls.AddRange(New Control() {btnClose, btnLaunchPdf, btnMove, btnRoute})
+
+            tblHeader.Controls.Add(pnlTitles, 0, 0)
+            tblHeader.Controls.Add(pnlActions, 1, 0)
+            pnlHeader.Controls.Add(tblHeader)
+
             Me.Controls.Add(pnlHeader)
 
             ' Tab Navigation
             tabDetail = New TabControl With {
                 .Dock = DockStyle.Fill,
-                .Font = New Font("Segoe UI", 9.5F, FontStyle.Bold),
+                .Font = CivicCalmTheme.FontFieldLabel,
                 .Padding = New Point(12, 6)
             }
 
@@ -134,10 +186,10 @@ Namespace BTA_OSG
             tabRouting = New TabPage(" Office Routing Logs ")
             tabMovements = New TabPage(" Physical Storage Movement History ")
 
-            tabOverview.BackColor = Color.FromArgb(15, 23, 42)
-            tabDirectives.BackColor = Color.FromArgb(15, 23, 42)
-            tabRouting.BackColor = Color.FromArgb(15, 23, 42)
-            tabMovements.BackColor = Color.FromArgb(15, 23, 42)
+            tabOverview.BackColor = CivicCalmTheme.ColorSurface
+            tabDirectives.BackColor = CivicCalmTheme.ColorSurface
+            tabRouting.BackColor = CivicCalmTheme.ColorSurface
+            tabMovements.BackColor = CivicCalmTheme.ColorSurface
 
             SetupOverviewTab()
 
@@ -173,7 +225,8 @@ Namespace BTA_OSG
             Dim pnlScroll As New Panel With {
                 .Dock = DockStyle.Fill,
                 .AutoScroll = True,
-                .Padding = New Padding(20)
+                .Padding = New Padding(20),
+                .BackColor = CivicCalmTheme.ColorSurface
             }
 
             pnlOverviewTable = New TableLayoutPanel With {
@@ -181,7 +234,7 @@ Namespace BTA_OSG
                 .AutoSize = True,
                 .ColumnCount = 2,
                 .CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
-                .BackColor = Color.FromArgb(30, 41, 59),
+                .BackColor = CivicCalmTheme.ColorSurface,
                 .Padding = New Padding(10)
             }
 
@@ -210,21 +263,21 @@ Namespace BTA_OSG
         Private Sub AddOverviewRow(label As String, value As String)
             Dim lblField As New Label With {
                 .Text = label,
-                .Font = New Font("Segoe UI", 9.0F, FontStyle.Bold),
-                .ForeColor = Color.FromArgb(148, 163, 184),
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .ForeColor = CivicCalmTheme.ColorInkMuted,
                 .Dock = DockStyle.Fill,
                 .TextAlign = ContentAlignment.MiddleLeft,
-                .Padding = New Padding(8, 8, 8, 8),
+                .Padding = New Padding(8),
                 .AutoSize = True
             }
 
             Dim lblVal As New Label With {
                 .Text = If(String.IsNullOrWhiteSpace(value), "(None Specified)", value),
-                .Font = New Font("Segoe UI", 9.5F, FontStyle.Regular),
-                .ForeColor = Color.FromArgb(248, 250, 252),
+                .Font = CivicCalmTheme.FontBody,
+                .ForeColor = CivicCalmTheme.ColorInk,
                 .Dock = DockStyle.Fill,
                 .TextAlign = ContentAlignment.MiddleLeft,
-                .Padding = New Padding(8, 8, 8, 8),
+                .Padding = New Padding(8),
                 .AutoSize = True
             }
 
@@ -241,14 +294,14 @@ Namespace BTA_OSG
                 .AllowUserToAddRows = False,
                 .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
             }
-            FormMain.ApplyGridStyle(dgv)
+            DataGridStyler.ApplyCivicStyle(dgv)
             Return dgv
         End Function
 
         Private Sub RefreshGrids()
             If Not LoadDocData() Then Return
 
-            lblCode.Text = String.Format("DOC CODE: {0}   |   TYPE: {1}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpper())
+            lblCode.Text = String.Format("DOC CODE: {0}   |   TYPE: {1}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpperInvariant())
             lblTitle.Text = DocRow("Title").ToString()
             lblStatusBadge.Text = String.Format("Status: {0}  |  Assigned Staff: {1}", DocRow("CurrentStatus"), DocRow("AssignedStaff"))
 

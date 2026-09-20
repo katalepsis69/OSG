@@ -36,7 +36,7 @@
 - Consumes: None
 - Produces: Cleaned project files enforcing `Option Strict On` and `Option Explicit On`.
 
-- [ ] **Step 1: Delete dead legacy files and unreferenced forms**
+- [x] **Step 1: Delete dead legacy files and unreferenced forms**
 
 Run PowerShell commands:
 ```powershell
@@ -44,7 +44,7 @@ Remove-Item -Path "legacy/BTA_OSG_System.vb", "legacy/BTA_OSG_DB.sql", "legacy/B
 Remove-Item -Path "src/BTA_OSG_DocumentTracking/Forms/FormDirectiveEntry.vb", "src/BTA_OSG_DocumentTracking/Forms/FormSettings.vb" -Force
 ```
 
-- [ ] **Step 2: Update BTA_OSG_DocumentTracking.vbproj with strict compilation options**
+- [x] **Step 2: Update BTA_OSG_DocumentTracking.vbproj with strict compilation options**
 
 Update `src/BTA_OSG_DocumentTracking/BTA_OSG_DocumentTracking.vbproj`:
 ```xml
@@ -78,7 +78,7 @@ Update `src/BTA_OSG_DocumentTracking/BTA_OSG_DocumentTracking.vbproj`:
 </Project>
 ```
 
-- [ ] **Step 3: Update BTA_OSG_DocumentTracking.Tests.vbproj with strict compilation options**
+- [x] **Step 3: Update BTA_OSG_DocumentTracking.Tests.vbproj with strict compilation options**
 
 Update `tests/BTA_OSG_DocumentTracking.Tests/BTA_OSG_DocumentTracking.Tests.vbproj`:
 ```xml
@@ -110,12 +110,12 @@ Update `tests/BTA_OSG_DocumentTracking.Tests/BTA_OSG_DocumentTracking.Tests.vbpr
 </Project>
 ```
 
-- [ ] **Step 4: Run build to catalog any strict compilation errors**
+- [x] **Step 4: Run build to catalog any strict compilation errors**
 
 Run: `dotnet build src/BTA_OSG_DocumentTracking -c Debug`
 Expected: Output will highlight late-binding locations in services to be strongly typed in Task 2.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```powershell
 git add -A
@@ -143,7 +143,7 @@ git commit -m "chore: purge legacy bloat and enable Option Strict On in project 
 - Consumes: Models (`User`, `Document`, `ActionDirective`, `RoutingLog`, `DocumentMovement`, `RfidCard`, `SessionContext`)
 - Produces: Strongly typed service methods with zero `Object` references and zero late-bound invocations.
 
-- [ ] **Step 1: Write unit tests for strongly typed services**
+- [x] **Step 1: Write unit tests for strongly typed services**
 
 Create `tests/BTA_OSG_DocumentTracking.Tests/ServiceTypingTests.vb`:
 ```vb
@@ -193,7 +193,7 @@ Namespace BTA_OSG.Tests
 End Namespace
 ```
 
-- [ ] **Step 2: Update AuthenticationService.vb with strong types**
+- [x] **Step 2: Update AuthenticationService.vb with strong types**
 
 Replace `src/BTA_OSG_DocumentTracking/Security/AuthenticationService.vb`:
 ```vb
@@ -278,7 +278,7 @@ Namespace BTA_OSG
 End Namespace
 ```
 
-- [ ] **Step 3: Update DocumentService, DirectiveService, RoutingService, StorageService, SearchService**
+- [x] **Step 3: Update DocumentService, DirectiveService, RoutingService, StorageService, SearchService**
 
 Ensure all service classes use explicit model types (`Document`, `ActionDirective`, `RoutingLog`, `DocumentMovement`, `User`) and call strongly-typed repository methods. Update `DocumentRepository.vb` to include `SearchDocuments` overload:
 ```vb
@@ -287,12 +287,12 @@ Public Function SearchDocuments(hasViewAll As Boolean, userId As Integer, titleL
 End Function
 ```
 
-- [ ] **Step 4: Run tests to verify strong typing**
+- [x] **Step 4: Run tests to verify strong typing**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests`
 Expected: PASS with 0 warnings under `Option Strict On`.
 
-- [ ] **Step 5: Commit changes**
+- [x] **Step 5: Commit changes**
 
 ```powershell
 git add src/ tests/
@@ -312,7 +312,7 @@ git commit -m "fix(arch): strongly type all services and repositories under Opti
 - Consumes: `DESIGN.md` §1 Optical Surfaces, §2 Typography Ladder, §4 DataGridView Standards
 - Produces: Shared styling definitions and `DataGridStyler.ApplyCivicStyle(dgv As DataGridView)`.
 
-- [ ] **Step 1: Write unit test for CivicCalmTheme tokens**
+- [x] **Step 1: Write unit test for CivicCalmTheme tokens**
 
 Create `tests/BTA_OSG_DocumentTracking.Tests/ThemeTests.vb`:
 ```vb
@@ -349,12 +349,12 @@ Namespace BTA_OSG.Tests
 End Namespace
 ```
 
-- [ ] **Step 2: Run test to verify it fails before implementation**
+- [x] **Step 2: Run test to verify it fails before implementation**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests --filter FullyQualifiedName~ThemeTests`
 Expected: FAIL (types do not exist yet).
 
-- [ ] **Step 3: Create CivicCalmTheme.vb**
+- [x] **Step 3: Create CivicCalmTheme.vb**
 
 Create `src/BTA_OSG_DocumentTracking/UI/CivicCalmTheme.vb`:
 ```vb
@@ -398,7 +398,7 @@ Namespace BTA_OSG
 End Namespace
 ```
 
-- [ ] **Step 4: Create DataGridStyler.vb**
+- [x] **Step 4: Create DataGridStyler.vb**
 
 Create `src/BTA_OSG_DocumentTracking/UI/DataGridStyler.vb`:
 ```vb
@@ -453,12 +453,12 @@ Namespace BTA_OSG
 End Namespace
 ```
 
-- [ ] **Step 5: Run tests to verify passing status**
+- [x] **Step 5: Run tests to verify passing status**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests --filter FullyQualifiedName~ThemeTests`
 Expected: PASS.
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```powershell
 git add src/BTA_OSG_DocumentTracking/UI/ tests/BTA_OSG_DocumentTracking.Tests/ThemeTests.vb
@@ -476,7 +476,7 @@ git commit -m "feat(ui): implement CivicCalmTheme tokens and DataGridStyler"
 - Consumes: `CivicCalmTheme`, `DataGridStyler`, `AppStartup`
 - Produces: Fully compliant Desktop Civic Calm main form with 3-tier surfaces, StatusStrip, ErrorProvider, and TableLayoutPanels.
 
-- [ ] **Step 1: Write integration test for FormMain initialization**
+- [x] **Step 1: Write integration test for FormMain initialization**
 
 Add to `tests/BTA_OSG_DocumentTracking.Tests/ServiceTypingTests.vb`:
 ```vb
@@ -489,12 +489,12 @@ Public Sub FormMain_InitializesWithCivicCalmColors()
 End Sub
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests --filter FullyQualifiedName~FormMain_InitializesWithCivicCalmColors`
 Expected: FAIL (FormMain still uses `#0F172A`).
 
-- [ ] **Step 3: Refactor FormMain.vb layout and theme**
+- [x] **Step 3: Refactor FormMain.vb layout and theme**
 
 Refactor `src/BTA_OSG_DocumentTracking/Forms/FormMain.vb` with:
 1. `Me.BackColor = CivicCalmTheme.ColorCanvas` (`#F4F6F8`).
@@ -507,17 +507,17 @@ Refactor `src/BTA_OSG_DocumentTracking/Forms/FormMain.vb` with:
 8. Replace every occurrence of em-dash (`—`) with a colon or hyphen.
 9. Wire data operations to `AppStartup.DocService`, `AppStartup.DirectiveService`, `AppStartup.AuthService`, falling back to `EmbeddedDB` when SQL Server is offline.
 
-- [ ] **Step 4: Run test to verify passing status**
+- [x] **Step 4: Run test to verify passing status**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests --filter FullyQualifiedName~FormMain_InitializesWithCivicCalmColors`
 Expected: PASS.
 
-- [ ] **Step 5: Run automated self-check**
+- [x] **Step 5: Run automated self-check**
 
 Run: `dotnet run --project src/BTA_OSG_DocumentTracking -- /test`
 Expected: ALL 12 TESTS PASS.
 
-- [ ] **Step 6: Commit changes**
+- [x] **Step 6: Commit changes**
 
 ```powershell
 git add src/BTA_OSG_DocumentTracking/Forms/FormMain.vb
@@ -538,7 +538,7 @@ git commit -m "refactor(ui): apply Desktop Civic Calm theme, High DPI layouts, a
 - Consumes: `CivicCalmTheme`, `DataGridStyler`
 - Produces: Civic Calm dialogs with `AcceptButton`, `CancelButton`, Alt mnemonics, and clean RFID keystroke capture.
 
-- [ ] **Step 1: Write tests for child dialog key bindings**
+- [x] **Step 1: Write tests for child dialog key bindings**
 
 Add to `tests/BTA_OSG_DocumentTracking.Tests/ServiceTypingTests.vb`:
 ```vb
@@ -551,35 +551,35 @@ Public Sub FormLogin_HasAcceptAndCancelButtons()
 End Sub
 ```
 
-- [ ] **Step 2: Run test to verify failure**
+- [x] **Step 2: Run test to verify failure**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests --filter FullyQualifiedName~FormLogin_HasAcceptAndCancelButtons`
 Expected: FAIL (CancelButton is currently Nothing).
 
-- [ ] **Step 3: Refactor FormLogin.vb**
+- [x] **Step 3: Refactor FormLogin.vb**
 - Apply `CivicCalmTheme.ColorCanvas` and `ColorSurface`.
 - Remove off-screen textbox hack at `(-100, -100)`; enable `KeyPreview = True` on the Form.
 - Set `Me.CancelButton = btnCancel` (`&Cancel`, Alt+C).
 - Use `TableLayoutPanel` for button positioning.
 
-- [ ] **Step 4: Refactor FormDocumentDetail.vb**
+- [x] **Step 4: Refactor FormDocumentDetail.vb**
 - Remove em-dash from `Me.Text = String.Format("Document Details and Specifications: [{0}] {1}", ...)`
 - Set `Me.CancelButton = btnClose` (`&Close`, Alt+C).
 - Apply `DataGridStyler.ApplyCivicStyle` to Directives, Routing, and Movement DataGridViews.
 - Apply `CivicCalmTheme.ColorSurface` to tab controls and panels.
 
-- [ ] **Step 5: Refactor FormRouteDocument.vb and FormMoveStorage.vb**
+- [x] **Step 5: Refactor FormRouteDocument.vb and FormMoveStorage.vb**
 - Apply `CivicCalmTheme` surfaces and fonts.
 - Replace manual X/Y positioning with `TableLayoutPanel`.
 - Set `Me.AcceptButton = btnRoute` / `btnMove` and `Me.CancelButton = btnCancel`.
 - Add Alt mnemonics: `&Route Document` (Alt+R), `&Transfer Storage` (Alt+T), `&Cancel` (Alt+C).
 
-- [ ] **Step 6: Run tests to verify passing status**
+- [x] **Step 6: Run tests to verify passing status**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests`
 Expected: 100% PASS.
 
-- [ ] **Step 7: Commit changes**
+- [x] **Step 7: Commit changes**
 
 ```powershell
 git add src/BTA_OSG_DocumentTracking/Forms/
@@ -597,22 +597,22 @@ git commit -m "refactor(ui): align child forms with Civic Calm theme, Accept/Can
 - Consumes: Remediated codebase
 - Produces: Verified production build and zero-defect Delivery Gate pass.
 
-- [ ] **Step 1: Execute test suite**
+- [x] **Step 1: Execute test suite**
 
 Run: `dotnet test tests/BTA_OSG_DocumentTracking.Tests`
 Expected: Total: 14+, Failed: 0, Passed: 14+, 100% passing.
 
-- [ ] **Step 2: Execute automated self-check**
+- [x] **Step 2: Execute automated self-check**
 
 Run: `dotnet run --project src/BTA_OSG_DocumentTracking -- /test`
 Expected: Output shows all 12 tests passing with exit code 0.
 
-- [ ] **Step 3: Verify Zero Em-Dash rule**
+- [x] **Step 3: Verify Zero Em-Dash rule**
 
 Run: `git grep "—" src/`
 Expected: 0 matches returned.
 
-- [ ] **Step 4: Verify contrast compliance with contrast-check.py**
+- [x] **Step 4: Verify contrast compliance with contrast-check.py**
 
 Run PowerShell commands:
 ```powershell
@@ -622,12 +622,12 @@ python .agents/skills/antislop-human/contrast-check.py "#55606A" "#F4F6F8"
 ```
 Expected: All return PASS (WCAG 2.2 AA / AAA).
 
-- [ ] **Step 5: Verify self-contained release build**
+- [x] **Step 5: Verify self-contained release build**
 
 Run: `dotnet publish src/BTA_OSG_DocumentTracking -c Release -r win-x64 --self-contained true`
 Expected: Clean build with 0 warnings, producing `BTA_OSG_DocumentTracking.exe`.
 
-- [ ] **Step 6: Final commit and tag**
+- [x] **Step 6: Final commit and tag**
 
 ```powershell
 git commit --allow-empty -m "release: verified Desktop Civic Calm Path A v2.1 compliance"

@@ -6,6 +6,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace></RootNamespace>
     <HighDpiMode>SystemAware</HighDpiMode>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionStrict>On</OptionStrict>
+    <OptionCompare>Binary</OptionCompare>
+    <OptionInfer>On</OptionInfer>
   </PropertyGroup>
 
   <ItemGroup>

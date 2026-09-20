@@ -5,6 +5,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <RootNamespace></RootNamespace>
     <IsPackable>false</IsPackable>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionStrict>On</OptionStrict>
+    <OptionCompare>Binary</OptionCompare>
+    <OptionInfer>On</OptionInfer>
   </PropertyGroup>
 
   <ItemGroup>

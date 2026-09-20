@@ -291,8 +291,7 @@ Namespace BTA_OSG
             Dim dgv As New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgv)
             Return dgv

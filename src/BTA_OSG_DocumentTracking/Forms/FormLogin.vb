@@ -12,8 +12,6 @@ Namespace BTA_OSG
 
         <System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)>
         Public Property ScannedUID As String = ""
-        <System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)>
-        Public Property AuthenticatedSession As SessionContext
 
         Private lblScanStatus As Label
         Private ReadOnly _rfidBuffer As New StringBuilder()

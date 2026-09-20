@@ -13,7 +13,6 @@ Namespace BTA_OSG
         Inherits Form
 
         Public CurrentUser As DataRow = Nothing
-        Public CurrentSession As SessionContext = Nothing
 
         ' Layout Panels
         Private pnlSidebar As Panel
@@ -277,10 +276,6 @@ Namespace BTA_OSG
             RefreshActiveTabGrid()
         End Sub
 
-        Public Shared Sub ApplyGridStyle(dgv As DataGridView)
-            DataGridStyler.ApplyCivicStyle(dgv)
-        End Sub
-
         Private Sub SetupHeader()
             pnlHeader = New Panel With {
                 .Dock = DockStyle.Top,
@@ -381,11 +376,11 @@ Namespace BTA_OSG
         Public Sub AuthenticateUser(uid As String)
             If String.IsNullOrEmpty(uid) Then
                 CurrentUser = Nothing
-                CurrentSession = Nothing
                 lblUserBadge.Text = "[ RFID Logged Out: Access Restricted ]"
                 lblUserBadge.ForeColor = CivicCalmTheme.ColorDanger
                 lblStatusMessage.Text = "User logged out."
             Else
+                Dim maskedUid As String = If(uid.Length > 4, "****" & uid.Substring(uid.Length - 4), uid)
                 Dim user = EmbeddedDB.AuthenticateRFID(uid)
                 If user IsNot Nothing Then
                     CurrentUser = user
@@ -393,10 +388,10 @@ Namespace BTA_OSG
                     lblUserBadge.Text = String.Format("AUTHENTICATED: {0} [{1}] - {2}", user("FullName").ToString().ToUpperInvariant(), user("Role").ToString().ToUpperInvariant(), If(isGlobal, "GLOBAL ACCESS", "STAFF VIEW"))
                     lblUserBadge.ForeColor = CivicCalmTheme.ColorPrimary
                     lblStatusMessage.Text = "Authenticated: " & user("FullName").ToString()
-                    EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Authenticated [UID: " & uid & "]")
+                    EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Authenticated [Card: " & maskedUid & "]")
                 Else
-                    lblStatusMessage.Text = "Access Denied: Unrecognized RFID card [" & uid & "]"
-                    MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & uid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    lblStatusMessage.Text = "Access Denied: Unrecognized RFID card [" & maskedUid & "]"
+                    MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & maskedUid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 End If
             End If
             PopulateStaffDropdowns()
@@ -452,8 +447,7 @@ Namespace BTA_OSG
             dgvDashRecent = New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgvDashRecent)
             AddHandler dgvDashRecent.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenSelectedDocumentDetail(dgvDashRecent)
@@ -525,18 +519,18 @@ Namespace BTA_OSG
                 .BackColor = CivicCalmTheme.ColorSurface
             }
 
-            txtTitle = New TextBox With {.Height = 28, .Text = "Draft Resolution on BTA Regional Governance", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            cmbDocType = New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Height = 28, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
+            txtTitle = New TextBox With {.Height = 28, .Text = "", .TabIndex = 1, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            cmbDocType = New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Height = 28, .TabIndex = 2, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
             cmbDocType.Items.AddRange(New Object() {"Resolution", "Parliament Bill", "Committee Report", "Executive Communication", "Memorandum", "Endorsement", "Journal Entry"})
             cmbDocType.SelectedIndex = 0
 
-            txtOrigin = New TextBox With {.Height = 28, .Text = "Office of MP Yasser", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtDest = New TextBox With {.Height = 28, .Text = "Office of the Secretary-General", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtCabinet = New TextBox With {.Height = 28, .Text = "CAB-A", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtShelf = New TextBox With {.Height = 28, .Text = "S-2", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtBox = New TextBox With {.Height = 28, .Text = "BOX-03", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtGDrive = New TextBox With {.Height = 28, .Text = "https://drive.google.com/file/d/bta-doc-2026/view", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            cmbAssignedStaff = New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Height = 28, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
+            txtOrigin = New TextBox With {.Height = 28, .Text = "", .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtDest = New TextBox With {.Height = 28, .Text = "", .TabIndex = 4, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtCabinet = New TextBox With {.Height = 28, .Text = "", .TabIndex = 5, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtShelf = New TextBox With {.Height = 28, .Text = "", .TabIndex = 6, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtBox = New TextBox With {.Height = 28, .Text = "", .TabIndex = 7, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtGDrive = New TextBox With {.Height = 28, .Text = "", .TabIndex = 8, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            cmbAssignedStaff = New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Height = 28, .TabIndex = 9, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
 
             Dim pnlFormFlow As New FlowLayoutPanel With {
                 .Dock = DockStyle.Top,
@@ -615,8 +609,7 @@ Namespace BTA_OSG
             dgvRegistry = New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgvRegistry)
             AddHandler dgvRegistry.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenSelectedDocumentDetail(dgvRegistry)
@@ -694,7 +687,7 @@ Namespace BTA_OSG
             cmbDirective.SelectedIndex = 0
 
             cmbDirAssign = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
-            txtDirNotes = New TextBox With {.Dock = DockStyle.Fill, .Text = "Priority routing per Secretary-General directive.", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtDirNotes = New TextBox With {.Dock = DockStyle.Fill, .Text = "", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             btnApplyDirective = New Button With {
                 .Text = "&Log Action Directive",
@@ -730,8 +723,7 @@ Namespace BTA_OSG
             dgvDirectives = New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgvDirectives)
 
@@ -756,7 +748,17 @@ Namespace BTA_OSG
             End If
 
             Dim docStr = cmbDirDocs.SelectedItem.ToString()
-            Dim docId As Integer = CInt(docStr.Split(":"c)(0).Replace("ID ", "").Trim())
+            Dim docId As Integer = 0
+            Dim colonIdx = docStr.IndexOf(":"c)
+            If colonIdx > 0 Then
+                Dim idPart = docStr.Substring(0, colonIdx).Replace("ID ", "").Trim()
+                Integer.TryParse(idPart, docId)
+            End If
+            If docId <= 0 Then
+                lblStatusMessage.Text = "Validation Error: Please select a valid document."
+                Return
+            End If
+
             Dim directive = cmbDirective.SelectedItem.ToString()
             Dim assign = If(cmbDirAssign.SelectedItem IsNot Nothing, cmbDirAssign.SelectedItem.ToString(), "")
 
@@ -764,6 +766,7 @@ Namespace BTA_OSG
             EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), String.Format("Applied SG Directive [{0}] to Doc ID #{1}", directive, docId))
 
             lblStatusMessage.Text = String.Format("Action Directive Logged: [{0}] applied to Doc ID #{1}", directive, docId)
+            txtDirNotes.Text = ""
             RefreshActiveTabGrid()
         End Sub
 
@@ -871,8 +874,7 @@ Namespace BTA_OSG
             dgvSearch = New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgvSearch)
             AddHandler dgvSearch.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenSelectedDocumentDetail(dgvSearch)
@@ -898,6 +900,7 @@ Namespace BTA_OSG
                 dgvSearch.DataSource = dv.ToTable()
                 lblStatusMessage.Text = String.Format("Search complete for '{0}'.", txtSearchKey.Text.Trim())
             End If
+            DataGridStyler.FormatDocumentColumns(dgvSearch)
 
             If dgvSearch.Rows.Count = 0 Then
                 DataGridStyler.SetEmptyState(dgvSearch, lblSearchWatermark, "No documents match the current filter criteria. Press Alt+C to clear filters.")
@@ -967,16 +970,17 @@ Namespace BTA_OSG
                 .Margin = New Padding(0, 0, 0, 12)
             }
 
-            txtNewUserName = New TextBox With {.Width = 320, .Height = 28, .Text = "New Staff Member", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            cmbNewUserRole = New ComboBox With {.Width = 320, .Height = 28, .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
+            txtNewUserName = New TextBox With {.Width = 320, .Height = 28, .Text = "", .TabIndex = 1, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            cmbNewUserRole = New ComboBox With {.Width = 320, .Height = 28, .TabIndex = 2, .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
             cmbNewUserRole.Items.AddRange(New Object() {"Secretary-General", "OSG Chief", "System Administrator", "Administrative Staff"})
             cmbNewUserRole.SelectedIndex = 3
 
-            txtNewUserUID = New TextBox With {.Width = 320, .Height = 28, .Text = "44D4E555", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtNewUserUID = New TextBox With {.Width = 320, .Height = 28, .Text = "", .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             btnAddUser = New Button With {
                 .Text = "&Save User & RFID Smart Card",
                 .Size = New Size(320, 42),
+                .TabIndex = 4,
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
@@ -1007,8 +1011,7 @@ Namespace BTA_OSG
             dgvUsers = New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgvUsers)
 
@@ -1022,21 +1025,37 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub OnAddUser(sender As Object, e As EventArgs)
+            epValidation.Clear()
             If CurrentUser Is Nothing OrElse CurrentUser("Role").ToString() <> "System Administrator" Then
                 lblStatusMessage.Text = "Access Denied: System Administrator privileges required."
                 MessageBox.Show("System Administrator Privileges Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
 
-            If String.IsNullOrWhiteSpace(txtNewUserName.Text) OrElse String.IsNullOrWhiteSpace(txtNewUserUID.Text) Then
-                lblStatusMessage.Text = "Validation Error: Please enter Full Name and RFID Card UID."
+            Dim cleanName = txtNewUserName.Text.Trim()
+            Dim cleanUid = txtNewUserUID.Text.Trim()
+
+            If String.IsNullOrWhiteSpace(cleanName) Then
+                epValidation.SetError(txtNewUserName, "Please enter Full Name.")
+                lblStatusMessage.Text = "Validation Error: Full Name is required."
+                txtNewUserName.Focus()
                 Return
             End If
 
-            EmbeddedDB.AddUser(txtNewUserUID.Text.Trim(), txtNewUserName.Text.Trim(), cmbNewUserRole.SelectedItem.ToString())
-            EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), String.Format("Registered/Updated User [{0}] Role: {1} RFID: {2}", txtNewUserName.Text.Trim(), cmbNewUserRole.SelectedItem, txtNewUserUID.Text.Trim()))
+            If String.IsNullOrWhiteSpace(cleanUid) Then
+                epValidation.SetError(txtNewUserUID, "Please enter RFID Card UID.")
+                lblStatusMessage.Text = "Validation Error: RFID Card UID is required."
+                txtNewUserUID.Focus()
+                Return
+            End If
 
-            lblStatusMessage.Text = String.Format("User Registered: {0} [{1}]", txtNewUserName.Text.Trim(), cmbNewUserRole.SelectedItem.ToString())
+            Dim maskedUid = If(cleanUid.Length > 4, "****" & cleanUid.Substring(cleanUid.Length - 4), cleanUid)
+            EmbeddedDB.AddUser(cleanUid, cleanName, cmbNewUserRole.SelectedItem.ToString())
+            EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), String.Format("Registered/Updated User [{0}] Role: {1} RFID: {2}", cleanName, cmbNewUserRole.SelectedItem, maskedUid))
+
+            lblStatusMessage.Text = String.Format("User Registered: {0} [{1}]", cleanName, cmbNewUserRole.SelectedItem.ToString())
+            txtNewUserName.Text = ""
+            txtNewUserUID.Text = ""
             PopulateStaffDropdowns()
             RefreshActiveTabGrid()
         End Sub
@@ -1119,8 +1138,7 @@ Namespace BTA_OSG
             dgvAudit = New DataGridView With {
                 .Dock = DockStyle.Fill,
                 .ReadOnly = True,
-                .AllowUserToAddRows = False,
-                .AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill
+                .AllowUserToAddRows = False
             }
             DataGridStyler.ApplyCivicStyle(dgvAudit)
 
@@ -1189,6 +1207,7 @@ Namespace BTA_OSG
             lblStatActiveRoute.Text = EmbeddedDB.DataSet.Tables("RoutingLogs").Rows.Count.ToString()
             lblStatVaultStorage.Text = EmbeddedDB.DataSet.Tables("Movements").Rows.Count.ToString()
             dgvDashRecent.DataSource = visibleDocs
+            DataGridStyler.FormatDocumentColumns(dgvDashRecent)
             If dgvDashRecent.Rows.Count = 0 Then
                 DataGridStyler.SetEmptyState(dgvDashRecent, lblDashWatermark)
             Else
@@ -1198,6 +1217,7 @@ Namespace BTA_OSG
             Select Case activeNavIndex
                 Case 1 ' Registry View
                     dgvRegistry.DataSource = visibleDocs
+                    DataGridStyler.FormatDocumentColumns(dgvRegistry)
                     If dgvRegistry.Rows.Count = 0 Then
                         DataGridStyler.SetEmptyState(dgvRegistry, lblRegistryWatermark)
                     Else
@@ -1220,6 +1240,7 @@ Namespace BTA_OSG
                     lblStatusCount.Text = dgvDirectives.Rows.Count.ToString() & " Directives"
                 Case 3 ' Search View
                     dgvSearch.DataSource = visibleDocs
+                    DataGridStyler.FormatDocumentColumns(dgvSearch)
                     If dgvSearch.Rows.Count = 0 Then
                         DataGridStyler.SetEmptyState(dgvSearch, lblSearchWatermark)
                     Else

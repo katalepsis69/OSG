@@ -36,10 +36,6 @@ Namespace BTA_OSG
             Return list
         End Function
 
-        Public Function GetByDocId(docId As Integer) As List(Of ActionDirective)
-            Return GetByDocumentId(docId)
-        End Function
-
         Public Function Insert(directive As ActionDirective) As Integer
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "INSERT INTO tbl_ActionDirectives (DocumentID, DirectiveTypeID, DirectiveText, IssuedByUserID, IssuedAtUTC, IsActive, Remarks) " &

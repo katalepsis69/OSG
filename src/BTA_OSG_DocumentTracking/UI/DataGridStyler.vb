@@ -13,7 +13,8 @@ Namespace BTA_OSG
         Public Shared Sub ApplyCivicStyle(dgv As DataGridView)
             If dgv Is Nothing Then Return
 
-            dgv.AutoGenerateColumns = False
+            dgv.AutoGenerateColumns = True
+            dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
             dgv.EnableHeadersVisualStyles = False
             dgv.BackgroundColor = CivicCalmTheme.ColorSurface
             dgv.BorderStyle = BorderStyle.FixedSingle
@@ -87,6 +88,68 @@ Namespace BTA_OSG
             If dgv IsNot Nothing Then
                 dgv.Visible = True
             End If
+        End Sub
+
+        Public Shared Sub FormatDocumentColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "DocumentID"
+                            col.HeaderText = "ID"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 55
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "DocCode"
+                            col.HeaderText = "Document Code"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 140
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            col.DefaultCellStyle.Font = CivicCalmTheme.FontIdentifier
+                        Case "DocType"
+                            col.HeaderText = "Classification"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 140
+                        Case "Title"
+                            col.HeaderText = "Document Title / Subject"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                        Case "OriginatingOffice"
+                            col.HeaderText = "Origin Office"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                        Case "DestinationOffice"
+                            col.HeaderText = "Destination"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                        Case "CurrentStatus"
+                            col.HeaderText = "Status"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 130
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+                        Case "AssignedStaff"
+                            col.HeaderText = "Assigned Staff"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 140
+                        Case "DateReceived"
+                            col.HeaderText = "Date Received"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 140
+                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                        Case "GDriveURL"
+                            col.HeaderText = "Soft Copy Link"
+                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                            col.Width = 150
+                        Case "CabinetID", "ShelfNo", "BoxCode"
+                            col.Visible = False
+                    End Select
+                Next
+            Finally
+                dgv.ResumeLayout()
+            End Try
         End Sub
     End Class
 End Namespace

@@ -48,10 +48,6 @@ Namespace BTA_OSG
             Return doc
         End Function
 
-        Public Function RegisterDocument(title As String, typeCode As String, originOffice As Integer, destOffice As Integer, receivedDate As DateTime, googleDriveUrl As String, remarks As String, registeredByUserId As Integer) As Document
-            Return RegisterDocument(title, typeCode, originOffice.ToString(), destOffice.ToString(), receivedDate, googleDriveUrl, remarks, registeredByUserId)
-        End Function
-
         Public Sub UpdateDocument(doc As Document, modifiedBy As Integer)
             _docRepo.Update(doc, modifiedBy)
             If _auditService IsNot Nothing Then

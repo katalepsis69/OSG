@@ -50,9 +50,9 @@ Namespace BTA_OSG
             tblLayout.RowStyles.Add(New RowStyle(SizeType.Absolute, 60.0F))
             tblLayout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50.0F))
 
-            txtFromLoc = New TextBox With {.Dock = DockStyle.Fill, .Text = currentLoc, .ReadOnly = True, .BackColor = CivicCalmTheme.ColorWell, .ForeColor = CivicCalmTheme.ColorInkMuted, .BorderStyle = BorderStyle.FixedSingle}
-            txtToLoc = New TextBox With {.Dock = DockStyle.Fill, .Text = "CAB-A/S-3/BOX-05", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtReason = New TextBox With {.Dock = DockStyle.Fill, .Multiline = True, .Text = "Archival reorganization per OSG directive.", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtFromLoc = New TextBox With {.Dock = DockStyle.Fill, .Text = currentLoc, .ReadOnly = True, .TabIndex = 1, .BackColor = CivicCalmTheme.ColorWell, .ForeColor = CivicCalmTheme.ColorInkMuted, .BorderStyle = BorderStyle.FixedSingle}
+            txtToLoc = New TextBox With {.Dock = DockStyle.Fill, .Text = "", .TabIndex = 2, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtReason = New TextBox With {.Dock = DockStyle.Fill, .Multiline = True, .Text = "", .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             Dim flwButtons As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,

@@ -52,10 +52,10 @@ Namespace BTA_OSG
             tblLayout.RowStyles.Add(New RowStyle(SizeType.Absolute, 60.0F))
             tblLayout.RowStyles.Add(New RowStyle(SizeType.Absolute, 50.0F))
 
-            txtFrom = New TextBox With {.Dock = DockStyle.Fill, .Text = currentOffice, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtTo = New TextBox With {.Dock = DockStyle.Fill, .Text = "Speaker's Office", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtAction = New TextBox With {.Dock = DockStyle.Fill, .Text = "FOR_SIGNATURE", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtRemarks = New TextBox With {.Dock = DockStyle.Fill, .Multiline = True, .Text = "Transmitted for Speaker approval.", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtFrom = New TextBox With {.Dock = DockStyle.Fill, .Text = currentOffice, .TabIndex = 1, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtTo = New TextBox With {.Dock = DockStyle.Fill, .Text = "", .TabIndex = 2, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtAction = New TextBox With {.Dock = DockStyle.Fill, .Text = "FOR_TRANSMITTAL", .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtRemarks = New TextBox With {.Dock = DockStyle.Fill, .Multiline = True, .Text = "", .TabIndex = 4, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             Dim flwButtons As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,

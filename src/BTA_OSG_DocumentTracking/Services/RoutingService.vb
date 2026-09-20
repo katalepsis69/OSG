@@ -43,10 +43,6 @@ Namespace BTA_OSG
             Return routingLog
         End Function
 
-        Public Function RouteDocument(docId As Integer, fromStatusId As Integer, toStatusCode As String, fromOffice As Integer, toOffice As Integer, remarks As String, routedByUserId As Integer) As RoutingLog
-            Return RouteDocument(docId, fromStatusId, toStatusCode, fromOffice.ToString(), toOffice.ToString(), remarks, routedByUserId)
-        End Function
-
         Public Function GetRoutingHistory(docId As Integer) As List(Of RoutingLog)
             Return _routingRepo.GetByDocumentId(docId)
         End Function

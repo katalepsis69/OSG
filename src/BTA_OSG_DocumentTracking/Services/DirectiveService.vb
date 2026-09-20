@@ -51,7 +51,7 @@ Namespace BTA_OSG
         End Function
 
         Public Function GetDirectives(docId As Integer) As List(Of ActionDirective)
-            Return _directiveRepo.GetByDocId(docId)
+            Return _directiveRepo.GetByDocumentId(docId)
         End Function
     End Class
 End Namespace

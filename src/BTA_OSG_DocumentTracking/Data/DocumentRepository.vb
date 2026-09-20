@@ -113,11 +113,11 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
                     cmd.Parameters.AddWithValue("@DocumentTypeID", doc.DocumentTypeID)
                     cmd.Parameters.AddWithValue("@StatusID", doc.StatusID)
-                    cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice IsNot Nothing, CType(doc.OriginOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice IsNot Nothing, CType(doc.DestinationOffice, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ReceivedDate", If(CType(doc.ReceivedDate, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks IsNot Nothing, CType(doc.Remarks, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@CreatedByUserID", doc.RegisteredByUserID)
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
@@ -134,13 +134,35 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
                     cmd.Parameters.AddWithValue("@DocumentTypeID", doc.DocumentTypeID)
                     cmd.Parameters.AddWithValue("@StatusID", doc.StatusID)
-                    cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice IsNot Nothing, CType(doc.OriginOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice IsNot Nothing, CType(doc.DestinationOffice, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ReceivedDate", If(CType(doc.ReceivedDate, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ModifiedByUserID", If(CType(modifiedBy, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks IsNot Nothing, CType(doc.Remarks, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ModifiedByUserID", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", doc.DocumentID)
+                    cmd.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
+
+        Public Sub UpdateStatus(docId As Integer, statusId As Integer)
+            Using conn = _connectionFactory.CreateConnection()
+                Dim sql = "UPDATE tbl_Documents SET StatusID = @statusId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
+                Using cmd = New SqlCommand(sql, conn)
+                    cmd.Parameters.AddWithValue("@statusId", statusId)
+                    cmd.Parameters.AddWithValue("@id", docId)
+                    cmd.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
+
+        Public Sub UpdateStorageLocation(docId As Integer, storageLocationId As Integer)
+            Using conn = _connectionFactory.CreateConnection()
+                Dim sql = "UPDATE tbl_Documents SET CurrentStorageLocationID = @storageId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
+                Using cmd = New SqlCommand(sql, conn)
+                    cmd.Parameters.AddWithValue("@storageId", storageLocationId)
+                    cmd.Parameters.AddWithValue("@id", docId)
                     cmd.ExecuteNonQuery()
                 End Using
             End Using
@@ -151,7 +173,7 @@ Namespace BTA_OSG
                 Dim sql = "UPDATE tbl_Documents SET IsDeleted = 1, DeletedByUserID = @deletedBy, DeletedAtUTC = SYSUTCDATETIME(), DeletionReason = @reason WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@deletedBy", deletedBy)
-                    cmd.Parameters.AddWithValue("@reason", If(reason, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@reason", If(reason IsNot Nothing, CType(reason, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", docId)
                     cmd.ExecuteNonQuery()
                 End Using
@@ -186,14 +208,18 @@ Namespace BTA_OSG
                            "VALUES (@DocumentID, @AssignedUserID, @AssignedByUserID, @AssignedAtUTC, @Remarks)"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@DocumentID", assignment.DocumentID)
-                    cmd.Parameters.AddWithValue("@AssignedUserID", If(CType(assignment.AssignedUserID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@AssignedUserID", assignment.AssignedUserID)
                     cmd.Parameters.AddWithValue("@AssignedByUserID", assignment.AssignedByUserID)
                     cmd.Parameters.AddWithValue("@AssignedAtUTC", assignment.AssignedAtUTC)
-                    cmd.Parameters.AddWithValue("@Remarks", If(assignment.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Remarks", If(assignment.Remarks IsNot Nothing, CType(assignment.Remarks, Object), DBNull.Value))
                     cmd.ExecuteNonQuery()
                 End Using
             End Using
         End Sub
+
+        Public Function SearchDocuments(hasViewAll As Boolean, userId As Integer, titleLike As String, typeId As Integer?, statusId As Integer?, originLike As String, destLike As String, storageId As Integer?, dateFrom As DateTime?, dateTo As DateTime?, pageSize As Integer, pageNumber As Integer) As List(Of Document)
+            Return GetByFilter(titleLike, typeId, statusId, originLike, destLike, storageId, dateFrom, dateTo, pageSize, pageNumber)
+        End Function
 
         Private Function MapDocument(reader As IDataReader) As Document
             Return New Document With {

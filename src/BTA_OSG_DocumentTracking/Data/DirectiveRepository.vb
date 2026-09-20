@@ -36,6 +36,10 @@ Namespace BTA_OSG
             Return list
         End Function
 
+        Public Function GetByDocId(docId As Integer) As List(Of ActionDirective)
+            Return GetByDocumentId(docId)
+        End Function
+
         Public Function Insert(directive As ActionDirective) As Integer
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "INSERT INTO tbl_ActionDirectives (DocumentID, DirectiveTypeID, DirectiveText, IssuedByUserID, IssuedAtUTC, IsActive, Remarks) " &
@@ -44,11 +48,11 @@ Namespace BTA_OSG
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@DocumentID", directive.DocumentID)
                     cmd.Parameters.AddWithValue("@DirectiveTypeID", directive.DirectiveTypeID)
-                    cmd.Parameters.AddWithValue("@DirectiveText", If(directive.DirectiveText, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@DirectiveText", If(directive.DirectiveText IsNot Nothing, CType(directive.DirectiveText, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@IssuedByUserID", directive.IssuedByUserID)
                     cmd.Parameters.AddWithValue("@IssuedAtUTC", directive.IssuedAtUTC)
                     cmd.Parameters.AddWithValue("@IsActive", directive.IsActive)
-                    cmd.Parameters.AddWithValue("@Remarks", If(directive.Remarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Remarks", If(directive.Remarks IsNot Nothing, CType(directive.Remarks, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using

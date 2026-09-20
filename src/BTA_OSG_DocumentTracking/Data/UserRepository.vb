@@ -62,11 +62,11 @@ Namespace BTA_OSG
                            "VALUES (@Username, @FullName, @Email, @Office, @IsActive, @CreatedByUserID, SYSUTCDATETIME())"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@Username", user.Username)
-                    cmd.Parameters.AddWithValue("@FullName", If(user.FullName, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Email", If(user.Email, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Office", If(user.Office, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FullName", If(user.FullName IsNot Nothing, CType(user.FullName, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Email", If(user.Email IsNot Nothing, CType(user.Email, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Office", If(user.Office IsNot Nothing, CType(user.Office, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", user.IsActive)
-                    cmd.Parameters.AddWithValue("@CreatedByUserID", If(CType(createdBy, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CreatedByUserID", If(createdBy.HasValue, CType(createdBy.Value, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using
@@ -79,11 +79,11 @@ Namespace BTA_OSG
                            "WHERE UserID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@Username", user.Username)
-                    cmd.Parameters.AddWithValue("@FullName", If(user.FullName, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Email", If(user.Email, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Office", If(user.Office, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FullName", If(user.FullName IsNot Nothing, CType(user.FullName, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Email", If(user.Email IsNot Nothing, CType(user.Email, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Office", If(user.Office IsNot Nothing, CType(user.Office, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", user.IsActive)
-                    cmd.Parameters.AddWithValue("@ModifiedByUserID", If(CType(modifiedBy, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ModifiedByUserID", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", user.UserID)
                     cmd.ExecuteNonQuery()
                 End Using
@@ -155,6 +155,16 @@ Namespace BTA_OSG
         Public Sub ResetFailedTaps(userId As Integer)
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "UPDATE tbl_Users SET FailedTapCount = 0, IsLocked = 0 WHERE UserID = @id"
+                Using cmd = New SqlCommand(sql, conn)
+                    cmd.Parameters.AddWithValue("@id", userId)
+                    cmd.ExecuteNonQuery()
+                End Using
+            End Using
+        End Sub
+
+        Public Sub Disable(userId As Integer)
+            Using conn = _connectionFactory.CreateConnection()
+                Dim sql = "UPDATE tbl_Users SET IsActive = 0 WHERE UserID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@id", userId)
                     cmd.ExecuteNonQuery()

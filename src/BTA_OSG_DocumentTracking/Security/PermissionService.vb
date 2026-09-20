@@ -3,9 +3,9 @@ Imports System.Collections.Generic
 
 Namespace BTA_OSG
     Public Class PermissionService
-        Private ReadOnly _userRepo As Object ' UserRepository
+        Private ReadOnly _userRepo As UserRepository
 
-        Public Sub New(userRepo As Object)
+        Public Sub New(userRepo As UserRepository)
             _userRepo = userRepo
         End Sub
 

@@ -43,13 +43,13 @@ Namespace BTA_OSG
                           "VALUES (@DocumentID, @FromStatusID, @ToStatusID, @FromOffice, @ToOffice, @RoutedByUserID, @RoutedAtUTC, @RoutingRemarks)"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@DocumentID", log.DocumentID)
-                    cmd.Parameters.AddWithValue("@FromStatusID", If(CType(log.FromStatusID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FromStatusID", If(log.FromStatusID.HasValue, CType(log.FromStatusID.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ToStatusID", log.ToStatusID)
-                    cmd.Parameters.AddWithValue("@FromOffice", If(log.FromOffice, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ToOffice", If(log.ToOffice, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FromOffice", If(log.FromOffice IsNot Nothing, CType(log.FromOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ToOffice", If(log.ToOffice IsNot Nothing, CType(log.ToOffice, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@RoutedByUserID", log.RoutedByUserID)
                     cmd.Parameters.AddWithValue("@RoutedAtUTC", log.RoutedAtUTC)
-                    cmd.Parameters.AddWithValue("@RoutingRemarks", If(log.RoutingRemarks, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@RoutingRemarks", If(log.RoutingRemarks IsNot Nothing, CType(log.RoutingRemarks, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using

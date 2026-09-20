@@ -1,34 +1,43 @@
+Option Explicit On
+Option Strict On
+
 Imports System
 Imports System.Collections.Generic
 
 Namespace BTA_OSG
     Public Class UserService
-        Private ReadOnly _userRepo As Object
-        Private ReadOnly _auditService As Object
+        Private ReadOnly _userRepo As UserRepository
+        Private ReadOnly _auditService As AuditService
 
-        Public Sub New(userRepo As Object, auditService As Object)
+        Public Sub New(userRepo As UserRepository, auditService As AuditService)
             _userRepo = userRepo
             _auditService = auditService
         End Sub
 
-        Public Function GetAllUsers() As List(Of Object)
+        Public Function GetAllUsers() As List(Of User)
             Return _userRepo.GetAll()
         End Function
 
-        Public Function CreateUser(user As Object, createdBy As Integer) As Integer
-            Dim newId = _userRepo.Insert(user)
-            _auditService.LogEvent("USER_CREATED", "User", newId, Nothing, Nothing, Nothing, True, Nothing)
+        Public Function CreateUser(user As User, createdBy As Integer) As Integer
+            Dim newId = _userRepo.Insert(user, createdBy)
+            If _auditService IsNot Nothing Then
+                _auditService.LogEvent("USER_CREATED", "User", newId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
+            End If
             Return newId
         End Function
 
-        Public Sub UpdateUser(user As Object, modifiedBy As Integer)
-            _userRepo.Update(user)
-            _auditService.LogEvent("USER_UPDATED", "User", user.UserID, Nothing, Nothing, Nothing, True, Nothing)
+        Public Sub UpdateUser(user As User, modifiedBy As Integer)
+            _userRepo.Update(user, modifiedBy)
+            If _auditService IsNot Nothing Then
+                _auditService.LogEvent("USER_UPDATED", "User", user.UserID.ToString(), Nothing, Nothing, Nothing, True, Nothing)
+            End If
         End Sub
 
         Public Sub DisableUser(userId As Integer, disabledBy As Integer)
             _userRepo.Disable(userId)
-            _auditService.LogEvent("USER_DISABLED", "User", userId, Nothing, Nothing, Nothing, True, Nothing)
+            If _auditService IsNot Nothing Then
+                _auditService.LogEvent("USER_DISABLED", "User", userId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
+            End If
         End Sub
     End Class
 End Namespace

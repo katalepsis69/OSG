@@ -46,10 +46,10 @@ Namespace BTA_OSG
                           "OUTPUT INSERTED.StorageLocationID " &
                           "VALUES (@CabinetID, @ShelfNo, @BoxCode, @Description, @IsActive)"
                 Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@CabinetID", If(loc.CabinetID, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ShelfNo", If(loc.ShelfNo, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@BoxCode", If(loc.BoxCode, DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Description", If(loc.Description, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CabinetID", If(loc.CabinetID IsNot Nothing, CType(loc.CabinetID, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ShelfNo", If(loc.ShelfNo IsNot Nothing, CType(loc.ShelfNo, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@BoxCode", If(loc.BoxCode IsNot Nothing, CType(loc.BoxCode, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@Description", If(loc.Description IsNot Nothing, CType(loc.Description, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@IsActive", loc.IsActive)
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
@@ -89,7 +89,7 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@StorageLocationID", movement.StorageLocationID)
                     cmd.Parameters.AddWithValue("@MovedAtUTC", movement.MovedAtUTC)
                     cmd.Parameters.AddWithValue("@MovedByUserID", movement.MovedByUserID)
-                    cmd.Parameters.AddWithValue("@MovementReason", If(movement.MovementReason, DBNull.Value))
+                    cmd.Parameters.AddWithValue("@MovementReason", If(movement.MovementReason IsNot Nothing, CType(movement.MovementReason, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using

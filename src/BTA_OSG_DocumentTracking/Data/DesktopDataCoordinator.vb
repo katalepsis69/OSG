@@ -413,8 +413,7 @@ Namespace BTA_OSG
                            tables)
             Dim result As New Dictionary(Of String, DataTable)()
             Try
-                ' ponytail: 5s connect budget, same trick as Program.ProbeDatabaseConnection, so a
-                ' dead host costs one skipped tick instead of the steady-state 15s timeout.
+                ' Connect with a 5s budget so an unreachable host skips a tick promptly.
                 Dim builder As New Microsoft.Data.SqlClient.SqlConnectionStringBuilder(AppStartup.Settings.DatabaseSettings.ConnectionString) With {
                     .ConnectTimeout = 5
                 }
@@ -505,11 +504,7 @@ Namespace BTA_OSG
                            "LEFT JOIN dbo.tbl_StorageLocations sl ON sl.StorageLocationID = m.StorageLocationID " &
                            "ORDER BY m.MovementID"
                 Case "AuditTrail"
-                    ' ponytail: the local audit cache keys on Int32 while SQL keys on BIGINT; the cast holds
-                    ' into the billions of rows. Widen the local column if that ever becomes real.
-                    ' The trail is append-only and never shrinks, so only the newest 1000 events are
-                    ' mirrored; MAX(AuditID) is a single index lookup. Order stays ascending so the
-                    ' grid reads chronologically, exactly as it does today.
+                    ' The audit trail is append-only; mirror the newest 1000 events in chronological order.
                     Return "SELECT CONVERT(INT, a.AuditID) AS AuditID, " &
                            "ISNULL(a.FullNameSnapshot, ISNULL(a.UsernameSnapshot, 'SYSTEM')) AS UserName, " &
                            "a.ActionType + CASE WHEN a.EntityType IS NULL THEN '' ELSE ' ' + a.EntityType END + " &

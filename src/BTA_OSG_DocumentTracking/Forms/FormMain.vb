@@ -244,8 +244,7 @@ Namespace BTA_OSG
                                           End If
                                       End Sub
 
-            ' ponytail: 5s poll. Two or three workstations on one LAN do not need faster, and a
-            ' shorter interval is one constant away if the desk ever asks for it.
+            ' Multi-workstation sync polling interval (5 seconds).
             Const SqlSyncIntervalMs As Integer = 5000
             tmrSqlSync = New Timer With {
                 .Interval = SqlSyncIntervalMs,

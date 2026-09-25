@@ -1,3 +1,6 @@
+Option Explicit On
+Option Strict On
+
 Imports System.Collections.Generic
 Imports System.Data
 Imports Microsoft.Data.SqlClient
@@ -56,6 +59,34 @@ Namespace BTA_OSG
             End Using
         End Function
 
+        ''' <summary>
+        ''' Resolves a landmark to its SQL location id, creating the row if it does not yet exist.
+        ''' </summary>
+        Public Function GetOrCreateByKey(cabinet As String, shelf As String, box As String) As Integer
+            Dim cab = If(cabinet, "").Trim()
+            Dim shf = If(shelf, "").Trim()
+            Dim bx = If(box, "").Trim()
+            If cab.Length = 0 Then cab = "UNFILED"
+            Dim key As String = cab & "|" & shf & "|" & bx
+
+            Using conn = _connectionFactory.CreateConnection()
+                Using cmd = New SqlCommand("SELECT StorageLocationID FROM tbl_StorageLocations WHERE LocationKey = @key", conn)
+                    cmd.Parameters.AddWithValue("@key", key)
+                    Dim existing = cmd.ExecuteScalar()
+                    If existing IsNot Nothing AndAlso Not IsDBNull(existing) Then Return Convert.ToInt32(existing)
+                End Using
+
+                Dim insertSql = "INSERT INTO tbl_StorageLocations (CabinetID, ShelfNo, BoxCode, Description) " &
+                                "OUTPUT INSERTED.StorageLocationID VALUES (@cab, @shelf, @box, 'Auto-created from document registration')"
+                Using cmd = New SqlCommand(insertSql, conn)
+                    cmd.Parameters.AddWithValue("@cab", cab)
+                    cmd.Parameters.AddWithValue("@shelf", If(shf.Length = 0, CType(DBNull.Value, Object), shf))
+                    cmd.Parameters.AddWithValue("@box", If(bx.Length = 0, CType(DBNull.Value, Object), bx))
+                    Return Convert.ToInt32(cmd.ExecuteScalar())
+                End Using
+            End Using
+        End Function
+
         Public Function GetMovements(docId As Integer) As List(Of DocumentMovement)
             Dim list As New List(Of DocumentMovement)()
             Using conn = _connectionFactory.CreateConnection()
@@ -79,12 +110,12 @@ Namespace BTA_OSG
             Return list
         End Function
 
-        Public Function InsertMovement(movement As DocumentMovement) As Integer
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_DocumentMovements (DocumentID, StorageLocationID, MovedAtUTC, MovedByUserID, MovementReason) " &
-                          "OUTPUT INSERTED.MovementID " &
-                          "VALUES (@DocumentID, @StorageLocationID, @MovedAtUTC, @MovedByUserID, @MovementReason)"
-                Using cmd = New SqlCommand(sql, conn)
+        Public Function InsertMovement(movement As DocumentMovement, Optional transaction As SqlTransaction = Nothing) As Integer
+            Dim sql = "INSERT INTO tbl_DocumentMovements (DocumentID, StorageLocationID, MovedAtUTC, MovedByUserID, MovementReason) " &
+                      "OUTPUT INSERTED.MovementID " &
+                      "VALUES (@DocumentID, @StorageLocationID, @MovedAtUTC, @MovedByUserID, @MovementReason)"
+            If transaction IsNot Nothing Then
+                Using cmd = New SqlCommand(sql, transaction.Connection, transaction)
                     cmd.Parameters.AddWithValue("@DocumentID", movement.DocumentID)
                     cmd.Parameters.AddWithValue("@StorageLocationID", movement.StorageLocationID)
                     cmd.Parameters.AddWithValue("@MovedAtUTC", movement.MovedAtUTC)
@@ -92,7 +123,18 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@MovementReason", If(movement.MovementReason IsNot Nothing, CType(movement.MovementReason, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
-            End Using
+            Else
+                Using conn = _connectionFactory.CreateConnection()
+                    Using cmd = New SqlCommand(sql, conn)
+                        cmd.Parameters.AddWithValue("@DocumentID", movement.DocumentID)
+                        cmd.Parameters.AddWithValue("@StorageLocationID", movement.StorageLocationID)
+                        cmd.Parameters.AddWithValue("@MovedAtUTC", movement.MovedAtUTC)
+                        cmd.Parameters.AddWithValue("@MovedByUserID", movement.MovedByUserID)
+                        cmd.Parameters.AddWithValue("@MovementReason", If(movement.MovementReason IsNot Nothing, CType(movement.MovementReason, Object), DBNull.Value))
+                        Return Convert.ToInt32(cmd.ExecuteScalar())
+                    End Using
+                End Using
+            End If
         End Function
 
         Private Function MapStorageLocation(reader As IDataReader) As StorageLocation

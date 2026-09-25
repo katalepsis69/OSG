@@ -10,6 +10,14 @@ Namespace BTA_OSG
         Private Sub New()
         End Sub
 
+        ' Badge fills need a gutter so a status colour never touches the neighbouring column's text.
+        Private Shared ReadOnly CellGutter As New Padding(8, 2, 8, 2)
+
+        ' A Drive URL is one unbreakable token, so rendering it raw clips the text and inflates the
+        ' column; the grid states whether a soft copy is attached and keeps the link in the tooltip.
+        Private Const SoftCopyLinkLabel As String = "Attached"
+        Private Const SoftCopyMissingLabel As String = "Not Attached"
+
         Public Shared Sub ApplyCivicStyle(dgv As DataGridView)
             If dgv Is Nothing Then Return
 
@@ -43,12 +51,91 @@ Namespace BTA_OSG
             dgv.DefaultCellStyle.Font = CivicCalmTheme.FontTabular
             dgv.DefaultCellStyle.SelectionBackColor = CivicCalmTheme.ColorPrimarySoft
             dgv.DefaultCellStyle.SelectionForeColor = CivicCalmTheme.ColorPrimary
+            dgv.DefaultCellStyle.WrapMode = DataGridViewTriState.True
 
             ' Alternating Row Styling (Soft Off-White Tint #F9FAFB)
             dgv.AlternatingRowsDefaultCellStyle.BackColor = ColorTranslator.FromHtml("#F9FAFB")
             dgv.AlternatingRowsDefaultCellStyle.ForeColor = CivicCalmTheme.ColorInk
             dgv.AlternatingRowsDefaultCellStyle.SelectionBackColor = CivicCalmTheme.ColorPrimarySoft
             dgv.AlternatingRowsDefaultCellStyle.SelectionForeColor = CivicCalmTheme.ColorPrimary
+            dgv.AlternatingRowsDefaultCellStyle.WrapMode = DataGridViewTriState.True
+
+            ' Auto-size row heights to always display full content without truncation.
+            ' DisplayedCellsExceptHeaders bounds each layout pass to the rows on screen;
+            ' rows re-measure as they scroll into view, so large registries stay responsive.
+            dgv.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders
+
+            RemoveHandler dgv.CellFormatting, AddressOf HandleCellFormatting
+            AddHandler dgv.CellFormatting, AddressOf HandleCellFormatting
+        End Sub
+
+        Private Shared Sub ApplyStatusBadge(e As DataGridViewCellFormattingEventArgs, backColor As Color, foreColor As Color)
+            e.CellStyle.BackColor = backColor
+            e.CellStyle.ForeColor = foreColor
+        End Sub
+
+        Private Shared Sub HandleCellFormatting(sender As Object, e As DataGridViewCellFormattingEventArgs)
+            Dim dgv = TryCast(sender, DataGridView)
+            If dgv Is Nothing OrElse e.RowIndex < 0 OrElse e.ColumnIndex < 0 Then Return
+
+            Select Case dgv.Columns(e.ColumnIndex).Name
+                Case "CurrentStatus"
+                    FormatStatusCell(e)
+                Case "GDriveURL"
+                    FormatSoftCopyCell(dgv, e)
+            End Select
+        End Sub
+
+        Private Shared Sub FormatStatusCell(e As DataGridViewCellFormattingEventArgs)
+            Dim code As String = ""
+            If e.Value IsNot Nothing AndAlso Not Convert.IsDBNull(e.Value) Then
+                code = e.Value.ToString().Trim().ToUpperInvariant()
+            End If
+            If code = "" Then Return
+
+            If code = "FOR_REVISION" OrElse code.Contains("REVISION") Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusRevisionBg, CivicCalmTheme.ColorStatusRevisionFg)
+            ElseIf code = "FOR_REVIEW" OrElse code.Contains("REVIEW") Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusReviewBg, CivicCalmTheme.ColorStatusReviewFg)
+            ElseIf code = "APPROVED" Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusApprovedBg, CivicCalmTheme.ColorStatusApprovedFg)
+            ElseIf code = "RELEASED" Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusReleasedBg, CivicCalmTheme.ColorStatusReleasedFg)
+            ElseIf code = "RECEIVED" OrElse code = "LOGGED" Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusReceivedBg, CivicCalmTheme.ColorStatusReceivedFg)
+            ElseIf code = "PENDING" OrElse code = "IN_TRANSIT" OrElse code = "IN TRANSIT" Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusPendingBg, CivicCalmTheme.ColorStatusPendingFg)
+            ElseIf code = "ARCHIVED" OrElse code = "FILED" Then
+                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusArchivedBg, CivicCalmTheme.ColorStatusArchivedFg)
+            Else
+                ' Unrecognized status text stays exactly as stored rather than being rewritten.
+                Return
+            End If
+
+            e.Value = DocumentStatus.DisplayName(code)
+            e.FormattingApplied = True
+        End Sub
+
+        Private Shared Sub FormatSoftCopyCell(dgv As DataGridView, e As DataGridViewCellFormattingEventArgs)
+            Dim url As String = ""
+            If e.Value IsNot Nothing AndAlso Not Convert.IsDBNull(e.Value) Then
+                url = e.Value.ToString().Trim()
+            End If
+
+            If url = "" Then
+                e.Value = SoftCopyMissingLabel
+                e.CellStyle.ForeColor = CivicCalmTheme.ColorInkMuted
+                e.CellStyle.Font = CivicCalmTheme.FontMicrocopy
+            Else
+                e.Value = SoftCopyLinkLabel
+                e.CellStyle.ForeColor = CivicCalmTheme.ColorPrimary
+                e.CellStyle.Font = CivicCalmTheme.FontTabular
+
+                Dim cell = dgv.Rows(e.RowIndex).Cells(e.ColumnIndex)
+                If cell.ToolTipText <> url Then cell.ToolTipText = url
+            End If
+
+            e.FormattingApplied = True
         End Sub
 
         Public Shared Sub SetEmptyState(dgv As DataGridView, watermarkLabel As Label, Optional customMessage As String = Nothing)
@@ -65,7 +152,7 @@ Namespace BTA_OSG
 
         Public Shared Sub SetLoadingState(dgv As DataGridView, watermarkLabel As Label)
             If watermarkLabel IsNot Nothing Then
-                watermarkLabel.Text = "Loading document records..."
+                watermarkLabel.Text = "Loading document records"
                 watermarkLabel.ForeColor = CivicCalmTheme.ColorInkMuted
                 watermarkLabel.Visible = True
                 watermarkLabel.BringToFront()
@@ -90,63 +177,112 @@ Namespace BTA_OSG
             End If
         End Sub
 
+        Private Shared Sub ConfigureColumn(col As DataGridViewColumn, headerText As String, Optional alignment As DataGridViewContentAlignment = DataGridViewContentAlignment.MiddleLeft, Optional font As Font = Nothing)
+            col.HeaderText = headerText
+            col.DefaultCellStyle.WrapMode = DataGridViewTriState.True
+            col.DefaultCellStyle.Alignment = alignment
+            col.DefaultCellStyle.Padding = CellGutter
+            col.HeaderCell.Style.Alignment = alignment
+            If font IsNot Nothing Then
+                col.DefaultCellStyle.Font = font
+            End If
+        End Sub
+
+        ' Columns share the grid width in proportion to the widest text they display (measured as
+        ' formatted, never as stored); when that cannot fit, widths are literal and the grid scrolls.
+        Private Shared Sub BalanceColumns(dgv As DataGridView)
+            Const sampleRows As Integer = 60   ' Bounds measuring overhead during tab refresh
+            Const cellPadding As Integer = 18  ' 8px cell gutter each side plus 2px slack
+            Dim cellFont = dgv.DefaultCellStyle.Font
+            Dim headerFont = dgv.ColumnHeadersDefaultCellStyle.Font
+
+            Dim needs As New List(Of DataGridViewColumn)()
+            Dim weights As New List(Of Single)()
+            Dim totalNeeded As Single = 0
+
+            For Each col As DataGridViewColumn In dgv.Columns
+                If Not col.Visible Then Continue For
+
+                Dim widest As Single = TextRenderer.MeasureText(col.HeaderText, headerFont).Width + cellPadding
+                Dim lastRowIndex As Integer = Math.Min(dgv.RowCount - 1, sampleRows)
+                For i As Integer = 0 To lastRowIndex
+                    Dim cell = dgv.Rows(i).Cells(col.Index)
+                    Dim shown = Convert.ToString(cell.FormattedValue)
+                    If Not String.IsNullOrEmpty(shown) Then
+                        Dim shownFont = If(cell.InheritedStyle.Font, cellFont)
+                        Dim needed As Single = TextRenderer.MeasureText(shown, shownFont).Width + cellPadding
+                        If needed > widest Then widest = needed
+                    End If
+                Next
+
+                ' One very long value must not drag every column out of Fill, so a single cell is
+                ' allowed to claim at most this much before it is expected to wrap.
+                widest = Math.Min(widest, 260.0F)
+
+                needs.Add(col)
+                weights.Add(Math.Max(24.0F, widest))
+                totalNeeded += Math.Max(24.0F, widest)
+            Next
+
+            Dim fits As Boolean = totalNeeded <= dgv.DisplayRectangle.Width
+            For i As Integer = 0 To needs.Count - 1
+                needs(i).FillWeight = weights(i)
+                If fits Then
+                    needs(i).AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                Else
+                    needs(i).AutoSizeMode = DataGridViewAutoSizeColumnMode.None
+                    needs(i).Width = CInt(weights(i))
+                End If
+            Next
+        End Sub
+
+        Private Shared Sub FinishLayout(dgv As DataGridView)
+            BalanceColumns(dgv)
+            dgv.AutoResizeRows(DataGridViewAutoSizeRowsMode.DisplayedCellsExceptHeaders)
+        End Sub
+
         Public Shared Sub FormatDocumentColumns(dgv As DataGridView)
             If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
 
             Try
                 dgv.SuspendLayout()
-                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
 
                 For Each col As DataGridViewColumn In dgv.Columns
                     Select Case col.Name
                         Case "DocumentID"
-                            col.HeaderText = "ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 55
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "ID", DataGridViewContentAlignment.MiddleRight)
                         Case "DocCode"
-                            col.HeaderText = "Document Code"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 140
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
-                            col.DefaultCellStyle.Font = CivicCalmTheme.FontIdentifier
+                            ConfigureColumn(col, "Document Code", font:=CivicCalmTheme.FontIdentifier)
                         Case "DocType"
-                            col.HeaderText = "Classification"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 140
+                            ConfigureColumn(col, "Classification")
                         Case "Title"
-                            col.HeaderText = "Document Title / Subject"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                            ConfigureColumn(col, "Document Title / Subject")
+                        Case "FlowDirection"
+                            ConfigureColumn(col, "Flow", DataGridViewContentAlignment.MiddleCenter)
+                        Case "AssignedSection"
+                            ConfigureColumn(col, "Assigned Section")
                         Case "OriginatingOffice"
-                            col.HeaderText = "Origin Office"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
+                            ConfigureColumn(col, "Origin Office")
                         Case "DestinationOffice"
-                            col.HeaderText = "Destination"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
+                            ConfigureColumn(col, "Destination")
                         Case "CurrentStatus"
-                            col.HeaderText = "Status"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 130
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+                            ' Bold badge font is declared on the column so measurement reserves its width.
+                            ConfigureColumn(col, "Status", DataGridViewContentAlignment.MiddleCenter, CivicCalmTheme.FontFieldLabel)
+                        Case "TargetDeadlineUTC"
+                            ConfigureColumn(col, "Target Deadline")
+                        Case "LastActionTaken"
+                            ConfigureColumn(col, "Last Action Taken")
                         Case "AssignedStaff"
-                            col.HeaderText = "Assigned Staff"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 140
+                            ConfigureColumn(col, "Assigned Staff")
                         Case "DateReceived"
-                            col.HeaderText = "Date Received"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 140
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Date Received")
                         Case "GDriveURL"
-                            col.HeaderText = "Soft Copy Link"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                        Case "CabinetID", "ShelfNo", "BoxCode"
+                            ConfigureColumn(col, "Soft Copy Link")
+                        Case "CabinetID", "ShelfNo", "BoxCode", "RevisionPunchlist", "ExternalControlNumber"
                             col.Visible = False
                     End Select
                 Next
+                FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
             End Try
@@ -157,45 +293,26 @@ Namespace BTA_OSG
 
             Try
                 dgv.SuspendLayout()
-                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
 
                 For Each col As DataGridViewColumn In dgv.Columns
                     Select Case col.Name
                         Case "DirectiveID"
-                            col.HeaderText = "ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 50
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "ID", DataGridViewContentAlignment.MiddleRight)
                         Case "DocumentID"
-                            col.HeaderText = "Doc ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 60
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Doc ID", DataGridViewContentAlignment.MiddleRight)
                         Case "SGDirective"
-                            col.HeaderText = "Directive Action"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 180
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Directive Action")
                         Case "AssignedTo"
-                            col.HeaderText = "Assigned Staff"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 160
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Assigned Staff")
                         Case "Notes"
-                            col.HeaderText = "Directive Notes / Remarks"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                            ConfigureColumn(col, "Directive Notes / Remarks")
                         Case "LogUser"
-                            col.HeaderText = "Issued By"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 160
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Issued By")
                         Case "Timestamp"
-                            col.HeaderText = "Date / Time Issued"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Date / Time Issued")
                     End Select
                 Next
+                FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
             End Try
@@ -206,36 +323,24 @@ Namespace BTA_OSG
 
             Try
                 dgv.SuspendLayout()
-                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
 
                 For Each col As DataGridViewColumn In dgv.Columns
                     Select Case col.Name
                         Case "UserID"
-                            col.HeaderText = "User ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 65
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "User ID", DataGridViewContentAlignment.MiddleRight)
                         Case "RFID_UID"
-                            col.HeaderText = "RFID Badge UID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 140
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
-                            col.DefaultCellStyle.Font = CivicCalmTheme.FontIdentifier
+                            ConfigureColumn(col, "RFID Badge UID", font:=CivicCalmTheme.FontIdentifier)
                         Case "FullName"
-                            col.HeaderText = "Full Name"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                            ConfigureColumn(col, "Full Name")
                         Case "Role"
-                            col.HeaderText = "Designated Role"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 200
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Designated Role")
+                        Case "Office"
+                            ConfigureColumn(col, "Assigned Section Desk")
                         Case "IsActive"
-                            col.HeaderText = "Active"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 70
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter
+                            ConfigureColumn(col, "Active", DataGridViewContentAlignment.MiddleCenter)
                     End Select
                 Next
+                FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
             End Try
@@ -246,30 +351,24 @@ Namespace BTA_OSG
 
             Try
                 dgv.SuspendLayout()
-                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
 
                 For Each col As DataGridViewColumn In dgv.Columns
                     Select Case col.Name
                         Case "AuditID"
-                            col.HeaderText = "Audit ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 70
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Audit ID", DataGridViewContentAlignment.MiddleRight)
+                        Case "UserID"
+                            col.Visible = False
                         Case "UserName"
-                            col.HeaderText = "User Account"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 180
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "User Account")
+                        Case "ActionType"
+                            ConfigureColumn(col, "Action Type", DataGridViewContentAlignment.MiddleCenter)
                         Case "ActionDescription"
-                            col.HeaderText = "Action Description"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                            ConfigureColumn(col, "Action Description")
                         Case "Timestamp"
-                            col.HeaderText = "Timestamp (UTC)"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 160
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Timestamp (UTC)")
                     End Select
                 Next
+                FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
             End Try
@@ -280,47 +379,28 @@ Namespace BTA_OSG
 
             Try
                 dgv.SuspendLayout()
-                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
 
                 For Each col As DataGridViewColumn In dgv.Columns
                     Select Case col.Name
                         Case "RoutingID"
-                            col.HeaderText = "Log ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 60
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Log ID", DataGridViewContentAlignment.MiddleRight)
                         Case "DocumentID"
                             col.Visible = False
                         Case "FromOffice"
-                            col.HeaderText = "Originating Office"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Originating Office")
                         Case "ToOffice"
-                            col.HeaderText = "Destination Office"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Destination Office")
                         Case "ActionTaken"
-                            col.HeaderText = "Action Taken"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 140
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Action Taken")
                         Case "Remarks"
-                            col.HeaderText = "Routing Remarks"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                            ConfigureColumn(col, "Routing Remarks")
                         Case "RoutedBy"
-                            col.HeaderText = "Routed By"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Routed By")
                         Case "Timestamp"
-                            col.HeaderText = "Date Transmitted"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Date Transmitted")
                     End Select
                 Next
+                FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
             End Try
@@ -331,42 +411,56 @@ Namespace BTA_OSG
 
             Try
                 dgv.SuspendLayout()
-                dgv.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None
 
                 For Each col As DataGridViewColumn In dgv.Columns
                     Select Case col.Name
                         Case "MovementID"
-                            col.HeaderText = "Move ID"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 60
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Move ID", DataGridViewContentAlignment.MiddleRight)
                         Case "DocumentID"
                             col.Visible = False
                         Case "FromLocation"
-                            col.HeaderText = "Prior Storage Landmark"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 160
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Prior Storage Landmark")
                         Case "ToLocation"
-                            col.HeaderText = "New Storage Landmark"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 160
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "New Storage Landmark")
                         Case "MovedBy"
-                            col.HeaderText = "Transferred By"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleLeft
+                            ConfigureColumn(col, "Transferred By")
                         Case "Reason"
-                            col.HeaderText = "Transfer Reason / Justification"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                            ConfigureColumn(col, "Transfer Reason / Justification")
                         Case "Timestamp"
-                            col.HeaderText = "Date Transferred"
-                            col.AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                            col.Width = 150
-                            col.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight
+                            ConfigureColumn(col, "Date Transferred")
                     End Select
                 Next
+                FinishLayout(dgv)
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
+
+        Public Shared Sub FormatPortalQueueColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "ControlNumber"
+                            ConfigureColumn(col, "External CN", font:=CivicCalmTheme.FontTabular)
+                        Case "Category"
+                            ConfigureColumn(col, "Category", DataGridViewContentAlignment.MiddleCenter)
+                        Case "DocumentTitle"
+                            ConfigureColumn(col, "Document Title / Subject")
+                        Case "RequesterName"
+                            ConfigureColumn(col, "Submitter Name")
+                        Case "RequesterEmail"
+                            ConfigureColumn(col, "Submitter Email")
+                        Case "RequesterPhone"
+                            ConfigureColumn(col, "Phone")
+                        Case "CreatedAt"
+                            ConfigureColumn(col, "Submitted At (UTC)")
+                    End Select
+                Next
+                FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
             End Try

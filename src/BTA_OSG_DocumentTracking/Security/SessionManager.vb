@@ -1,3 +1,6 @@
+Option Explicit On
+Option Strict On
+
 Imports System
 Imports System.Collections.Generic
 
@@ -9,27 +12,17 @@ Namespace BTA_OSG
             CurrentSession = session
         End Sub
 
-        Public Shared Sub Logout(auditRepo As Object)
+        Public Shared Sub Logout(Optional auditRepo As Object = Nothing)
             If CurrentSession IsNot Nothing Then
-                ' Log logout event
                 CurrentSession = Nothing
             End If
         End Sub
 
-        Public Shared Sub SetCurrentSession(session As SessionContext)
-            Login(session)
-        End Sub
-
-        Public Shared Sub EndSession()
-            Logout(Nothing)
-        End Sub
-
-        Public Shared Function CheckTimeout(settings As AppSettings, auditRepo As Object) As Boolean
+        Public Shared Function CheckTimeout(settings As AppSettings, Optional auditRepo As Object = Nothing) As Boolean
             If CurrentSession Is Nothing Then Return True
             
             Dim timeSinceLastActivity As TimeSpan = DateTime.UtcNow - CurrentSession.LastActivityUTC
             If timeSinceLastActivity.TotalMinutes > settings.SessionSettings.TimeoutMinutes Then
-                ' Log timeout
                 CurrentSession = Nothing
                 Return True
             End If
@@ -43,7 +36,7 @@ Namespace BTA_OSG
             End If
         End Sub
 
-        ' ponytail: alias map so Form checks work against 007 seed codes
+        ' Permission alias map ensuring backward-compatible permission code checks
         Private Shared ReadOnly _aliasMap As New Dictionary(Of String, String()) From {
             {RbacPolicy.DOCUMENT_VIEW_ALL, {RbacPolicy.DOC_VIEW, "DASHBOARD_VIEW"}},
             {RbacPolicy.DOCUMENT_CREATE, {RbacPolicy.DOC_CREATE}},

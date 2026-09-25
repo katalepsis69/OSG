@@ -477,10 +477,10 @@ Namespace BTA_OSG
                            "ISNULL(u.CanRoute, 1) AS CanRoute, ISNULL(u.CanMove, 1) AS CanMove, ISNULL(u.CanSoftCopy, 1) AS CanSoftCopy, ISNULL(u.IsActive, 1) AS IsActive " &
                            "FROM dbo.tbl_Users u " &
                            "OUTER APPLY (SELECT TOP 1 rc.CardPublicID FROM dbo.tbl_RfidCards rc WHERE rc.UserID = u.UserID " &
-                           "  AND rc.IsActive = 1 AND rc.RevokedAtUTC IS NULL ORDER BY rc.RfidCardID) c " &
+                           "  AND rc.IsActive = 1 AND rc.RevokedAtUTC IS NULL ORDER BY rc.RfidCardID DESC) c " &
                            "OUTER APPLY (SELECT TOP 1 rr.RoleName FROM dbo.tbl_UserRoles ur " &
                            "  JOIN dbo.tbl_Roles rr ON rr.RoleID = ur.RoleID " &
-                           "  WHERE ur.UserID = u.UserID AND ur.IsActive = 1 AND rr.IsActive = 1 ORDER BY ur.UserRoleID) ro " &
+                           "  WHERE ur.UserID = u.UserID AND ur.IsActive = 1 AND rr.IsActive = 1 ORDER BY ur.UserRoleID DESC) ro " &
                            "WHERE u.IsActive = 1 ORDER BY u.UserID"
                 Case "Directives"
                     Return "SELECT ad.DirectiveID, ad.DocumentID, ISNULL(ad.DirectiveText, '') AS SGDirective, " &

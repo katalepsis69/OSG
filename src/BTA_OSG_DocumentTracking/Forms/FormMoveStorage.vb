@@ -11,15 +11,17 @@ Namespace BTA_OSG
 
         Private DocID As Integer
         Private StaffName As String
+        Private StaffUserId As Integer
         Private txtFromLoc As TextBox
         Private txtToLoc As TextBox
         Private txtReason As TextBox
         Private btnSave As Button
         Private btnCancel As Button
 
-        Public Sub New(docId As Integer, currentLoc As String, user As String)
+        Public Sub New(docId As Integer, currentLoc As String, user As String, Optional staffUserId As Integer = 1)
             Me.DocID = docId
             Me.StaffName = user
+            Me.StaffUserId = staffUserId
 
             Me.Text = "Transfer Physical Landmark Storage Location"
             Me.Size = New Size(500, 320)
@@ -107,8 +109,20 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub OnSave(sender As Object, e As EventArgs)
-            EmbeddedDB.AddMovementLog(DocID, txtFromLoc.Text.Trim(), txtToLoc.Text.Trim(), StaffName, txtReason.Text.Trim())
-            EmbeddedDB.LogAudit(StaffName, String.Format("Transferred Doc #{0} physical location from {1} to {2}", DocID, txtFromLoc.Text, txtToLoc.Text))
+            Dim toLoc = txtToLoc.Text.Trim()
+            If String.IsNullOrWhiteSpace(toLoc) Then
+                MessageBox.Show("Please enter the new physical landmark storage location.", "Validation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                txtToLoc.Focus()
+                Return
+            End If
+
+            Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
+            If Program.Coordinator IsNot Nothing Then
+                Program.Coordinator.MoveStorage(DocID, txtFromLoc.Text.Trim(), toLoc, txtReason.Text.Trim(), StaffName, currentUserId)
+            Else
+                EmbeddedDB.AddMovementLog(DocID, txtFromLoc.Text.Trim(), toLoc, StaffName, txtReason.Text.Trim())
+                EmbeddedDB.LogAudit(StaffName, $"Transferred Doc #{DocID} physical location from {txtFromLoc.Text.Trim()} to {toLoc}")
+            End If
             Me.DialogResult = DialogResult.OK
             Me.Close()
         End Sub

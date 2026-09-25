@@ -11,6 +11,7 @@ Namespace BTA_OSG
 
         Private DocID As Integer
         Private StaffName As String
+        Private StaffUserId As Integer
         Private txtFrom As TextBox
         Private txtTo As TextBox
         Private txtAction As TextBox
@@ -18,9 +19,10 @@ Namespace BTA_OSG
         Private btnSave As Button
         Private btnCancel As Button
 
-        Public Sub New(docId As Integer, currentOffice As String, user As String)
+        Public Sub New(docId As Integer, currentOffice As String, user As String, Optional staffUserId As Integer = 1)
             Me.DocID = docId
             Me.StaffName = user
+            Me.StaffUserId = staffUserId
 
             Me.Text = "Log Document Office Routing Step"
             Me.Size = New Size(500, 360)
@@ -112,8 +114,20 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub OnSave(sender As Object, e As EventArgs)
-            EmbeddedDB.AddRoutingLog(DocID, txtFrom.Text.Trim(), txtTo.Text.Trim(), StaffName, txtAction.Text.Trim(), txtRemarks.Text.Trim())
-            EmbeddedDB.LogAudit(StaffName, String.Format("Routed Doc #{0} from {1} to {2}", DocID, txtFrom.Text, txtTo.Text))
+            Dim toOffice = txtTo.Text.Trim()
+            If String.IsNullOrWhiteSpace(toOffice) Then
+                MessageBox.Show("Please enter the destination office (To Office).", "Validation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                txtTo.Focus()
+                Return
+            End If
+
+            Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
+            If Program.Coordinator IsNot Nothing Then
+                Program.Coordinator.RouteDocument(DocID, txtFrom.Text.Trim(), toOffice, txtAction.Text.Trim(), txtRemarks.Text.Trim(), StaffName, currentUserId)
+            Else
+                EmbeddedDB.AddRoutingLog(DocID, txtFrom.Text.Trim(), toOffice, StaffName, txtAction.Text.Trim(), txtRemarks.Text.Trim())
+                EmbeddedDB.LogAudit(StaffName, $"Routed Doc #{DocID} from {txtFrom.Text.Trim()} to {toOffice}")
+            End If
             Me.DialogResult = DialogResult.OK
             Me.Close()
         End Sub

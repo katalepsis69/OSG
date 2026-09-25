@@ -117,5 +117,18 @@ Namespace BTA_OSG.Tests
                 Program.IsDatabaseConnected = previous
             End Try
         End Sub
+
+        <TestMethod>
+        Public Sub SyncOfflineOutbox_Disconnected_ReturnsZeroWithoutThrowing()
+            Dim previous = Program.IsDatabaseConnected
+            Try
+                Program.IsDatabaseConnected = False
+                Dim coordinator As New DesktopDataCoordinator(False)
+                Dim syncedCount = coordinator.SyncOfflineOutbox()
+                Assert.AreEqual(0, syncedCount, "Disconnected outbox sync must return 0 without throwing")
+            Finally
+                Program.IsDatabaseConnected = previous
+            End Try
+        End Sub
     End Class
 End Namespace

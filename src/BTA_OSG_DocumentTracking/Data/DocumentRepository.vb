@@ -1,3 +1,6 @@
+Option Explicit On
+Option Strict On
+
 Imports System.Collections.Generic
 Imports System.Data
 Imports Microsoft.Data.SqlClient
@@ -10,7 +13,13 @@ Namespace BTA_OSG
             _connectionFactory = connectionFactory
         End Sub
 
-        Private Const DOC_COLS As String = "DocumentID, DocCode, Title, DocumentTypeID, OriginOffice, DestinationOffice, StatusID, ReceivedDate, CurrentStorageLocationID, Remarks, IsDeleted"
+        Public ReadOnly Property ConnectionFactory As IDbConnectionFactory
+            Get
+                Return _connectionFactory
+            End Get
+        End Property
+
+        Private Const DOC_COLS As String = "DocumentID, DocCode, Title, DocumentTypeID, OriginOffice, DestinationOffice, StatusID, ReceivedDate, CurrentStorageLocationID, Remarks, IsDeleted, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber"
         Public Function GetById(docId As Integer) As Document
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE DocumentID = @id"
@@ -105,9 +114,9 @@ Namespace BTA_OSG
 
         Public Function Insert(doc As Document) As Integer
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID) " &
+                Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber) " &
                            "OUTPUT INSERTED.DocumentID " &
-                           "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID)"
+                           "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID, @FlowDirection, @AssignedSection, @TargetDeadlineUTC, @RevisionPunchlist, @LastActionTaken, @ExternalControlNumber)"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@DocCode", doc.DocCode)
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
@@ -115,10 +124,16 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@StatusID", doc.StatusID)
                     cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice IsNot Nothing, CType(doc.OriginOffice, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice IsNot Nothing, CType(doc.DestinationOffice, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ReceivedDate", If(CType(doc.ReceivedDate, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(doc.CurrentStorageLocationID.HasValue, CType(doc.CurrentStorageLocationID.Value, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ReceivedDate", If(doc.ReceivedDate.HasValue, CType(doc.ReceivedDate.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks IsNot Nothing, CType(doc.Remarks, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@CreatedByUserID", doc.RegisteredByUserID)
+                    cmd.Parameters.AddWithValue("@FlowDirection", If(doc.FlowDirection IsNot Nothing, CType(doc.FlowDirection, Object), "INCOMING"))
+                    cmd.Parameters.AddWithValue("@AssignedSection", If(doc.AssignedSection IsNot Nothing, CType(doc.AssignedSection, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@TargetDeadlineUTC", If(doc.TargetDeadlineUTC.HasValue, CType(doc.TargetDeadlineUTC.Value, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@RevisionPunchlist", If(doc.RevisionPunchlist IsNot Nothing, CType(doc.RevisionPunchlist, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@LastActionTaken", If(doc.LastActionTaken IsNot Nothing, CType(doc.LastActionTaken, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ExternalControlNumber", If(doc.ExternalControlNumber IsNot Nothing, CType(doc.ExternalControlNumber, Object), DBNull.Value))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             End Using
@@ -128,7 +143,10 @@ Namespace BTA_OSG
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "UPDATE tbl_Documents SET Title = @Title, DocumentTypeID = @DocumentTypeID, StatusID = @StatusID, " &
                            "OriginOffice = @OriginOffice, DestinationOffice = @DestinationOffice, CurrentStorageLocationID = @CurrentStorageLocationID, " &
-                           "ReceivedDate = @ReceivedDate, Remarks = @Remarks, ModifiedByUserID=@ModifiedByUserID, ModifiedAtUTC=SYSUTCDATETIME() " &
+                           "ReceivedDate = @ReceivedDate, Remarks = @Remarks, FlowDirection = @FlowDirection, AssignedSection = @AssignedSection, " &
+                           "TargetDeadlineUTC = @TargetDeadlineUTC, RevisionPunchlist = @RevisionPunchlist, LastActionTaken = @LastActionTaken, " &
+                           "ExternalControlNumber = @ExternalControlNumber, " &
+                           "ModifiedByUserID=@ModifiedByUserID, ModifiedAtUTC=SYSUTCDATETIME() " &
                            "WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
@@ -136,9 +154,15 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@StatusID", doc.StatusID)
                     cmd.Parameters.AddWithValue("@OriginOffice", If(doc.OriginOffice IsNot Nothing, CType(doc.OriginOffice, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@DestinationOffice", If(doc.DestinationOffice IsNot Nothing, CType(doc.DestinationOffice, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(CType(doc.CurrentStorageLocationID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ReceivedDate", If(CType(doc.ReceivedDate, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@CurrentStorageLocationID", If(doc.CurrentStorageLocationID.HasValue, CType(doc.CurrentStorageLocationID.Value, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ReceivedDate", If(doc.ReceivedDate.HasValue, CType(doc.ReceivedDate.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@Remarks", If(doc.Remarks IsNot Nothing, CType(doc.Remarks, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@FlowDirection", If(doc.FlowDirection IsNot Nothing, CType(doc.FlowDirection, Object), "INCOMING"))
+                    cmd.Parameters.AddWithValue("@AssignedSection", If(doc.AssignedSection IsNot Nothing, CType(doc.AssignedSection, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@TargetDeadlineUTC", If(doc.TargetDeadlineUTC.HasValue, CType(doc.TargetDeadlineUTC.Value, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@RevisionPunchlist", If(doc.RevisionPunchlist IsNot Nothing, CType(doc.RevisionPunchlist, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@LastActionTaken", If(doc.LastActionTaken IsNot Nothing, CType(doc.LastActionTaken, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ExternalControlNumber", If(doc.ExternalControlNumber IsNot Nothing, CType(doc.ExternalControlNumber, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ModifiedByUserID", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", doc.DocumentID)
                     cmd.ExecuteNonQuery()
@@ -157,15 +181,61 @@ Namespace BTA_OSG
             End Using
         End Sub
 
-        Public Sub UpdateStorageLocation(docId As Integer, storageLocationId As Integer)
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Documents SET CurrentStorageLocationID = @storageId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
-                Using cmd = New SqlCommand(sql, conn)
+        Public Sub UpdateWorkflowState(docId As Integer, statusId As Integer, assignedSection As String, punchlist As String, lastAction As String, modifiedBy As Integer?, Optional transaction As SqlTransaction = Nothing, Optional destinationOffice As String = Nothing, Optional originOffice As String = Nothing)
+            Dim sql = "UPDATE tbl_Documents SET StatusID = @statusId, " &
+                       "AssignedSection = COALESCE(@assignedSection, AssignedSection), " &
+                       "RevisionPunchlist = COALESCE(@punchlist, RevisionPunchlist), " &
+                       "LastActionTaken = COALESCE(@lastAction, LastActionTaken), " &
+                       "DestinationOffice = COALESCE(@destinationOffice, DestinationOffice), " &
+                       "OriginOffice = COALESCE(@originOffice, OriginOffice), " &
+                       "ModifiedByUserID = @modifiedBy, ModifiedAtUTC = SYSUTCDATETIME() " &
+                       "WHERE DocumentID = @id"
+            If transaction IsNot Nothing Then
+                Using cmd = New SqlCommand(sql, transaction.Connection, transaction)
+                    cmd.Parameters.AddWithValue("@statusId", statusId)
+                    cmd.Parameters.AddWithValue("@assignedSection", If(assignedSection IsNot Nothing, CType(assignedSection, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@punchlist", If(punchlist IsNot Nothing, CType(punchlist, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@lastAction", If(lastAction IsNot Nothing, CType(lastAction, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@destinationOffice", If(destinationOffice IsNot Nothing, CType(destinationOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@originOffice", If(originOffice IsNot Nothing, CType(originOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@modifiedBy", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@id", docId)
+                    cmd.ExecuteNonQuery()
+                End Using
+            Else
+                Using conn = _connectionFactory.CreateConnection()
+                    Using cmd = New SqlCommand(sql, conn)
+                        cmd.Parameters.AddWithValue("@statusId", statusId)
+                        cmd.Parameters.AddWithValue("@assignedSection", If(assignedSection IsNot Nothing, CType(assignedSection, Object), DBNull.Value))
+                        cmd.Parameters.AddWithValue("@punchlist", If(punchlist IsNot Nothing, CType(punchlist, Object), DBNull.Value))
+                        cmd.Parameters.AddWithValue("@lastAction", If(lastAction IsNot Nothing, CType(lastAction, Object), DBNull.Value))
+                        cmd.Parameters.AddWithValue("@destinationOffice", If(destinationOffice IsNot Nothing, CType(destinationOffice, Object), DBNull.Value))
+                        cmd.Parameters.AddWithValue("@originOffice", If(originOffice IsNot Nothing, CType(originOffice, Object), DBNull.Value))
+                        cmd.Parameters.AddWithValue("@modifiedBy", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
+                        cmd.Parameters.AddWithValue("@id", docId)
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End Using
+            End If
+        End Sub
+
+        Public Sub UpdateStorageLocation(docId As Integer, storageLocationId As Integer, Optional transaction As SqlTransaction = Nothing)
+            Dim sql = "UPDATE tbl_Documents SET CurrentStorageLocationID = @storageId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
+            If transaction IsNot Nothing Then
+                Using cmd = New SqlCommand(sql, transaction.Connection, transaction)
                     cmd.Parameters.AddWithValue("@storageId", storageLocationId)
                     cmd.Parameters.AddWithValue("@id", docId)
                     cmd.ExecuteNonQuery()
                 End Using
-            End Using
+            Else
+                Using conn = _connectionFactory.CreateConnection()
+                    Using cmd = New SqlCommand(sql, conn)
+                        cmd.Parameters.AddWithValue("@storageId", storageLocationId)
+                        cmd.Parameters.AddWithValue("@id", docId)
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End Using
+            End If
         End Sub
 
         Public Sub SoftDelete(docId As Integer, deletedBy As Integer, reason As String)
@@ -221,6 +291,37 @@ Namespace BTA_OSG
             Return GetByFilter(titleLike, typeId, statusId, originLike, destLike, storageId, dateFrom, dateTo, pageSize, pageNumber)
         End Function
 
+        Public Function GetBySection(sectionName As String, ongoingOnly As Boolean, pageSize As Integer, pageNumber As Integer) As List(Of Document)
+            pageSize = Math.Max(1, Math.Min(100, pageSize))
+            pageNumber = Math.Max(1, pageNumber)
+            Dim list As New List(Of Document)()
+            Using conn = _connectionFactory.CreateConnection()
+                Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE IsDeleted = 0 "
+                If Not String.IsNullOrEmpty(sectionName) AndAlso sectionName <> "All Sections" Then
+                    sql &= " AND AssignedSection = @sec "
+                End If
+                If ongoingOnly Then
+                    sql &= " AND StatusID NOT IN (SELECT StatusID FROM tbl_DocumentStatuses WHERE StatusCode IN ('FILED', 'RELEASED')) "
+                End If
+                sql &= " ORDER BY DocumentID DESC OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY"
+
+                Using cmd = New SqlCommand(sql, conn)
+                    If Not String.IsNullOrEmpty(sectionName) AndAlso sectionName <> "All Sections" Then
+                        cmd.Parameters.AddWithValue("@sec", sectionName)
+                    End If
+                    cmd.Parameters.AddWithValue("@offset", (pageNumber - 1) * pageSize)
+                    cmd.Parameters.AddWithValue("@pageSize", pageSize)
+
+                    Using reader = cmd.ExecuteReader()
+                        While reader.Read()
+                            list.Add(MapDocument(reader))
+                        End While
+                    End Using
+                End Using
+            End Using
+            Return list
+        End Function
+
         Private Function MapDocument(reader As IDataReader) As Document
             Return New Document With {
                 .DocumentID = Convert.ToInt32(reader("DocumentID")),
@@ -233,8 +334,29 @@ Namespace BTA_OSG
                 .CurrentStorageLocationID = If(IsDBNull(reader("CurrentStorageLocationID")), CType(Nothing, Integer?), Convert.ToInt32(reader("CurrentStorageLocationID"))),
                 .ReceivedDate = If(IsDBNull(reader("ReceivedDate")), CType(Nothing, Date?), Convert.ToDateTime(reader("ReceivedDate"))),
                 .Remarks = If(IsDBNull(reader("Remarks")), Nothing, Convert.ToString(reader("Remarks"))),
-                .IsDeleted = If(IsDBNull(reader("IsDeleted")), False, Convert.ToBoolean(reader("IsDeleted")))
+                .IsDeleted = If(IsDBNull(reader("IsDeleted")), False, Convert.ToBoolean(reader("IsDeleted"))),
+                .FlowDirection = If(IsDBNull(reader("FlowDirection")), "INCOMING", Convert.ToString(reader("FlowDirection"))),
+                .AssignedSection = If(IsDBNull(reader("AssignedSection")), Nothing, Convert.ToString(reader("AssignedSection"))),
+                .TargetDeadlineUTC = If(IsDBNull(reader("TargetDeadlineUTC")), CType(Nothing, DateTime?), Convert.ToDateTime(reader("TargetDeadlineUTC"))),
+                .RevisionPunchlist = If(IsDBNull(reader("RevisionPunchlist")), Nothing, Convert.ToString(reader("RevisionPunchlist"))),
+                .LastActionTaken = If(IsDBNull(reader("LastActionTaken")), Nothing, Convert.ToString(reader("LastActionTaken"))),
+                .ExternalControlNumber = If(IsDBNull(reader("ExternalControlNumber")), Nothing, Convert.ToString(reader("ExternalControlNumber")))
             }
+        End Function
+
+        Public Function GetByExternalControlNumber(externalCn As String) As Document
+            Using conn = _connectionFactory.CreateConnection()
+                Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE ExternalControlNumber = @ecn AND IsDeleted = 0"
+                Using cmd = New SqlCommand(sql, conn)
+                    cmd.Parameters.AddWithValue("@ecn", externalCn)
+                    Using reader = cmd.ExecuteReader()
+                        If reader.Read() Then
+                            Return MapDocument(reader)
+                        End If
+                    End Using
+                End Using
+            End Using
+            Return Nothing
         End Function
     End Class
 End Namespace

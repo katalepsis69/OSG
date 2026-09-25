@@ -184,11 +184,16 @@ Namespace BTA_OSG
 
         Public Sub RouteDocument(docId As Integer, fromOffice As String, toOffice As String, action As String, remarks As String, routedByName As String, routedByUserId As Integer)
             If _isDatabaseConnected AndAlso AppStartup.RoutingService IsNot Nothing Then
-                ' Same shape as the other actions: one writer per mode. Without the pull, this
-                ' path wrote SQL and then also appended a local row, which the mirror then fought.
                 If TryRunSql("RouteDocument", Sub()
+                                                   Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(If(String.IsNullOrWhiteSpace(action), "ROUTED", action))
+                                                   Dim statusId As Integer = If(status IsNot Nothing, status.StatusID, 1)
+
+                                                   AppStartup.DocumentRepo.UpdateWorkflowState(docId, statusId, toOffice, Nothing, "Routed to " & toOffice & ": " & action, routedByUserId, destinationOffice:=toOffice, originOffice:=fromOffice)
+
                                                    Dim log As New RoutingLog With {
                                                        .DocumentID = docId,
+                                                       .FromStatusID = Nothing,
+                                                       .ToStatusID = statusId,
                                                        .FromOffice = fromOffice,
                                                        .ToOffice = toOffice,
                                                        .RoutingRemarks = remarks,

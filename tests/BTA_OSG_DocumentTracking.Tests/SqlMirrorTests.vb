@@ -130,5 +130,20 @@ Namespace BTA_OSG.Tests
                 Program.IsDatabaseConnected = previous
             End Try
         End Sub
+
+        <TestMethod>
+        Public Sub RouteDocument_Offline_UpdatesDestinationAndLastAction()
+            EmbeddedDB.Initialize()
+            Dim localId = EmbeddedDB.AddDocument("LOC-ROUTE-001", "Finance", "Routing Check", "Records Section", "Finance Section", "CAB-A", "S-1", "BOX-01", "", "RECEIVED", "Hassim A. Ibrahim", "INCOMING", "Finance Section")
+
+            Dim coordinator As New DesktopDataCoordinator(False)
+            coordinator.RouteDocument(localId, "Finance Section", "Office of the Secretary-General", "FOR_REVIEW", "Please review budget items", "Hassim A. Ibrahim", 4)
+
+            Dim docRow = EmbeddedDB.DataSet.Tables("Documents").Rows.Find(localId)
+            Assert.IsNotNull(docRow)
+            Assert.AreEqual("Office of the Secretary-General", docRow("DestinationOffice").ToString())
+            Assert.IsTrue(docRow("LastActionTaken").ToString().Contains("Office of the Secretary-General"), "LastActionTaken must reflect destination office")
+            Assert.IsTrue(docRow("LastActionTaken").ToString().Contains("FOR_REVIEW"), "LastActionTaken must reflect the routing action")
+        End Sub
     End Class
 End Namespace

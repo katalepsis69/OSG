@@ -148,10 +148,9 @@ Namespace BTA_OSG
             SetStyle(ControlStyles.OptimizedDoubleBuffer Or ControlStyles.AllPaintingInWmPaint, True)
             UpdateStyles()
 
-            ' Kick the first pull before the login dialog opens, so the badge list the operator
-            ' is about to use is the shared one. Await resumes inside the modal loop.
-            AddHandler Me.Shown, Sub()
-                                     OnSqlSyncTick()
+            ' Run initial SQL sync before opening login dialog so badges enrolled on other desks are active.
+            AddHandler Me.Shown, Async Sub()
+                                     Await RunSqlSyncAsync()
                                      ShowRFIDLoginDialog()
                                  End Sub
         End Sub
@@ -287,7 +286,7 @@ Namespace BTA_OSG
         ''' on the UI thread (Await resumes here) so bound grids refresh on one layout pass.
         ''' A disconnected or unreachable host costs one pointer flip and nothing else.
         ''' </summary>
-        Private Async Sub OnSqlSyncTick()
+        Private Async Function RunSqlSyncAsync() As Task
             If Me.IsDisposed OrElse Not Me.IsHandleCreated Then Return
             If Not Program.IsDatabaseConnected OrElse Program.Coordinator Is Nothing Then Return
             If System.Threading.Interlocked.CompareExchange(_sqlSyncInFlight, 1, 0) <> 0 Then Return
@@ -301,13 +300,18 @@ Namespace BTA_OSG
             Finally
                 System.Threading.Interlocked.Exchange(_sqlSyncInFlight, 0)
             End Try
+        End Function
+
+        Private Async Sub OnSqlSyncTick()
+            Await RunSqlSyncAsync()
         End Sub
 
         Private Sub ApplySqlMirror(snapshot As Dictionary(Of String, DataTable))
-            ' persist:=False: the poll result is re-derived from SQL next tick, and rewriting
-            ' the whole XML every 5 seconds would defeat EmbeddedDB's batched flush.
             EmbeddedDB.ApplySnapshots(snapshot, persist:=False)
             RebindCurrentUser()
+            If snapshot IsNot Nothing AndAlso snapshot.ContainsKey("Users") Then
+                PopulateStaffDropdowns()
+            End If
             RefreshActiveTabGrid()
         End Sub
 
@@ -670,15 +674,37 @@ Namespace BTA_OSG
         End Sub
 
         Public Sub PopulateStaffDropdowns()
-            cmbAssignedStaff.Items.Clear()
-            cmbDirAssign.Items.Clear()
-            For Each row As DataRow In EmbeddedDB.DataSet.Tables("Users").Rows
-                Dim name = row("FullName").ToString()
-                cmbAssignedStaff.Items.Add(name)
-                cmbDirAssign.Items.Add(name)
-            Next
-            If cmbAssignedStaff.Items.Count > 0 Then cmbAssignedStaff.SelectedIndex = 0
-            If cmbDirAssign.Items.Count > 0 Then cmbDirAssign.SelectedIndex = 0
+            Dim prevStaff = If(cmbAssignedStaff.SelectedItem, "").ToString()
+            Dim prevDirAssign = If(cmbDirAssign.SelectedItem, "").ToString()
+
+            cmbAssignedStaff.BeginUpdate()
+            cmbDirAssign.BeginUpdate()
+            Try
+                cmbAssignedStaff.Items.Clear()
+                cmbDirAssign.Items.Clear()
+                For Each row As DataRow In EmbeddedDB.DataSet.Tables("Users").Rows
+                    Dim name = row("FullName").ToString()
+                    cmbAssignedStaff.Items.Add(name)
+                    cmbDirAssign.Items.Add(name)
+                Next
+
+                Dim staffIdx = If(Not String.IsNullOrEmpty(prevStaff), cmbAssignedStaff.Items.IndexOf(prevStaff), -1)
+                If staffIdx >= 0 Then
+                    cmbAssignedStaff.SelectedIndex = staffIdx
+                ElseIf cmbAssignedStaff.Items.Count > 0 Then
+                    cmbAssignedStaff.SelectedIndex = 0
+                End If
+
+                Dim dirIdx = If(Not String.IsNullOrEmpty(prevDirAssign), cmbDirAssign.Items.IndexOf(prevDirAssign), -1)
+                If dirIdx >= 0 Then
+                    cmbDirAssign.SelectedIndex = dirIdx
+                ElseIf cmbDirAssign.Items.Count > 0 Then
+                    cmbDirAssign.SelectedIndex = 0
+                End If
+            Finally
+                cmbAssignedStaff.EndUpdate()
+                cmbDirAssign.EndUpdate()
+            End Try
         End Sub
 
         Private Sub ApplyCardBorder(pnl As Panel)
@@ -788,13 +814,29 @@ Namespace BTA_OSG
                     End If
                     lblStatusCount.Text = dgvRegistry.Rows.Count.ToString() & " Documents"
                 Case 2 ' Directives View
+                    Dim previousDocId As Integer = 0
+                    If cmbDirDocs.SelectedItem IsNot Nothing Then
+                        Dim selectedStr = cmbDirDocs.SelectedItem.ToString()
+                        Dim match = System.Text.RegularExpressions.Regex.Match(selectedStr, "^ID (\d+):")
+                        If match.Success Then Integer.TryParse(match.Groups(1).Value, previousDocId)
+                    End If
+
                     cmbDirDocs.BeginUpdate()
                     Try
                         cmbDirDocs.Items.Clear()
+                        Dim restoreIdx As Integer = -1
+                        Dim currentIdx As Integer = 0
                         For Each drv As DataRowView In visibleDocs
-                            cmbDirDocs.Items.Add(String.Format("ID {0}: [{1}] {2}", drv("DocumentID"), drv("DocCode"), drv("Title")))
+                            Dim docId = Convert.ToInt32(drv("DocumentID"))
+                            cmbDirDocs.Items.Add(String.Format("ID {0}: [{1}] {2}", docId, drv("DocCode"), drv("Title")))
+                            If docId = previousDocId Then restoreIdx = currentIdx
+                            currentIdx += 1
                         Next
-                        If cmbDirDocs.Items.Count > 0 Then cmbDirDocs.SelectedIndex = 0
+                        If restoreIdx >= 0 Then
+                            cmbDirDocs.SelectedIndex = restoreIdx
+                        ElseIf cmbDirDocs.Items.Count > 0 Then
+                            cmbDirDocs.SelectedIndex = 0
+                        End If
                     Finally
                         cmbDirDocs.EndUpdate()
                     End Try
@@ -827,15 +869,17 @@ Namespace BTA_OSG
                     End If
                     lblStatusCount.Text = dgvUsers.Rows.Count.ToString() & " Users"
                 Case 5 ' Audit View
-                    Dim dtAudit = EmbeddedDB.DataSet.Tables("AuditTrail")
-                    dgvAudit.DataSource = dtAudit
-                    DataGridStyler.FormatAuditColumns(dgvAudit)
-                    If dgvAudit.Rows.Count = 0 Then
-                        DataGridStyler.SetEmptyState(dgvAudit, lblAuditWatermark, "No audit trail events recorded.")
-                    Else
-                        DataGridStyler.SetPopulatedState(dgvAudit, lblAuditWatermark)
+                    If txtAuditSearch Is Nothing OrElse String.IsNullOrWhiteSpace(txtAuditSearch.Text) Then
+                        Dim dtAudit = EmbeddedDB.DataSet.Tables("AuditTrail")
+                        dgvAudit.DataSource = dtAudit
+                        DataGridStyler.FormatAuditColumns(dgvAudit)
+                        If dgvAudit.Rows.Count = 0 Then
+                            DataGridStyler.SetEmptyState(dgvAudit, lblAuditWatermark, "No audit trail events recorded.")
+                        Else
+                            DataGridStyler.SetPopulatedState(dgvAudit, lblAuditWatermark)
+                        End If
+                        lblStatusCount.Text = dgvAudit.Rows.Count.ToString() & " Audit Events"
                     End If
-                    lblStatusCount.Text = dgvAudit.Rows.Count.ToString() & " Audit Events"
                 Case 6 ' Portal Intake View
                     RefreshPortalQueue()
             End Select

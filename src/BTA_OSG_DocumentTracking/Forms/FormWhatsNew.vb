@@ -28,14 +28,14 @@ Namespace BTA_OSG
         Private _latestVersion As String = ""
         Private _downloadUrl As String = ""
         Private _remoteNotes As String = ""
-        Private _autoCheck As Boolean = False
+        Private _alreadyChecked As Boolean = False
 
-        Public Sub New(Optional hasUpdate As Boolean = False, Optional latestVersion As String = "", Optional downloadUrl As String = "", Optional releaseNotes As String = "", Optional autoCheck As Boolean = False)
+        Public Sub New(Optional hasUpdate As Boolean = False, Optional latestVersion As String = "", Optional downloadUrl As String = "", Optional releaseNotes As String = "", Optional alreadyChecked As Boolean = False)
             _hasUpdate = hasUpdate
             _latestVersion = latestVersion
             _downloadUrl = downloadUrl
             _remoteNotes = releaseNotes
-            _autoCheck = autoCheck
+            _alreadyChecked = alreadyChecked
 
             InitializeComponent()
             PopulateChangelog(_remoteNotes)
@@ -105,9 +105,15 @@ Namespace BTA_OSG
                 .Size = New Size(190, 28),
                 .TextAlign = ContentAlignment.MiddleCenter,
                 .Font = CivicCalmTheme.FontFieldLabel,
-                .Location = New Point(Me.ClientSize.Width - 210, 24),
-                .Anchor = AnchorStyles.Top Or AnchorStyles.Right
+                .Location = New Point(Math.Max(10, Me.ClientSize.Width - 210), 24)
             }
+
+            ' Reposition badge relative to header client width to prevent docking offset bugs
+            AddHandler pnlHeader.Resize, Sub(s, e)
+                If lblStatusBadge IsNot Nothing Then
+                    lblStatusBadge.Location = New Point(Math.Max(10, pnlHeader.ClientSize.Width - lblStatusBadge.Width - 20), 24)
+                End If
+            End Sub
 
             If _hasUpdate Then
                 lblStatusBadge.Text = $"Update Available ({_latestVersion})"
@@ -117,10 +123,14 @@ Namespace BTA_OSG
                 lblStatusBadge.Text = $"System Up to Date ({verStr})"
                 lblStatusBadge.BackColor = CivicCalmTheme.ColorPrimarySoft
                 lblStatusBadge.ForeColor = CivicCalmTheme.ColorPrimary
-            Else
-                lblStatusBadge.Text = $"System Ready ({verStr})"
+            ElseIf _alreadyChecked Then
+                lblStatusBadge.Text = $"System Up to Date ({verStr})"
                 lblStatusBadge.BackColor = CivicCalmTheme.ColorPrimarySoft
                 lblStatusBadge.ForeColor = CivicCalmTheme.ColorPrimary
+            Else
+                lblStatusBadge.Text = "Checking updates..."
+                lblStatusBadge.BackColor = CivicCalmTheme.ColorWell
+                lblStatusBadge.ForeColor = CivicCalmTheme.ColorInkMuted
             End If
             pnlHeader.Controls.Add(lblStatusBadge)
 
@@ -190,11 +200,7 @@ Namespace BTA_OSG
 
         Protected Overrides Async Sub OnShown(e As EventArgs)
             MyBase.OnShown(e)
-            If _autoCheck OrElse String.IsNullOrEmpty(_latestVersion) Then
-                lblStatusBadge.Text = "Checking online updates..."
-                lblStatusBadge.BackColor = CivicCalmTheme.ColorWell
-                lblStatusBadge.ForeColor = CivicCalmTheme.ColorInkMuted
-
+            If Not _alreadyChecked AndAlso String.IsNullOrEmpty(_latestVersion) Then
                 Dim info = Await AppUpdateService.CheckUpdateInfoAsync()
                 If Me.IsDisposed Then Return
 

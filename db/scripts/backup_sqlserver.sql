@@ -49,20 +49,33 @@ BEGIN
 
     DECLARE @Timestamp VARCHAR(20) = CONVERT(VARCHAR(20), GETDATE(), 112) + '_' + REPLACE(CONVERT(VARCHAR(8), GETDATE(), 108), ':', '');
     DECLARE @BackupPath NVARCHAR(560) = @SubDirectory + @DatabaseName + N'_FULL_' + @Timestamp + N'.bak';
+    -- Express (EngineEdition 4) rejects WITH COMPRESSION outright (error 1844), and the
+    -- office server runs Express, so compression is applied only on editions that take it.
+    DECLARE @SupportsCompression BIT = CASE WHEN CAST(SERVERPROPERTY('EngineEdition') AS INT) IN (2, 3, 5, 6, 8) THEN 1 ELSE 0 END;
 
     PRINT 'Starting full backup for database: ' + @DatabaseName;
     PRINT 'Destination file: ' + @BackupPath;
 
     BEGIN TRY
-        BACKUP DATABASE @DatabaseName
-        TO DISK = @BackupPath
-        WITH
-            FORMAT,
-            INIT,
-            COMPRESSION,
-            CHECKSUM,
-            STATS = 10,
-            NAME = N'BTA_OSG_DB Full Database Backup';
+        IF @SupportsCompression = 1
+            BACKUP DATABASE @DatabaseName
+            TO DISK = @BackupPath
+            WITH
+                FORMAT,
+                INIT,
+                COMPRESSION,
+                CHECKSUM,
+                STATS = 10,
+                NAME = N'BTA_OSG_DB Full Database Backup';
+        ELSE
+            BACKUP DATABASE @DatabaseName
+            TO DISK = @BackupPath
+            WITH
+                FORMAT,
+                INIT,
+                CHECKSUM,
+                STATS = 10,
+                NAME = N'BTA_OSG_DB Full Database Backup';
 
         PRINT 'Backup completed. Verifying backup integrity...';
 

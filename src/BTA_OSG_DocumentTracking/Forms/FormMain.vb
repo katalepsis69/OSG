@@ -765,7 +765,10 @@ Namespace BTA_OSG
                 btnCheckUpdate.Enabled = False
                 btnCheckUpdate.Text = "Checking..."
                 Try
-                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True)
+                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
+                        btnCheckUpdate.Text = "📋 &What's New"
+                        btnCheckUpdate.Enabled = True
+                    End Sub)
                 Finally
                     btnCheckUpdate.Text = "📋 &What's New"
                     btnCheckUpdate.Enabled = True

@@ -34,6 +34,11 @@ Namespace BTA_OSG
                 Http.DefaultRequestHeaders.UserAgent.Clear()
                 Http.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
 
+                Dim token = Environment.GetEnvironmentVariable("GITHUB_TOKEN")
+                If Not String.IsNullOrEmpty(token) Then
+                    Http.DefaultRequestHeaders.Authorization = New AuthenticationHeaderValue("Bearer", token)
+                End If
+
                 Dim url = $"https://api.github.com/repos/{GitHubRepo}/releases/latest"
                 Dim response = Await Http.GetAsync(url).ConfigureAwait(False)
 
@@ -120,13 +125,20 @@ Namespace BTA_OSG
                 End If
                 Dim currentPid = Environment.ProcessId
                 Dim scriptPath = Path.Combine(tempDir, "apply_update.cmd")
+                Dim safeCurrentExe = currentExe.Replace("'", "''")
 
                 Dim script = "@echo off" & vbCrLf &
                              ":wait" & vbCrLf &
                              $"tasklist /fi ""PID eq {currentPid}"" | findstr ""{currentPid}"" >nul" & vbCrLf &
                              "if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)" & vbCrLf &
+                             "timeout /t 1 /nobreak >nul" & vbCrLf &
+                             ":copyloop" & vbCrLf &
                              $"copy /y ""{tempExe}"" ""{currentExe}"" >nul" & vbCrLf &
-                             $"powershell -NoProfile -Command ""Unblock-File '{currentExe}'"" >nul 2>&1" & vbCrLf &
+                             "if errorlevel 1 (" & vbCrLf &
+                             "    timeout /t 1 /nobreak >nul" & vbCrLf &
+                             "    goto copyloop" & vbCrLf &
+                             ")" & vbCrLf &
+                             $"powershell -NoProfile -Command ""Unblock-File '{safeCurrentExe}'"" >nul 2>&1" & vbCrLf &
                              $"start """" ""{currentExe}""" & vbCrLf &
                              "(goto) 2>nul & del ""%~f0"""
 
@@ -145,9 +157,10 @@ Namespace BTA_OSG
             End Try
         End Function
 
-        Public Async Function CheckAndApplyUpdateAsync(ownerForm As Form, manualCheck As Boolean) As Task
+        Public Async Function CheckAndApplyUpdateAsync(ownerForm As Form, manualCheck As Boolean, Optional onChecked As Action = Nothing) As Task
             Dim info = Await CheckUpdateInfoAsync().ConfigureAwait(True)
-            Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes)
+            If onChecked IsNot Nothing Then onChecked()
+            Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes, alreadyChecked:=True)
                 dlg.ShowDialog(ownerForm)
             End Using
         End Function

@@ -280,7 +280,7 @@ Namespace BTA_OSG
             }
 
             Dim currentVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version
-            Dim verText = If(currentVer IsNot Nothing, $"v{currentVer.ToString(3)}", "v2.1.0")
+            Dim verText = If(currentVer IsNot Nothing, $"v{AppUpdateService.FormatVersion(currentVer)}", "v?")
             Dim lblVersion = New ToolStripStatusLabel With {
                 .Text = $"{verText} (What's New)",
                 .BorderSides = ToolStripStatusLabelBorderSides.Left,

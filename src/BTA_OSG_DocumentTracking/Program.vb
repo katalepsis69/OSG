@@ -551,7 +551,19 @@ Namespace BTA_OSG
                     Console.WriteLine("[FAIL] 15. An older or unstamped release must not be treated as an update.")
                     Return 1
                 End If
-                Console.WriteLine("[PASS] 15. Same-version republish detection verified (stamp parsing and direction).")
+                ' Two-part release tags (2.2) must read as the same version as their installed
+                ' builds (2.2.0.0), or a republish of such a tag would never be detected.
+                If Not AppUpdateService.IsSameVersion(New Version(2, 2), New Version(2, 2, 0, 0)) OrElse
+                   Not AppUpdateService.IsSameVersion(New Version(2, 1, 6), New Version(2, 1, 6, 0)) OrElse
+                   AppUpdateService.IsSameVersion(New Version(2, 2), New Version(2, 1, 6, 0)) Then
+                    Console.WriteLine("[FAIL] 15. Version part-count normalization failed.")
+                    Return 1
+                End If
+                If AppUpdateService.FormatVersion(New Version(2, 2, 0, 0)) <> "2.2" OrElse AppUpdateService.FormatVersion(New Version(2, 1, 6, 0)) <> "2.1.6" Then
+                    Console.WriteLine("[FAIL] 15. Version display formatting failed.")
+                    Return 1
+                End If
+                Console.WriteLine("[PASS] 15. Same-version republish detection and two-part version handling verified.")
 
                 ' Test 16: Clean exit
                 Console.WriteLine("[PASS] 16. Clean exit verified.")

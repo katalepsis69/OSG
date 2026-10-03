@@ -107,10 +107,7 @@ Namespace BTA_OSG
 
                     info.Success = True
                     Dim versionDelta = (latestVer IsNot Nothing AndAlso latestVer > currentVer)
-                    Dim sameVersion = (latestVer IsNot Nothing AndAlso
-                                       latestVer.Major = currentVer.Major AndAlso
-                                       latestVer.Minor = currentVer.Minor AndAlso
-                                       latestVer.Build = currentVer.Build)
+                    Dim sameVersion = IsSameVersion(latestVer, currentVer)
                     Dim republish = (sameVersion AndAlso IsRepublishNewer(releaseBuildStamp, localBuildStamp))
                     info.HasUpdate = (versionDelta OrElse republish) AndAlso Not String.IsNullOrEmpty(downloadUrl)
                     Return info
@@ -165,6 +162,31 @@ Namespace BTA_OSG
             ' to its local curated history, which covers every version including 2.1.4.
         End Try
         Return entries
+    End Function
+
+    ''' <summary>
+    ''' True when a release tag and an installed assembly version describe the same release
+    ''' despite different part counts ("2.2" vs "2.2.0.0"); missing parts read as zero.
+    ''' </summary>
+    Friend Function IsSameVersion(releaseVer As Version, currentVer As Version) As Boolean
+        If releaseVer Is Nothing OrElse currentVer Is Nothing Then Return False
+        Return releaseVer.Major = currentVer.Major AndAlso
+               Math.Max(releaseVer.Minor, 0) = Math.Max(currentVer.Minor, 0) AndAlso
+               Math.Max(releaseVer.Build, 0) = Math.Max(currentVer.Build, 0) AndAlso
+               Math.Max(releaseVer.Revision, 0) = Math.Max(currentVer.Revision, 0)
+    End Function
+
+    ''' <summary>
+    ''' Version as the office reads it: "2.2" for a two-part release, "2.1.6" while
+    ''' three-part builds are still in the field. Trailing zero parts are dropped.
+    ''' </summary>
+    Friend Function FormatVersion(v As Version) As String
+        If v Is Nothing Then Return ""
+        Dim build = Math.Max(v.Build, 0)
+        Dim revision = Math.Max(v.Revision, 0)
+        If revision > 0 Then Return v.Major & "." & v.Minor & "." & build & "." & revision
+        If build > 0 Then Return v.Major & "." & v.Minor & "." & build
+        Return v.Major & "." & v.Minor
     End Function
 
     ''' <summary>

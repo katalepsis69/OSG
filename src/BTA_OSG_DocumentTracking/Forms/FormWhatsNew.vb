@@ -95,7 +95,7 @@ Namespace BTA_OSG
             pnlHeader.Controls.Add(lblHeaderTitle)
 
             Dim currentVer = Assembly.GetExecutingAssembly().GetName().Version
-            Dim verStr = If(currentVer IsNot Nothing, $"v{currentVer.ToString(3)}", "v2.1.0")
+            Dim verStr = If(currentVer IsNot Nothing, $"v{AppUpdateService.FormatVersion(currentVer)}", "v?")
 
             lblHeaderSubtitle = New Label With {
                 .Text = $"Current Version: {verStr}  -  Parliamentary Document Tracking System",
@@ -214,7 +214,7 @@ Namespace BTA_OSG
                 If Me.IsDisposed Then Return
 
                 Dim currentVer = Assembly.GetExecutingAssembly().GetName().Version
-                Dim verStr = If(currentVer IsNot Nothing, $"v{currentVer.ToString(3)}", "v2.1.0")
+                Dim verStr = If(currentVer IsNot Nothing, $"v{AppUpdateService.FormatVersion(currentVer)}", "v?")
 
                 If info.Success Then
                     _latestVersion = info.LatestVersion

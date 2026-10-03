@@ -101,6 +101,7 @@ Namespace BTA_OSG
                                  $"tasklist /fi ""PID eq {currentPid}"" | findstr ""{currentPid}"" >nul" & vbCrLf &
                                  "if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)" & vbCrLf &
                                  $"copy /y ""{tempExe}"" ""{currentExe}"" >nul" & vbCrLf &
+                                 $"powershell -NoProfile -Command ""Unblock-File '{currentExe}'"" >nul 2>&1" & vbCrLf &
                                  $"start """" ""{currentExe}""" & vbCrLf &
                                  "(goto) 2>nul & del ""%~f0"""
 

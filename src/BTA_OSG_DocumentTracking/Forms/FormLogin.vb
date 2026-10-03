@@ -196,8 +196,8 @@ Namespace BTA_OSG
 
             Dim lnkSetup As New LinkLabel With {
                 .Text = If(AppSettings.Instance.IsConfigured AndAlso Not AppSettings.Instance.DatabaseSettings.UseSqlServer,
-                           "⚙ Connect to the Office Server (Station Setup)",
-                           "⚙ Station Setup & Connection Settings"),
+                           "Connect to the Office Server (Station Setup)",
+                           "Station Setup & Connection Settings"),
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .LinkColor = CivicCalmTheme.ColorPrimary,
                 .ActiveLinkColor = CivicCalmTheme.ColorInfo,

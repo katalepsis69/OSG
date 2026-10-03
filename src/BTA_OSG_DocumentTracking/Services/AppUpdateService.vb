@@ -152,6 +152,7 @@ Namespace BTA_OSG
                 })
 
                 Application.Exit()
+                Environment.Exit(0)
             Catch ex As Exception
                 MessageBox.Show(ownerForm, "Failed to download and apply update: " & ex.Message, "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try

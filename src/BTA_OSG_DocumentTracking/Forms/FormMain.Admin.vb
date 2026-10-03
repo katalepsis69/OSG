@@ -170,7 +170,7 @@ Namespace BTA_OSG
             pnlFormFlow.Controls.Add(btnUnlockUser)
 
             Dim btnSetupWizard As New Button With {
-                .Text = "⚙ Reconfigure &Station Setup...",
+                .Text = "Reconfigure &Station Setup...",
                 .Size = New Size(CInt(Dpi(320.0F)), CInt(Dpi(38.0F))),
                 .TabIndex = 9,
                 .BackColor = CivicCalmTheme.ColorWell,

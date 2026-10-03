@@ -30,7 +30,7 @@ You do **not** need to install or configure anything on `C:\`. The portal is com
 #### Method 1: Automatic 1-Click from the Desktop App (Recommended)
 1. Run `dist\BTA_OSG_DocumentTracking.exe`.
 2. Go to the **Portal Intake** tab.
-3. Click the **`🌐 Open OSGPortal`** button.
+3. Click the **`Open OSGPortal`** button.
    - The desktop app automatically starts the bundled MySQL server and PHP web portal in the background.
    - Your default browser opens immediately to `http://localhost:8085`.
    - When the desktop app closes, the background services stop cleanly.

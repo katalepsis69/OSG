@@ -105,6 +105,25 @@ Internet is only needed for two optional features:
 1. The public citizen portal and its Cloudflare tunnel.
 2. Opening soft-copy PDF documents hosted on Google Drive links.
 
+## Soft copies on Google Drive
+
+A document can carry a link to its scanned copy, so an officer opens the PDF without hunting for the folder. The copy lives on Google Drive, so this is the part that needs internet.
+
+One-time setup, by whoever owns the office Google account:
+
+1. Upload the scanned documents to Google Drive.
+2. Select a file, press Share, and choose Anyone with the link, Viewer. A file shared with one person only opens for nobody else in the office; officers would see Google's access page instead of the document.
+
+Putting a soft copy on a document:
+
+1. Register the document in Document Registry as usual.
+2. Paste the Drive link into Digital Soft Copy Reference. The program accepts only secure links to drive.google.com or docs.google.com and refuses anything else when saving.
+3. Attach Scan instead picks a PDF from that PC. A link like that only opens on computers that can see the same file, so offices with several PCs should stick to Drive links.
+
+Who may open one: tick Allow Soft Copy Document Access when enrolling a staff member, under Staff Operational Privileges. Everyone else sees the document's details, but Preview refuses and Launch PDF tells them access is denied.
+
+Using it: open a document, read the copy in the Preview tab, or press Open Link to open it in the browser. Opening the link is written to the Audit Trail, so who opened what stays answerable. The Preview tab needs the small preview helper from the copy checklist; without it the tab says so and Open Link still works.
+
 ## Start with the program, add the portal later
 
 Run the office on the program alone first. Officers can register, route, store, print, and audit walk-in documents without the portal, and that is the whole office workflow. Turn the portal on in a second pass, once its email and its public address belong to the office.

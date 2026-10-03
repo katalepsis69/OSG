@@ -44,8 +44,8 @@ Namespace BTA_OSG
 
             btnOpenPortal = New Button With {
                 .Name = "btnOpenOSGPortal",
-                .Text = "🌐 &Open OSGPortal",
-                .Size = New Size(165, 34),
+                .Text = "&Open OSGPortal",
+                .Size = New Size(150, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
@@ -58,8 +58,8 @@ Namespace BTA_OSG
 
             btnStartTunnel = New Button With {
                 .Name = "btnStartCloudflareTunnel",
-                .Text = "☁️ &Cloudflare Tunnel",
-                .Size = New Size(180, 34),
+                .Text = "&Cloudflare Tunnel",
+                .Size = New Size(165, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
@@ -408,7 +408,7 @@ Namespace BTA_OSG
 
                     If ans = DialogResult.Yes Then
                         PortalServerManager.StopTunnel()
-                        If btnStartTunnel IsNot Nothing Then btnStartTunnel.Text = "☁️ Cloudflare Tunnel"
+                        If btnStartTunnel IsNot Nothing Then btnStartTunnel.Text = "&Cloudflare Tunnel"
                         If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "Cloudflare: Stopped"
                     End If
                     Return
@@ -416,7 +416,7 @@ Namespace BTA_OSG
 
                 If btnStartTunnel IsNot Nothing Then
                     btnStartTunnel.Enabled = False
-                    btnStartTunnel.Text = "⏳ Connecting..."
+                    btnStartTunnel.Text = "Connecting..."
                 End If
                 If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "Cloudflare: Launching headless tunnel..."
 
@@ -429,7 +429,7 @@ Namespace BTA_OSG
                     End Try
 
                     If btnStartTunnel IsNot Nothing Then
-                        btnStartTunnel.Text = "☁️ Tunnel Online (Copy Link)"
+                        btnStartTunnel.Text = "Tunnel Online (Copy Link)"
                     End If
                     If lblPortalStatus IsNot Nothing Then
                         lblPortalStatus.Text = $"Cloudflare: {tunnelUrl}"
@@ -445,14 +445,14 @@ Namespace BTA_OSG
                         MessageBoxIcon.Information)
                 Else
                     If btnStartTunnel IsNot Nothing Then
-                        btnStartTunnel.Text = "☁️ &Cloudflare Tunnel"
+                        btnStartTunnel.Text = "&Cloudflare Tunnel"
                     End If
                     MessageBox.Show("Could not start Cloudflare Tunnel or retrieve public link. Verify portal\cloudflared.exe exists.", "Cloudflare Tunnel", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 End If
             Catch ex As Exception
                 MessageBox.Show("Error starting Cloudflare Tunnel: " & ex.Message, "Cloudflare Tunnel", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 If btnStartTunnel IsNot Nothing Then
-                    btnStartTunnel.Text = "☁️ &Cloudflare Tunnel"
+                    btnStartTunnel.Text = "&Cloudflare Tunnel"
                 End If
             Finally
                 If btnStartTunnel IsNot Nothing Then btnStartTunnel.Enabled = True

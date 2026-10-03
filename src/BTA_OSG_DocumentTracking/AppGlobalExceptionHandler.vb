@@ -1,4 +1,4 @@
-﻿Option Explicit On
+Option Explicit On
 Option Strict On
 
 Imports System.Windows.Forms
@@ -14,8 +14,14 @@ Namespace BTA_OSG
             AddHandler TaskScheduler.UnobservedTaskException, Sub(sender, e)
                 ' Observed nowhere else, so log it and mark it handled: the default policy
                 ' already ignores these, but a silent Task.Run bug should leave a trace.
+                ' Unobserved task exceptions must never trigger modal user dialogs.
                 e.SetObserved()
-                If e.Exception IsNot Nothing Then HandleException(e.Exception.GetBaseException())
+                If e.Exception IsNot Nothing Then
+                    Dim baseEx = e.Exception.GetBaseException()
+                    If baseEx IsNot Nothing Then
+                        HandleException(baseEx, isUnobservedTask:=True)
+                    End If
+                End If
             End Sub
         End Sub
 
@@ -32,7 +38,44 @@ Namespace BTA_OSG
         ' before it outgrows disk sanity.
         Private ReadOnly LogLock As New Object()
 
-        Private Sub HandleException(ex As Exception)
+        Private Function IsAbortedOrCanceledException(ex As Exception) As Boolean
+            If ex Is Nothing Then Return False
+            If TypeOf ex Is OperationCanceledException OrElse TypeOf ex Is Threading.ThreadAbortException Then
+                Return True
+            End If
+            Dim baseEx = ex.GetBaseException()
+            If baseEx IsNot Nothing AndAlso baseEx IsNot ex Then
+                If TypeOf baseEx Is OperationCanceledException OrElse TypeOf baseEx Is Threading.ThreadAbortException Then
+                    Return True
+                End If
+            End If
+            Dim cur As Exception = ex
+            While cur IsNot Nothing
+                If TypeOf cur Is System.Net.Sockets.SocketException Then
+                    Dim sockEx = DirectCast(cur, System.Net.Sockets.SocketException)
+                    If sockEx.NativeErrorCode = 995 OrElse sockEx.SocketErrorCode = System.Net.Sockets.SocketError.OperationAborted Then
+                        Return True
+                    End If
+                End If
+                If Not String.IsNullOrEmpty(cur.Message) AndAlso
+                   cur.Message.Contains("aborted because of either a thread exit or an application request", StringComparison.OrdinalIgnoreCase) Then
+                    Return True
+                End If
+                cur = cur.InnerException
+            End While
+            Return False
+        End Function
+
+        Private Sub HandleException(ex As Exception, Optional isUnobservedTask As Boolean = False)
+            If ex Is Nothing Then Return
+            If Environment.HasShutdownStarted Then Return
+
+            ' Aborted or canceled operations (e.g. socket teardown on app exit) should not trigger popups
+            If IsAbortedOrCanceledException(ex) Then
+                System.Diagnostics.Trace.TraceInformation("Ignored aborted/canceled operation: {0}: {1}", ex.GetType().FullName, ex.Message)
+                Return
+            End If
+
             Try
                 If AppStartup.AuditService IsNot Nothing AndAlso SessionManager.CurrentSession IsNot Nothing Then
                     Try
@@ -61,13 +104,20 @@ Namespace BTA_OSG
                     End SyncLock
                 Catch
                 End Try
+
+                ' Background task exceptions should be logged to trace and file, but not interrupt
+                ' the operator with modal message boxes.
+                If isUnobservedTask Then Return
+
                 If DateTime.UtcNow.Subtract(_lastDialogShownUtc).TotalSeconds < 10 Then Return
                 _lastDialogShownUtc = DateTime.UtcNow
                 MessageBox.Show("An unexpected error occurred: " & ex.Message & Environment.NewLine & Environment.NewLine &
                                 "Technical details were saved to " & LogPath,
                                 "System Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             Catch
-                MessageBox.Show("A critical error occurred. Contact support.", "Critical Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                If Not isUnobservedTask Then
+                    MessageBox.Show("A critical error occurred. Contact support.", "Critical Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                End If
             End Try
         End Sub
     End Module

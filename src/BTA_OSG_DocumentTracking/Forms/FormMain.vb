@@ -751,8 +751,8 @@ Namespace BTA_OSG
             AddHandler btnScanRFID.Click, Sub() ShowRFIDLoginDialog()
 
             btnCheckUpdate = New Button With {
-                .Text = "📋 &What's New",
-                .Size = New Size(125, 36),
+                .Text = "&What's New",
+                .Size = New Size(115, 36),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -766,11 +766,11 @@ Namespace BTA_OSG
                 btnCheckUpdate.Text = "Checking..."
                 Try
                     Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
-                        btnCheckUpdate.Text = "📋 &What's New"
+                        btnCheckUpdate.Text = "&What's New"
                         btnCheckUpdate.Enabled = True
                     End Sub)
                 Finally
-                    btnCheckUpdate.Text = "📋 &What's New"
+                    btnCheckUpdate.Text = "&What's New"
                     btnCheckUpdate.Enabled = True
                 End Try
             End Sub

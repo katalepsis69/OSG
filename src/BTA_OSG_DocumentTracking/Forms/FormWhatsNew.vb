@@ -196,6 +196,7 @@ Namespace BTA_OSG
             Me.Controls.Add(pnlContent)
             Me.Controls.Add(pnlFooter)
             Me.Controls.Add(pnlHeader)
+            pnlContent.BringToFront()
         End Sub
 
         Protected Overrides Async Sub OnShown(e As EventArgs)
@@ -237,8 +238,8 @@ Namespace BTA_OSG
             If btnUpdateNow IsNot Nothing OrElse String.IsNullOrEmpty(_downloadUrl) Then Return
 
             btnUpdateNow = New Button With {
-                .Text = "🔄 &Update && Restart Now",
-                .Size = New Size(195, 34),
+                .Text = "&Update && Restart Now",
+                .Size = New Size(185, 34),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .BackColor = CivicCalmTheme.ColorPrimary,
@@ -253,7 +254,7 @@ Namespace BTA_OSG
                 Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me)
                 If Not Me.IsDisposed Then
                     btnUpdateNow.Enabled = True
-                    btnUpdateNow.Text = "🔄 &Update && Restart Now"
+                    btnUpdateNow.Text = "&Update && Restart Now"
                 End If
             End Sub
             flpFooter.Controls.Add(btnUpdateNow)

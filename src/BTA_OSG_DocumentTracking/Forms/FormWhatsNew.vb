@@ -290,7 +290,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.1.4",
-                .HeaderText = "Version 2.1.4 - October 2026",
+                .HeaderText = "v2.1.4 - October 2026",
                 .Bullets = New List(Of String) From {
                     "Details Window Stability: Fixed flickering, ghosting, and black leftovers when resizing or maximizing, especially on the Document Overview tab.",
                     "Truthful Roadmap: The step-by-step custody roadmap now shows where a document really is; freshly registered documents start at their assigned desk.",
@@ -301,7 +301,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.1.3",
-                .HeaderText = "Version 2.1.3 - October 2026",
+                .HeaderText = "v2.1.3 - October 2026",
                 .Bullets = New List(Of String) From {
                     "Sidebar Navigation: Relocated What's New button to the bottom of the left navigation pane for easy access.",
                     "Header Streamlining: Cleaned up the top banner to keep focus on badge scanning and user logout.",
@@ -311,7 +311,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.1.2",
-                .HeaderText = "Version 2.1.2 - October 2026",
+                .HeaderText = "v2.1.2 - October 2026",
                 .Bullets = New List(Of String) From {
                     "Sharp Desktop Icons: Integrated 23 clean vector icons that stay sharp on all monitor display scalings.",
                     "Theme Contrast Tinting: Icons adapt automatically to match screen theme colors for high readability.",
@@ -322,7 +322,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.1.0",
-                .HeaderText = "Version 2.1.0 - October 2026",
+                .HeaderText = "v2.1.0 - October 2026",
                 .Bullets = New List(Of String) From {
                     "What's New & Release Changelogs: Integrated release history and update notification window.",
                     "1-Click System Updates: Self-service update checker querying GitHub Releases with automated in-place restart.",
@@ -335,7 +335,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.0.0",
-                .HeaderText = "Version 2.0.0 - September 2026",
+                .HeaderText = "v2.0.0 - September 2026",
                 .Bullets = New List(Of String) From {
                     "External Intake Web Portal: Citizen and ministry intake portal with OTP verification and tracking.",
                     "Routing Slip Print Engine: Standard Bangsamoro parliamentary document routing slip print service.",
@@ -347,7 +347,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "1.5.0",
-                .HeaderText = "Version 1.5.0 - August 2026",
+                .HeaderText = "v1.5.0 - August 2026",
                 .Bullets = New List(Of String) From {
                     "RFID Dual-Factor Security: Contactless smart card authentication with terminal auto-lockout defense.",
                     "Offline Resilient Outbox: Continuous background sync to SQL Server with seamless offline cache fallback.",
@@ -357,7 +357,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "1.0.0",
-                .HeaderText = "Version 1.0.0 - July 2026",
+                .HeaderText = "v1.0.0 - July 2026",
                 .Bullets = New List(Of String) From {
                     "Document Tracking Engine: Central database tracking for communications, bills, vouchers, and travel orders.",
                     "Sequential Tracking Numbers: Automated document tracking code generator (COMM, LEG, FIN, TO).",

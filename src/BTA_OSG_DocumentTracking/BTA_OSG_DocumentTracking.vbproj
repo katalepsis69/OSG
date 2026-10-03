@@ -129,4 +129,13 @@
     </AssemblyAttribute>
   </ItemGroup>
 
+  <!-- WebView2 targets automatically reference Microsoft.Web.WebView2.Wpf.dll even in pure
+       WinForms apps, triggering MSB3277 WindowsBase conflicts with .NET 10.
+       Removing the unneeded WPF reference eliminates the conflict warning cleanly. -->
+  <Target Name="ExcludeWebView2Wpf" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(FileName)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+
 </Project>

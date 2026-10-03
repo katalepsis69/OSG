@@ -368,11 +368,16 @@ Namespace BTA_OSG
             Return history
         End Function
 
-        Private Shared Function NormalizeVersion(tagOrVersion As String) As String
+        ''' <summary>
+        ''' Canonical key for matching release tags to curated entries: missing version parts
+        ''' read as zero, so "2.1" and "2.1.0.0" share a key. Never Version.ToString(n): it
+        ''' throws for a version shorter than n parts ("2.1" has no third field to print).
+        ''' </summary>
+        Friend Shared Function NormalizeVersion(tagOrVersion As String) As String
             Dim normalized = If(tagOrVersion, "").Trim().TrimStart("v"c, "V"c)
             Dim parsed As Version = Nothing
             If Version.TryParse(normalized, parsed) Then
-                Return parsed.ToString(3)
+                Return parsed.Major & "." & parsed.Minor & "." & Math.Max(parsed.Build, 0) & "." & Math.Max(parsed.Revision, 0)
             End If
             Return normalized
         End Function

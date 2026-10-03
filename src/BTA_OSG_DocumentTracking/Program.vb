@@ -567,6 +567,13 @@ Namespace BTA_OSG
                     Console.WriteLine("[FAIL] 15. Release tag labels were not reduced to two parts.")
                     Return 1
                 End If
+                ' Matching keys must survive short version numbers: a two-part tag is what every
+                ' release uses now, and comparing it to a curated entry must not throw.
+                If FormWhatsNew.NormalizeVersion("v2.1") <> FormWhatsNew.NormalizeVersion("2.1.0.0") OrElse
+                   FormWhatsNew.NormalizeVersion("v2.1") = FormWhatsNew.NormalizeVersion("v2.1.6") Then
+                    Console.WriteLine("[FAIL] 15. Version matching keys are wrong for two-part tags.")
+                    Return 1
+                End If
                 Console.WriteLine("[PASS] 15. Same-version republish detection and two-part version handling verified.")
 
                 ' Test 16: Clean exit

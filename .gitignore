@@ -45,6 +45,16 @@ diagram.html
 doc_text.txt
 docs/superpowers/plans/
 docs/superpowers/specs/
+.agents/
+.claude/
+.gemini/
+skills-lock.json
+AGENTS.md
+DESIGN.md
+GEMINI.md
+docker-compose.portal.yml
+*.bat
+tests/
 
 # ------------------------------------------------------------------------------
 # Local database files, backups, and XML fallback stores

@@ -76,6 +76,7 @@ Namespace BTA_OSG
 
         Private Shared ReadOnly _syncLock As New Object()
         Private Shared ReadOnly _flushLock As New Object()
+        Private Shared ReadOnly _saveLock As New Object()
         Private Shared _flushTimer As System.Threading.Timer
         Private Const FlushDelayMs As Integer = 1500
 
@@ -86,40 +87,51 @@ Namespace BTA_OSG
         ''' </summary>
         Public Shared Sub Save()
             CancelPendingFlush()
+            Dim persistCopy As DataSet
             SyncLock _syncLock
-                Try
-                    DataSet.WriteXml(DbPath, XmlWriteMode.WriteSchema)
-                    LastPersistenceError = ""
-                Catch ex As Exception
-                    ' A silently lost flush would strand PendingSync rows in the outbox with
-                    ' no evidence anywhere, so the failure must reach the trace log AND the
-                    ' operator surface (FormMain listens for PersistenceFailed).
-                    LastPersistenceError = ex.Message
-                    System.Diagnostics.Trace.TraceError("EmbeddedDB.Save failed: " & ex.Message)
-                    RaiseEvent PersistenceFailed(ex.Message)
-                End Try
+                ' Serialize a copy instead of the live set: WriteXml of a large cache is slow
+                ' I/O, and holding _syncLock across it would stall the UI thread's mirror
+                ' merge for the whole write.
+                persistCopy = DataSet.Copy()
             End SyncLock
+            Try
+                SyncLock _saveLock
+                    persistCopy.WriteXml(DbPath, XmlWriteMode.WriteSchema)
+                End SyncLock
+                LastPersistenceError = ""
+            Catch ex As Exception
+                ' A silently lost flush would strand PendingSync rows in the outbox with
+                ' no evidence anywhere, so the failure must reach the trace log AND the
+                ' operator surface (FormMain listens for PersistenceFailed).
+                LastPersistenceError = ex.Message
+                System.Diagnostics.Trace.TraceError("EmbeddedDB.Save failed: " & ex.Message)
+                RaiseEvent PersistenceFailed(ex.Message)
+            End Try
         End Sub
 
         ''' <summary>
         ''' Merges one SQL Server snapshot into its cache table. SQL Server is the source of
         ''' truth whenever it is reachable. Rows are updated in place rather than cleared and reloaded.
         ''' Rows marked with PendingSync = True are strictly preserved so offline work is never wiped.
+        ''' Returns True only when a row was added, removed, or actually differs, so callers can
+        ''' skip UI refreshes for mirror ticks that carried no changes.
         ''' </summary>
-        Public Shared Sub ApplySnapshot(tableName As String, snapshot As DataTable, Optional persist As Boolean = True)
-            If snapshot Is Nothing OrElse snapshot.Rows.Count = 0 Then Return
+        Public Shared Function ApplySnapshot(tableName As String, snapshot As DataTable, Optional persist As Boolean = True) As Boolean
+            If snapshot Is Nothing OrElse snapshot.Rows.Count = 0 Then Return False
             SyncLock _syncLock
                 EnsureInitialized()
-                If Not DataSet.Tables.Contains(tableName) Then Return
+                If Not DataSet.Tables.Contains(tableName) Then Return False
                 Dim target = DataSet.Tables(tableName)
-                If target.PrimaryKey Is Nothing OrElse target.PrimaryKey.Length <> 1 Then Return
+                If target.PrimaryKey Is Nothing OrElse target.PrimaryKey.Length <> 1 Then Return False
                 Dim pk = target.PrimaryKey(0)
-                If Not snapshot.Columns.Contains(pk.ColumnName) Then Return
+                If Not snapshot.Columns.Contains(pk.ColumnName) Then Return False
 
                 Dim incoming As New HashSet(Of Object)()
                 For Each source As DataRow In snapshot.Rows
                     incoming.Add(source(pk.ColumnName))
                 Next
+
+                Dim changed As Boolean = False
 
                 ' Merge row by row instead of Load(OverwriteChanges): a PK match on a
                 ' PendingSync row must keep the offline data, not be overwritten by the
@@ -131,8 +143,9 @@ Namespace BTA_OSG
                         Dim added = target.NewRow()
                         CopySnapshotValues(source, added, target)
                         target.Rows.Add(added)
-                    Else
-                        CopySnapshotValues(source, existing, target)
+                        changed = True
+                    ElseIf CopySnapshotValues(source, existing, target) Then
+                        changed = True
                     End If
                 Next
 
@@ -151,11 +164,13 @@ Namespace BTA_OSG
                     For Each row As DataRow In doomed
                         target.Rows.Remove(row)
                     Next
+                    If doomed.Count > 0 Then changed = True
                 End If
 
-                If persist Then MarkDirty()
+                If persist AndAlso changed Then MarkDirty()
+                Return changed
             End SyncLock
-        End Sub
+        End Function
 
         Private Shared Function IsPendingRow(table As DataTable, row As DataRow) As Boolean
             If Not table.Columns.Contains("PendingSync") Then Return False

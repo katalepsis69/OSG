@@ -41,6 +41,14 @@ Namespace BTA_OSG
         ' One SQL snapshot pull at a time: a slow host skips ticks instead of queueing them.
         Private _sqlSyncInFlight As Integer
 
+        ' Bind-once state: grids keep their DataView across sync ticks and the in-place
+        ' mirror merge updates them through row events instead of full rebinds. The view is
+        ' recreated only when the session or the dashboard filters change.
+        Private _activeDocsView As DataView
+        Private _activeDocsViewKey As String
+        Private _auditView As DataView
+        Private tmrResizeRefresh As Timer
+
         ' Header Controls
         Private lblTitle As Label
         Private lblUserBadge As Label
@@ -360,9 +368,18 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub ApplySqlMirror(snapshot As Dictionary(Of String, DataTable))
-            EmbeddedDB.ApplySnapshots(snapshot, persist:=False)
+            Dim changedTables = EmbeddedDB.ApplySnapshots(snapshot, persist:=False)
             RebindCurrentUser()
-            If snapshot IsNot Nothing AndAlso snapshot.ContainsKey("Users") Then
+            ' The workstation heartbeat changes on every pull by design, so it can never
+            ' count as a change; otherwise every sync tick would pay for a full refresh.
+            ' A heartbeat-only tick may still matter to the Admin tab, whose seat grid
+            ' recomputes staleness at bind time.
+            changedTables.Remove("Heartbeat")
+            If changedTables.Count = 0 Then
+                If activeNavIndex = 5 Then RefreshActiveTabGrid()
+                Return
+            End If
+            If changedTables.Contains("Users") AndAlso snapshot.ContainsKey("Users") Then
                 PopulateStaffDropdowns()
             End If
             RefreshActiveTabGrid()
@@ -447,6 +464,11 @@ Namespace BTA_OSG
                 tmrSqlSync.Stop()
                 tmrSqlSync.Dispose()
                 tmrSqlSync = Nothing
+            End If
+            If tmrResizeRefresh IsNot Nothing Then
+                tmrResizeRefresh.Stop()
+                tmrResizeRefresh.Dispose()
+                tmrResizeRefresh = Nothing
             End If
             If tmrClock IsNot Nothing Then
                 tmrClock.Stop()
@@ -983,7 +1005,20 @@ Namespace BTA_OSG
 
             Dim selSec As String = If(cmbDashSection IsNot Nothing AndAlso cmbDashSection.SelectedItem IsNot Nothing, cmbDashSection.SelectedItem.ToString(), "")
             Dim selCat As String = If(cmbDashCategory IsNot Nothing AndAlso cmbDashCategory.SelectedItem IsNot Nothing, cmbDashCategory.SelectedItem.ToString(), "")
-            Dim visibleDocs = EmbeddedDB.GetVisibleDocuments(CurrentUser, selSec, selCat)
+            ' Reuse one view across sync ticks: the mirror merge updates the underlying table
+            ' in place, so a bound view stays current without a rebuild. Recreate only when
+            ' the session or the dashboard filters change.
+            Dim sessionKey As String = "(out)"
+            If CurrentUser IsNot Nothing Then
+                Dim office = If(CurrentUser.Table.Columns.Contains("Office") AndAlso Not IsDBNull(CurrentUser("Office")), CurrentUser("Office").ToString(), "")
+                sessionKey = CurrentUser("FullName").ToString() & "|" & CurrentUser("Role").ToString() & "|" & office
+            End If
+            Dim viewKey = sessionKey & "|" & selSec & "|" & selCat
+            If _activeDocsView Is Nothing OrElse viewKey <> _activeDocsViewKey Then
+                _activeDocsView = EmbeddedDB.GetVisibleDocuments(CurrentUser, selSec, selCat)
+                _activeDocsViewKey = viewKey
+            End If
+            Dim visibleDocs = _activeDocsView
 
             Select Case activeNavIndex
                 Case 0 : RefreshDashboardGrid(visibleDocs)
@@ -1002,10 +1037,16 @@ Namespace BTA_OSG
         ''' <summary>
         ''' Binds a grid, applies its column formatter, switches the empty/populated watermark,
         ''' and (when a noun is given) mirrors the row count into the footer count badge.
+        ''' Assigning a DataSource makes the grid rebuild every column and row, so the rebind
+        ''' is skipped while the view instance is unchanged; the mirror merge keeps a bound
+        ''' view current through its own row events. forceBind re-runs the formatter for grids
+        ''' whose layout is computed from row values (seat staleness).
         ''' </summary>
-        Private Sub BindGridWithState(dgv As DataGridView, watermark As Label, dataSource As Object, formatter As Action(Of DataGridView), countNoun As String, Optional emptyMessage As String = Nothing)
-            dgv.DataSource = dataSource
-            formatter(dgv)
+        Private Sub BindGridWithState(dgv As DataGridView, watermark As Label, dataSource As Object, formatter As Action(Of DataGridView), countNoun As String, Optional emptyMessage As String = Nothing, Optional forceBind As Boolean = False)
+            If forceBind OrElse Not Object.ReferenceEquals(dgv.DataSource, dataSource) Then
+                dgv.DataSource = dataSource
+                formatter(dgv)
+            End If
             If dgv.Rows.Count = 0 Then
                 DataGridStyler.SetEmptyState(dgv, watermark, emptyMessage)
             Else
@@ -1072,6 +1113,9 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub RefreshSearchGrid(visibleDocs As DataView)
+            ' While a search query is active the grid is owned by OnSearch; a sync tick
+            ' must not reset what the operator is looking at. Same contract as RefreshAuditGrid.
+            If txtSearchKey IsNot Nothing AndAlso Not String.IsNullOrWhiteSpace(txtSearchKey.Text) Then Return
             BindGridWithState(dgvSearch, lblSearchWatermark, visibleDocs, AddressOf DataGridStyler.FormatDocumentColumns, "Documents")
         End Sub
 
@@ -1081,7 +1125,8 @@ Namespace BTA_OSG
             If dgvSeats IsNot Nothing Then
                 Dim dtHeartbeat = EmbeddedDB.DataSet.Tables("Heartbeat")
                 BindGridWithState(dgvSeats, lblSeatsWatermark, dtHeartbeat, AddressOf DataGridStyler.FormatSeatColumns, "Seats",
-                                  "No workstation has reported a sync yet. Seats appear here after their first sync; Stale means the seat has been silent past three intervals (offline by design).")
+                                  "No workstation has reported a sync yet. Seats appear here after their first sync; Stale means the seat has been silent past three intervals (offline by design).",
+                                  forceBind:=True)
             End If
         End Sub
 
@@ -1089,17 +1134,36 @@ Namespace BTA_OSG
             ' While a filter query is active the grid is owned by OnFilterAudit; a sync tick
             ' must not reset what the operator is looking at.
             If txtAuditSearch Is Nothing OrElse String.IsNullOrWhiteSpace(txtAuditSearch.Text) Then
-                Dim dtAudit = EmbeddedDB.DataSet.Tables("AuditTrail")
-                Dim dvAudit As New DataView(dtAudit) With {.Sort = "AuditID DESC"}
-                BindGridWithState(dgvAudit, lblAuditWatermark, dvAudit, AddressOf DataGridStyler.FormatAuditColumns, "Audit Events", "No audit trail events recorded.")
+                ' One sorted view for the life of the form: the DataView maintains its sort
+                ' index incrementally as the mirror appends rows, so new events surface at
+                ' the top without rebuilding an index over the whole trail on every tick.
+                If _auditView Is Nothing Then
+                    _auditView = New DataView(EmbeddedDB.DataSet.Tables("AuditTrail")) With {.Sort = "AuditID DESC"}
+                End If
+                BindGridWithState(dgvAudit, lblAuditWatermark, _auditView, AddressOf DataGridStyler.FormatAuditColumns, "Audit Events", "No audit trail events recorded.")
             End If
         End Sub
 
         Protected Overrides Sub OnResize(e As EventArgs)
             MyBase.OnResize(e)
             If Me.WindowState <> FormWindowState.Minimized AndAlso Me.IsHandleCreated AndAlso Not Me.IsDisposed Then
-                RefreshActiveTabGrid()
+                ScheduleResizeRefresh()
             End If
+        End Sub
+
+        ' Resize raises one message per pixel of a drag; refreshing per message made large
+        ' grids stutter. One deferred refresh after the drag settles is visually identical.
+        Private Sub ScheduleResizeRefresh()
+            If tmrResizeRefresh Is Nothing Then
+                tmrResizeRefresh = New Timer With {.Interval = 200}
+                AddHandler tmrResizeRefresh.Tick,
+                    Sub()
+                        tmrResizeRefresh.Stop()
+                        If Not Me.IsDisposed AndAlso Me.IsHandleCreated Then RefreshActiveTabGrid()
+                    End Sub
+            End If
+            tmrResizeRefresh.Stop()
+            tmrResizeRefresh.Start()
         End Sub
 
         Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
@@ -1141,6 +1205,11 @@ Namespace BTA_OSG
                     tmrClock.Stop()
                     tmrClock.Dispose()
                     tmrClock = Nothing
+                End If
+                If tmrResizeRefresh IsNot Nothing Then
+                    tmrResizeRefresh.Stop()
+                    tmrResizeRefresh.Dispose()
+                    tmrResizeRefresh = Nothing
                 End If
             End If
             MyBase.Dispose(disposing)

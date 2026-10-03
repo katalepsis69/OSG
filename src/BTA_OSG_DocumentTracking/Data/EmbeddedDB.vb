@@ -178,19 +178,42 @@ Namespace BTA_OSG
             Return CBool(row("PendingSync"))
         End Function
 
-        Private Shared Sub CopySnapshotValues(source As DataRow, targetRow As DataRow, target As DataTable)
+        Private Shared Function CopySnapshotValues(source As DataRow, targetRow As DataRow, target As DataTable) As Boolean
+            Dim changed As Boolean = False
             For Each col As DataColumn In target.Columns
                 If Not source.Table.Columns.Contains(col.ColumnName) Then Continue For
-                targetRow(col) = source(col.ColumnName)
+                Dim incoming = source(col.ColumnName)
+                ' Write only real differences: a value-identical mirror tick must not fire a
+                ' list-change event per cell, or every bound grid repaints on every sync.
+                If SnapshotValueEquals(targetRow(col), incoming) Then Continue For
+                targetRow(col) = incoming
+                changed = True
             Next
-        End Sub
+            Return changed
+        End Function
 
-        Public Shared Sub ApplySnapshots(snapshots As Dictionary(Of String, DataTable), Optional persist As Boolean = True)
-            If snapshots Is Nothing OrElse snapshots.Count = 0 Then Return
-            For Each pair In snapshots
-                ApplySnapshot(pair.Key, pair.Value, persist)
+        Private Shared Function SnapshotValueEquals(a As Object, b As Object) As Boolean
+            If Object.Equals(a, b) Then Return True
+            ' RowVersion arrives as Byte(), which Object.Equals compares by reference.
+            Dim ba = TryCast(a, Byte())
+            Dim bb = TryCast(b, Byte())
+            If ba Is Nothing OrElse bb Is Nothing Then Return False
+            If ba.Length <> bb.Length Then Return False
+            For i As Integer = 0 To ba.Length - 1
+                If ba(i) <> bb(i) Then Return False
             Next
-        End Sub
+            Return True
+        End Function
+
+        ''' <summary>Applies each snapshot and returns the names of tables that changed.</summary>
+        Public Shared Function ApplySnapshots(snapshots As Dictionary(Of String, DataTable), Optional persist As Boolean = True) As HashSet(Of String)
+            Dim changed As New HashSet(Of String)(StringComparer.Ordinal)
+            If snapshots Is Nothing OrElse snapshots.Count = 0 Then Return changed
+            For Each pair In snapshots
+                If ApplySnapshot(pair.Key, pair.Value, persist) Then changed.Add(pair.Key)
+            Next
+            Return changed
+        End Function
 
         ''' <summary>
         ''' Schedules a batched write after a short idle window. Safe to call on every mutation;

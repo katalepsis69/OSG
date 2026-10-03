@@ -1100,6 +1100,11 @@ Namespace BTA_OSG
         Public Function BuildSqlSnapshot(ParamArray tables As String()) As Dictionary(Of String, DataTable)
             If AppStartup.Settings Is Nothing OrElse Not AppStartup.Settings.DatabaseSettings.UseSqlServer Then Return Nothing
 
+            ' Every table is pulled in full on each tick. The merge ignores unchanged rows, so
+            ' the UI cost of a quiet tick is one indexed lookup per row. That stays fine to
+            ' thousands of documents; when AuditTrail reaches six figures, switch this to an
+            ' incremental pull keyed on AuditID with an append-only merge so the per-tick cost
+            ' tracks new rows instead of total rows.
             Dim names = If(tables Is Nothing OrElse tables.Length = 0,
                            New String() {"Documents", "Users", "Directives", "RoutingLogs", "Movements", "AuditTrail", "Heartbeat"},
                            tables)

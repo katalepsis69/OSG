@@ -107,8 +107,10 @@ MUST-PRESERVE INVARIANTS
   audit records; the single-instance mutex.
 - Settings: DPAPI encryption ("BTA-ENC1:" prefix) loads and re-encrypts
   unchanged; the file format is behavior; the PortalEnabled false default stays.
-- Demo-free shipping: demo document seeding stays gated to UseSqlServer = False;
-  the self-check stays forced-offline and deterministic on any machine.
+- Seed policy (final, 2026-10-03): nothing seeds documents or staff into
+  BTA_OSG_DB, ever; the SQL test harness works in a throwaway BTA_OSG_DB_TEST
+  catalog that is dropped per run; the self-check stays forced-offline, seeds
+  at most five fixtures, and hands the store back as it found it.
 - Deliberately simple (leave as-is; changing any of these is behavior work):
   the GetOrCreateByKey read-then-insert race; SessionManager,
   AuthenticationService, and PermissionService unwired while mirror-based auth is

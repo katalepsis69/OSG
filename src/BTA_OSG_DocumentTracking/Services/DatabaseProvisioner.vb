@@ -57,8 +57,21 @@ Namespace BTA_OSG
         End Function
 
         Public Shared Sub Provision(adminConnectionString As String)
+            Provision(adminConnectionString, AppDatabaseName)
+        End Sub
+
+        ''' <summary>
+        ''' Provisions a named catalog instead of the canonical office database. The test
+        ''' harness uses this to build a throwaway copy, so probe documents and staff can
+        ''' never accumulate in the office database. 001 is skipped (it names the canonical
+        ''' database verbatim; the caller creates the catalog first), and every remaining
+        ''' script's BTA_OSG_DB references are re-pointed at the named catalog.
+        ''' </summary>
+        Public Shared Sub Provision(adminConnectionString As String, databaseName As String)
             For Each entry In CatalogScripts
-                ExecuteScript(entry.Item1, entry.Item2, adminConnectionString)
+                If entry.Item2 = "master" Then Continue For
+                Dim sql = ReadEmbeddedScript(entry.Item1).Replace(AppDatabaseName, databaseName)
+                ExecuteBatches(entry.Item1, sql, databaseName, adminConnectionString)
             Next
         End Sub
 
@@ -151,7 +164,10 @@ Namespace BTA_OSG
         End Sub
 
         Private Shared Sub ExecuteScript(scriptName As String, catalog As String, adminConnectionString As String)
-            Dim sql = ReadEmbeddedScript(scriptName)
+            ExecuteBatches(scriptName, ReadEmbeddedScript(scriptName), catalog, adminConnectionString)
+        End Sub
+
+        Private Shared Sub ExecuteBatches(scriptName As String, sql As String, catalog As String, adminConnectionString As String)
             Dim builder As New SqlConnectionStringBuilder(adminConnectionString) With {.InitialCatalog = catalog}
             Using conn As New SqlConnection(builder.ConnectionString)
                 conn.Open()

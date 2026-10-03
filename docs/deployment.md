@@ -55,6 +55,15 @@ using SSMS or `sqlcmd`. These files are also the canonical schema source:
 14. `014_audit_hash_chain.sql` - Adds `PrevHash` and `RowHash` to `tbl_AuditTrail`, so every entry seals the entries after it
 15. `015_replay_and_integrity_fixes.sql` - Makes `tbl_RoutingLogs.ToStatusID` nullable (non-status offline actions replay with no status), indexes `tbl_DocumentAssignments(DocumentID)` for the snapshot pull, and pins `FlowDirection` to INCOMING/OUTGOING
 
+**Seed policy (final, 2026-10-03).** An office server is never seeded with demo data: the
+provisioning chain writes the reference vocabulary only, the staff list starts empty, and
+the first administrator is claimed on the station. The SQL integration tests run against a
+throwaway `BTA_OSG_DB_TEST` catalog that is dropped when the suite ends, so a test run
+cannot leave documents or staff behind in `BTA_OSG_DB`; the offline self-check (`/test`)
+seeds at most five fixtures into the local store and removes them before it exits. For a
+server that predates this policy, `db/scripts/purge_seed_leftovers.sql` lists and then (after
+review) removes leftover probe documents and staff; it is manual and never provisioned.
+
 The audit trail is tamper-evident: changing, removing, or reordering any sealed entry breaks
 the chain at that point. `BTA_OSG_DocumentTracking.exe /verify-audit` recomputes the whole chain
 and prints the first entry that no longer matches, exiting 0 when every sealed entry is intact.

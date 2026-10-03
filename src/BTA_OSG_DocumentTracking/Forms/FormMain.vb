@@ -278,7 +278,20 @@ Namespace BTA_OSG
                 .Padding = New Padding(8, 0, 8, 0)
             }
 
-            stsFooter.Items.AddRange(New ToolStripItem() {lblStatusMessage, lblStatusCount, lblDbState, lblStatusClock})
+            Dim currentVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version
+            Dim verText = If(currentVer IsNot Nothing, $"v{currentVer.ToString(3)}", "v2.1.0")
+            Dim lblVersion = New ToolStripStatusLabel With {
+                .Text = $"{verText} (What's New)",
+                .BorderSides = ToolStripStatusLabelBorderSides.Left,
+                .BorderStyle = Border3DStyle.Etched,
+                .ForeColor = CivicCalmTheme.ColorPrimary,
+                .Padding = New Padding(8, 0, 8, 0),
+                .IsLink = True,
+                .LinkBehavior = LinkBehavior.HoverUnderline
+            }
+            AddHandler lblVersion.Click, Async Sub() Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True)
+
+            stsFooter.Items.AddRange(New ToolStripItem() {lblStatusMessage, lblStatusCount, lblDbState, lblVersion, lblStatusClock})
             Me.Controls.Add(stsFooter)
 
             tmrClock = New Timer With {
@@ -738,8 +751,8 @@ Namespace BTA_OSG
             AddHandler btnScanRFID.Click, Sub() ShowRFIDLoginDialog()
 
             btnCheckUpdate = New Button With {
-                .Text = "🔄 &Update",
-                .Size = New Size(95, 36),
+                .Text = "📋 &What's New",
+                .Size = New Size(125, 36),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -754,7 +767,7 @@ Namespace BTA_OSG
                 Try
                     Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True)
                 Finally
-                    btnCheckUpdate.Text = "🔄 &Update"
+                    btnCheckUpdate.Text = "📋 &What's New"
                     btnCheckUpdate.Enabled = True
                 End Try
             End Sub

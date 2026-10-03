@@ -293,6 +293,9 @@ Namespace BTA_OSG
                 AppStartup.Initialize()
                 ProbeDatabaseConnection()
                 EmbeddedDB.Initialize()
+                ' Seed-budget baseline: the harness must hand the store back with exactly the
+                ' documents it found (final seed policy: nothing seeded anywhere persists).
+                Dim documentsBefore As Integer = EmbeddedDB.DataSet.Tables("Documents").Rows.Count
 
                 ' Test 1: DB connection check
                 Dim dbConnected As Boolean = False
@@ -434,47 +437,63 @@ Namespace BTA_OSG
 
                 ' Tests 5, 7-9 wrote real rows into the shared cache; a PendingSync row would be
                 ' replayed into SQL Server by the next production launch as a genuine document.
-                RemoveSelfCheckArtifacts(seqDocId, docId, legDocId, finDocId)
+                Dim fixtureDocIds() As Integer = {seqDocId, docId, legDocId, finDocId}
+                RemoveSelfCheckArtifacts(fixtureDocIds)
                 RemoveSelfCheckBadges(sgUid, deskUid)
 
-                ' Test 10: PDF URL validation
+                ' Test 10: seed budget. Final policy: seeds never enter an office server, and
+                ' anything this harness seeds stays capped at five documents and is removed
+                ' before the run ends. A PendingSync row surviving here would replay into SQL
+                ' Server on the next production launch as a genuine document.
+                If fixtureDocIds.Length > 5 Then
+                    Console.WriteLine("[FAIL] 10. Seed budget exceeded: the harness seeded " & fixtureDocIds.Length & " documents (cap 5).")
+                    Return 1
+                End If
+                Dim seedDelta As Integer = EmbeddedDB.DataSet.Tables("Documents").Rows.Count - documentsBefore
+                If seedDelta <> 0 Then
+                    Console.WriteLine("[FAIL] 10. Self-check cleanup left " & seedDelta & " probe documents in the store.")
+                    Return 1
+                End If
+                Console.WriteLine("[PASS] 10. Seed budget respected (cap 5) and the store handed back as found.")
+
+                ' Test 11: PDF URL validation
                 Dim errMsg As String = ""
                 If Not AppStartup.PdfService.ValidateUrl("https://drive.google.com/file/d/sample-123/view", errMsg) Then
-                    Console.WriteLine("[FAIL] 10. Valid URL rejected: " & errMsg)
+                    Console.WriteLine("[FAIL] 11. Valid URL rejected: " & errMsg)
                     Return 1
                 End If
                 If AppStartup.PdfService.ValidateUrl("http://untrusted-site.com/doc.pdf", errMsg) Then
-                    Console.WriteLine("[FAIL] 10. Invalid URL accepted.")
+                    Console.WriteLine("[FAIL] 11. Invalid URL accepted.")
                     Return 1
                 End If
-                Console.WriteLine("[PASS] 10. PDF URL security validation verified.")
+                Console.WriteLine("[PASS] 11. PDF URL security validation verified.")
 
-                ' Test 11: Physical storage landmark movement
+                ' Test 12: Physical storage landmark movement
                 Dim cabinet = "CAB-A"
                 Dim shelf = "S-1"
                 Dim box = "BOX-01"
                 Dim landmarkKey = String.Format("{0}|{1}|{2}", cabinet, shelf, box)
                 If landmarkKey <> "CAB-A|S-1|BOX-01" Then
-                    Console.WriteLine("[FAIL] 11. Storage landmark key format failed.")
+                    Console.WriteLine("[FAIL] 12. Storage landmark key format failed.")
                     Return 1
                 End If
-                Console.WriteLine("[PASS] 11. Physical storage landmark tracking verified (" & landmarkKey & ").")
+                Console.WriteLine("[PASS] 12. Physical storage landmark tracking verified (" & landmarkKey & ").")
 
-                ' Test 12: the mirror never throws and never reports rows for an offline host.
+                ' Test 13: the mirror never throws and never reports rows for an offline host.
                 ' The poller runs every 5 seconds on every workstation, so a throw here would be
                 ' a recurring dialog, not a one-off.
                 Dim snapshot = Coordinator.BuildSqlSnapshot()
                 If Not IsDatabaseConnected AndAlso snapshot IsNot Nothing Then
-                    Console.WriteLine("[FAIL] 12. Mirror returned rows while the database probe reported offline.")
+                    Console.WriteLine("[FAIL] 13. Mirror returned rows while the database probe reported offline.")
                     Return 1
                 End If
-                Console.WriteLine("[PASS] 12. SQL mirror read handled (live database: " & (snapshot IsNot Nothing).ToString() & ").")
+                Console.WriteLine("[PASS] 13. SQL mirror read handled (live database: " & (snapshot IsNot Nothing).ToString() & ").")
 
                 ' Flush deferred embedded-store writes so the file on disk matches the
                 ' mutations this run performed (mutations now batch via EmbeddedDB.MarkDirty).
                 EmbeddedDB.Save()
 
-                ' Test 13: audit hash chain. The harness runs offline, so this proves the
+                ' Test 14: audit hash chain. The harness runs offline, so this proves the
                 ' canonical form and the walk rather than the SQL write path.
                 Dim chainRows As New List(Of AuditEntry)()
                 Dim chainPrev As Byte() = Nothing
@@ -492,22 +511,22 @@ Namespace BTA_OSG
                     chainRows.Add(row)
                 Next
                 If Not AuditChain.Verify(chainRows).IsValid Then
-                    Console.WriteLine("[FAIL] 13. A clean audit chain did not verify.")
+                    Console.WriteLine("[FAIL] 14. A clean audit chain did not verify.")
                     Return 1
                 End If
                 chainRows(1).ActionType = "TAMPERED"
                 Dim tamperResult = AuditChain.Verify(chainRows)
                 If tamperResult.IsValid OrElse tamperResult.FirstBrokenAuditID <> 2 Then
-                    Console.WriteLine("[FAIL] 13. An altered audit entry was not detected at entry 2.")
+                    Console.WriteLine("[FAIL] 14. An altered audit entry was not detected at entry 2.")
                     Return 1
                 End If
-                Console.WriteLine("[PASS] 13. Audit hash chain seals entries and detects an altered one.")
+                Console.WriteLine("[PASS] 14. Audit hash chain seals entries and detects an altered one.")
 
-                ' Test 14: Clean exit
-                Console.WriteLine("[PASS] 14. Clean exit verified.")
+                ' Test 15: Clean exit
+                Console.WriteLine("[PASS] 15. Clean exit verified.")
 
                 Console.WriteLine("=========================================================")
-                Console.WriteLine("ALL 14 SELF-CHECK TESTS PASSED SUCCESSFULLY!")
+                Console.WriteLine("ALL 15 SELF-CHECK TESTS PASSED SUCCESSFULLY!")
                 Console.WriteLine("=========================================================")
                 Return 0
             Catch ex As Exception

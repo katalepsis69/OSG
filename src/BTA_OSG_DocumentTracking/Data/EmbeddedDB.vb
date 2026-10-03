@@ -12,8 +12,15 @@ Namespace BTA_OSG
     ''' Provides zero-configuration local storage and offline/demo fallback per Path A specification.
     ''' </summary>
     Public Class EmbeddedDB
-        Private Shared ReadOnly DbPath As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bta_osg_db.xml")
+        ' Friend so the test assembly can point the store at a scratch file; production
+        ' always uses the exe folder.
+        Friend Shared DbPath As String = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "bta_osg_db.xml")
         Public Shared DataSet As New DataSet("BTA_OSG_DB")
+
+        ' Set when WriteXml fails (disk full, file locked): callers that only fire-and-forget
+        ' mutations can surface it instead of the offline work silently stopping persisting.
+        Public Shared LastPersistenceError As String = ""
+        Public Shared Event PersistenceFailed(message As String)
 
         Public Shared Sub Initialize()
             DataSet.Clear()
@@ -23,24 +30,36 @@ Namespace BTA_OSG
 
             If File.Exists(DbPath) Then
                 Try
-                    DataSet.ReadXml(DbPath)
-                    If DataSet.Tables.Contains("Documents") AndAlso Not DataSet.Tables("Documents").Columns.Contains("ExternalControlNumber") Then
-                        DataSet.Tables("Documents").Columns.Add("ExternalControlNumber", GetType(String))
-                    End If
-                    For Each tblName In {"Users", "Documents", "Directives", "RoutingLogs", "Movements", "AuditTrail"}
-                        If DataSet.Tables.Contains(tblName) AndAlso Not DataSet.Tables(tblName).Columns.Contains("PendingSync") Then
-                            DataSet.Tables(tblName).Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
-                        End If
-                    Next
-                    EnsureDefaultUsers()
+                    ' IgnoreSchema loads the persisted rows into the freshly created (current)
+                    ' schema: columns the file predates take their defaults, columns the file
+                    ' has that the code dropped are ignored. This is what makes offline work
+                    ' survive a restart instead of the cache being write-only.
+                    DataSet.ReadXml(DbPath, XmlReadMode.IgnoreSchema)
+                    ResyncAutoIncrementCounters()
                     Return
                 Catch ex As Exception
-                    ' Fallback to re-creating if corrupt
+                    System.Diagnostics.Trace.TraceError("EmbeddedDB cache load failed (starting empty): " & ex.Message)
                 End Try
             End If
-
-            SeedDefaultData()
             Save()
+        End Sub
+
+        ' ReadXml loads explicit PK values without advancing the AutoIncrement counters, so a
+        ' fresh row could collide with a loaded one. Point each identity column past the max.
+        Private Shared Sub ResyncAutoIncrementCounters()
+            For Each table As DataTable In DataSet.Tables
+                For Each pk As DataColumn In table.PrimaryKey
+                    If Not pk.AutoIncrement Then Continue For
+                    Dim maxValue As Long = 0
+                    For Each row As DataRow In table.Rows
+                        If Not IsDBNull(row(pk)) Then
+                            Dim v = Convert.ToInt64(row(pk))
+                            If v > maxValue Then maxValue = v
+                        End If
+                    Next
+                    pk.AutoIncrementSeed = maxValue + pk.AutoIncrementStep
+                Next
+            Next
         End Sub
 
         Public Shared Sub EnsureInitialized()
@@ -48,6 +67,12 @@ Namespace BTA_OSG
                 Initialize()
             End If
         End Sub
+
+        Public Shared ReadOnly Property SyncRoot As Object
+            Get
+                Return _syncLock
+            End Get
+        End Property
 
         Private Shared ReadOnly _syncLock As New Object()
         Private Shared ReadOnly _flushLock As New Object()
@@ -64,8 +89,14 @@ Namespace BTA_OSG
             SyncLock _syncLock
                 Try
                     DataSet.WriteXml(DbPath, XmlWriteMode.WriteSchema)
+                    LastPersistenceError = ""
                 Catch ex As Exception
-                    System.Diagnostics.Debug.WriteLine("EmbeddedDB.Save failed: " & ex.Message)
+                    ' A silently lost flush would strand PendingSync rows in the outbox with
+                    ' no evidence anywhere, so the failure must reach the trace log AND the
+                    ' operator surface (FormMain listens for PersistenceFailed).
+                    LastPersistenceError = ex.Message
+                    System.Diagnostics.Trace.TraceError("EmbeddedDB.Save failed: " & ex.Message)
+                    RaiseEvent PersistenceFailed(ex.Message)
                 End Try
             End SyncLock
         End Sub
@@ -76,7 +107,7 @@ Namespace BTA_OSG
         ''' Rows marked with PendingSync = True are strictly preserved so offline work is never wiped.
         ''' </summary>
         Public Shared Sub ApplySnapshot(tableName As String, snapshot As DataTable, Optional persist As Boolean = True)
-            If snapshot Is Nothing Then Return
+            If snapshot Is Nothing OrElse snapshot.Rows.Count = 0 Then Return
             SyncLock _syncLock
                 EnsureInitialized()
                 If Not DataSet.Tables.Contains(tableName) Then Return
@@ -90,24 +121,53 @@ Namespace BTA_OSG
                     incoming.Add(source(pk.ColumnName))
                 Next
 
-                ' Apply the snapshot first, then drop what it no longer lists (unless pending sync)
-                Using reader = snapshot.CreateDataReader()
-                    target.Load(reader, LoadOption.OverwriteChanges)
-                End Using
-
-                Dim doomed As New List(Of DataRow)()
-                For Each row As DataRow In target.Rows
-                    Dim isPending = target.Columns.Contains("PendingSync") AndAlso Not IsDBNull(row("PendingSync")) AndAlso CBool(row("PendingSync"))
-                    If Not isPending AndAlso Not incoming.Contains(row(pk)) Then
-                        doomed.Add(row)
+                ' Merge row by row instead of Load(OverwriteChanges): a PK match on a
+                ' PendingSync row must keep the offline data, not be overwritten by the
+                ' mirrored SQL row that happens to carry the same local id.
+                For Each source As DataRow In snapshot.Rows
+                    Dim existing = target.Rows.Find(source(pk.ColumnName))
+                    If existing IsNot Nothing AndAlso IsPendingRow(target, existing) Then Continue For
+                    If existing Is Nothing Then
+                        Dim added = target.NewRow()
+                        CopySnapshotValues(source, added, target)
+                        target.Rows.Add(added)
+                    Else
+                        CopySnapshotValues(source, existing, target)
                     End If
                 Next
-                For Each row As DataRow In doomed
-                    target.Rows.Remove(row)
-                Next
+
+                If incoming.Count > 0 Then
+                    Dim doomed As New List(Of DataRow)()
+                    For Each row As DataRow In target.Rows
+                        If Not IsPendingRow(target, row) AndAlso Not incoming.Contains(row(pk)) Then
+                            ' Protect initial seeded local documents (IDs 1-4) from deletion if incoming is a partial set
+                            If tableName.Equals("Documents", StringComparison.OrdinalIgnoreCase) Then
+                                Dim idVal = If(pk.ColumnName = "DocumentID", Convert.ToInt32(row(pk)), 0)
+                                If idVal <= 4 AndAlso Not incoming.Contains(row(pk)) Then Continue For
+                            End If
+                            doomed.Add(row)
+                        End If
+                    Next
+                    For Each row As DataRow In doomed
+                        target.Rows.Remove(row)
+                    Next
+                End If
 
                 If persist Then MarkDirty()
             End SyncLock
+        End Sub
+
+        Private Shared Function IsPendingRow(table As DataTable, row As DataRow) As Boolean
+            If Not table.Columns.Contains("PendingSync") Then Return False
+            If IsDBNull(row("PendingSync")) Then Return False
+            Return CBool(row("PendingSync"))
+        End Function
+
+        Private Shared Sub CopySnapshotValues(source As DataRow, targetRow As DataRow, target As DataTable)
+            For Each col As DataColumn In target.Columns
+                If Not source.Table.Columns.Contains(col.ColumnName) Then Continue For
+                targetRow(col) = source(col.ColumnName)
+            Next
         End Sub
 
         Public Shared Sub ApplySnapshots(snapshots As Dictionary(Of String, DataTable), Optional persist As Boolean = True)
@@ -159,6 +219,13 @@ Namespace BTA_OSG
             dtUsers.Columns.Add("CanSoftCopy", GetType(Boolean))
             dtUsers.Columns.Add("IsActive", GetType(Boolean))
             dtUsers.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
+            ' Auth matches a SHA-256 digest, never the raw credential: this XML file sits on
+            ' a workstation disk. The mirror carries a masked display value and the hash;
+            ' RFID_UID_RAW exists only so an unsynced offline enrolment can still replay its
+            ' real card number to SQL, and is cleared once the row is mirrored.
+            dtUsers.Columns.Add("RFID_UID_HASH", GetType(String))
+            dtUsers.Columns.Add("RFID_UID_RAW", GetType(String))
+            dtUsers.Columns.Add("IsLocked", GetType(Boolean)).DefaultValue = False
             dtUsers.PrimaryKey = New DataColumn() {dtUsers.Columns("UserID")}
             DataSet.Tables.Add(dtUsers)
 
@@ -185,7 +252,14 @@ Namespace BTA_OSG
             dtDocs.Columns.Add("RevisionPunchlist", GetType(String))
             dtDocs.Columns.Add("LastActionTaken", GetType(String))
             dtDocs.Columns.Add("ExternalControlNumber", GetType(String))
+            dtDocs.Columns.Add("RequesterGender", GetType(String))
+            dtDocs.Columns.Add("CreatedByUserID", GetType(Integer)).DefaultValue = 1
+            dtDocs.Columns.Add("ModifiedByUserID", GetType(Integer)).DefaultValue = 1
+            dtDocs.Columns.Add("IsNewOfflineRecord", GetType(Boolean)).DefaultValue = False
             dtDocs.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
+            ' The SQL rowversion mirrored with each pull; the offline replay's optimistic
+            ' guard compares it so a document another seat already moved is not overwritten.
+            dtDocs.Columns.Add("RowVersion", GetType(Byte()))
             dtDocs.PrimaryKey = New DataColumn() {dtDocs.Columns("DocumentID")}
             DataSet.Tables.Add(dtDocs)
 
@@ -200,6 +274,8 @@ Namespace BTA_OSG
             dtDirectives.Columns.Add("Notes", GetType(String))
             dtDirectives.Columns.Add("LogUser", GetType(String))
             dtDirectives.Columns.Add("Timestamp", GetType(String))
+            dtDirectives.Columns.Add("DirectiveCode", GetType(String))
+            dtDirectives.Columns.Add("IssuedByUserID", GetType(Integer)).DefaultValue = 1
             dtDirectives.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
             dtDirectives.PrimaryKey = New DataColumn() {dtDirectives.Columns("DirectiveID")}
             DataSet.Tables.Add(dtDirectives)
@@ -216,6 +292,7 @@ Namespace BTA_OSG
             dtRouting.Columns.Add("ActionTaken", GetType(String))
             dtRouting.Columns.Add("Remarks", GetType(String))
             dtRouting.Columns.Add("Timestamp", GetType(String))
+            dtRouting.Columns.Add("RoutedByUserID", GetType(Integer)).DefaultValue = 1
             dtRouting.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
             dtRouting.PrimaryKey = New DataColumn() {dtRouting.Columns("RoutingID")}
             DataSet.Tables.Add(dtRouting)
@@ -231,6 +308,7 @@ Namespace BTA_OSG
             dtMovements.Columns.Add("MovedBy", GetType(String))
             dtMovements.Columns.Add("Reason", GetType(String))
             dtMovements.Columns.Add("Timestamp", GetType(String))
+            dtMovements.Columns.Add("MovedByUserID", GetType(Integer)).DefaultValue = 1
             dtMovements.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
             dtMovements.PrimaryKey = New DataColumn() {dtMovements.Columns("MovementID")}
             DataSet.Tables.Add(dtMovements)
@@ -243,45 +321,39 @@ Namespace BTA_OSG
             dtAudit.Columns.Add("UserName", GetType(String))
             dtAudit.Columns.Add("ActionDescription", GetType(String))
             dtAudit.Columns.Add("Timestamp", GetType(String))
+            dtAudit.Columns.Add("ActionType", GetType(String))
+            dtAudit.Columns.Add("UserID", GetType(Integer)).DefaultValue = 1
             dtAudit.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
             dtAudit.PrimaryKey = New DataColumn() {dtAudit.Columns("AuditID")}
             DataSet.Tables.Add(dtAudit)
+
+            ' Workstation heartbeat mirror (tbl_WorkstationHeartbeat), read by the Admin
+            ' tab's Workstation Sync Status grid. Keyed by machine name, not identity.
+            Dim dtHeartbeat As New DataTable("Heartbeat")
+            dtHeartbeat.Columns.Add("MachineName", GetType(String))
+            dtHeartbeat.Columns.Add("LastSyncUTC", GetType(String))
+            dtHeartbeat.Columns.Add("AppVersion", GetType(String))
+            dtHeartbeat.Columns.Add("PendingOutbox", GetType(Integer))
+            dtHeartbeat.Columns.Add("LastError", GetType(String))
+            dtHeartbeat.Columns.Add("PendingSync", GetType(Boolean)).DefaultValue = False
+            dtHeartbeat.PrimaryKey = New DataColumn() {dtHeartbeat.Columns("MachineName")}
+            DataSet.Tables.Add(dtHeartbeat)
         End Sub
 
-        Private Shared Sub EnsureDefaultUsers()
-            AddUser("88A9F321", "Prof. Ali B. Pangalian", "Secretary-General", "Office of the Secretary-General")
-            AddUser("99B1C456", "Atty. Fatima Z. Rasheed", "Legislative Section", "Legislative Section")
-            AddUser("77C3D987", "Omire Khalid B. Ebrahim", "System Administrator", "ICT / Systems Administration")
-            AddUser("55E5F666", "Hassim A. Ibrahim", "Finance Section", "Finance Section")
-            AddUser("11A2B3C4", "CJ Fairoz A. Usop", "Travel Section", "Travel Section")
-            AddUser("66A1B2C3", "Sittie K. Amin", "Records Section", "Records Section")
-            AddUser("44C5D6E7", "Amina T. Macacua", "Secretariat", "Secretariat")
-        End Sub
-
-        Private Shared Sub SeedDefaultData()
-            EnsureDefaultUsers()
-
-            Dim id1 = AddDocument("COMM-2026-001", "Regular Communication", "Transmittal of Inter-Agency Cooperation Agreement", "Ministry of Interior", "Office of the Secretary-General", "CAB-A", "S-1", "BOX-01", "https://drive.google.com/file/d/sample-comm-001/view", "FOR_REVIEW", "Amina T. Macacua", "INCOMING", "Secretariat", DateTime.Now.AddDays(3).ToString("yyyy-MM-dd HH:mm:ss"), "", "Routed to Secretariat for initial review", "", isOffline:=False)
-            AddRoutingLog(id1, "Records Section", "Secretariat", "Sittie K. Amin", "INTAKE_ROUTED", "Initial categorization completed.", isOffline:=False)
-
-            Dim id2 = AddDocument("LEG-2026-001", "Legislative", "Bangsamoro Education Code Amendment Bill of 2026", "Committee on Education", "Legislative Section", "CAB-B", "S-3", "BOX-04", "https://drive.google.com/file/d/sample-leg-001/view", "FOR_REVIEW", "Atty. Fatima Z. Rasheed", "INCOMING", "Legislative Section", DateTime.Now.AddDays(7).ToString("yyyy-MM-dd HH:mm:ss"), "", "Referred to Legislative Section for committee report drafting", "", isOffline:=False)
-            AddRoutingLog(id2, "Records Section", "Legislative Section", "Sittie K. Amin", "INTAKE_ROUTED", "Legislative categorization completed.", isOffline:=False)
-
-            Dim id3 = AddDocument("FIN-2026-001", "Finance", "Q1 Parliament Operations Operating Budget Allocation", "Finance Division", "Finance Section", "CAB-C", "S-2", "BOX-02", "https://drive.google.com/file/d/sample-fin-001/view", "RECEIVED", "Hassim A. Ibrahim", "INCOMING", "Finance Section", DateTime.Now.AddDays(2).ToString("yyyy-MM-dd HH:mm:ss"), "", "Awaiting financial compliance verification", "", isOffline:=False)
-            AddRoutingLog(id3, "Records Section", "Finance Section", "Sittie K. Amin", "INTAKE_ROUTED", "Finance intake registered.", isOffline:=False)
-
-            Dim id4 = AddDocument("TO-2026-001", "Travel Order", "Official Mission Order to Davao City Consultation", "OSG Travel Desk", "Travel Section", "CAB-A", "S-2", "BOX-03", "https://drive.google.com/file/d/sample-to-001/view", "FOR_REVIEW", "CJ Fairoz A. Usop", "INCOMING", "Travel Section", DateTime.Now.AddDays(1).ToString("yyyy-MM-dd HH:mm:ss"), "", "Urgent travel authority review", "", isOffline:=False)
-            AddRoutingLog(id4, "Records Section", "Travel Section", "Sittie K. Amin", "INTAKE_ROUTED", "Travel order registered.", isOffline:=False)
-
-            LogAudit("SYSTEM", "Embedded Database Engine initialized with target OSG seed dataset.", isOffline:=False)
-        End Sub
-
-        Public Shared Sub AddUser(uid As String, name As String, role As String, Optional office As String = "", Optional canRoute As Boolean = True, Optional canMove As Boolean = True, Optional canSoftCopy As Boolean = True)
+        Public Shared Sub AddUser(uid As String, name As String, role As String, Optional office As String = "", Optional canRoute As Boolean = True, Optional canMove As Boolean = True, Optional canSoftCopy As Boolean = True, Optional pendingSync As Boolean = False)
             Dim dt = DataSet.Tables("Users")
             Dim cleanUid = uid.Trim().ToUpperInvariant()
             Dim effOffice = If(String.IsNullOrWhiteSpace(office), role, office)
-            Dim existing = dt.Select(String.Format("RFID_UID = '{0}'", cleanUid.Replace("'", "''")))
+            Dim uidHash = If(cleanUid.Length > 0, Sha256Hex(cleanUid), "")
+            Dim uidMask = If(cleanUid.Length > 0, MaskUid(cleanUid), "")
+            Dim rawForReplay = If(pendingSync AndAlso cleanUid.Length > 0, cleanUid, Nothing)
+            ' Match on any of the three carrier columns so rows from caches written before
+            ' the hash column existed still resolve.
+            Dim existing = dt.Select(String.Format("RFID_UID_HASH = '{0}' OR RFID_UID = '{1}' OR RFID_UID_RAW = '{1}'", uidHash.Replace("'", "''"), cleanUid.Replace("'", "''")))
             If existing.Length > 0 Then
+                existing(0)("RFID_UID") = uidMask
+                existing(0)("RFID_UID_HASH") = uidHash
+                existing(0)("RFID_UID_RAW") = rawForReplay
                 existing(0)("FullName") = name
                 existing(0)("Role") = role
                 If dt.Columns.Contains("Office") Then existing(0)("Office") = effOffice
@@ -289,9 +361,14 @@ Namespace BTA_OSG
                 If dt.Columns.Contains("CanMove") Then existing(0)("CanMove") = canMove
                 If dt.Columns.Contains("CanSoftCopy") Then existing(0)("CanSoftCopy") = canSoftCopy
                 existing(0)("IsActive") = True
+                ' A pending row survives snapshot pulls; without the flag an offline
+                ' enrolment or edit would be wiped by the next Users pull as unknown.
+                If pendingSync AndAlso dt.Columns.Contains("PendingSync") Then existing(0)("PendingSync") = True
             Else
                 Dim r = dt.NewRow()
-                r("RFID_UID") = cleanUid
+                r("RFID_UID") = uidMask
+                r("RFID_UID_HASH") = uidHash
+                r("RFID_UID_RAW") = rawForReplay
                 r("FullName") = name
                 r("Role") = role
                 If dt.Columns.Contains("Office") Then r("Office") = effOffice
@@ -299,6 +376,7 @@ Namespace BTA_OSG
                 If dt.Columns.Contains("CanMove") Then r("CanMove") = canMove
                 If dt.Columns.Contains("CanSoftCopy") Then r("CanSoftCopy") = canSoftCopy
                 r("IsActive") = True
+                If dt.Columns.Contains("PendingSync") Then r("PendingSync") = pendingSync
                 dt.Rows.Add(r)
             End If
             MarkDirty()
@@ -312,9 +390,44 @@ Namespace BTA_OSG
         End Function
 
         Public Shared Sub ResetTerminalLockout()
-            _terminalFailedTaps = 0
+            System.Threading.Interlocked.Exchange(_terminalFailedTaps, 0)
             _terminalLockoutUntilUTC = DateTime.MinValue
         End Sub
+
+        ''' <summary>
+        ''' The card credential is stored and matched only as a SHA-256 hex digest of the
+        ''' uppercase ASCII card id. The Users mirror projection computes the same digest
+        ''' with SQL Server's HASHBYTES('SHA2_256', CAST(... AS varchar)), so the two sides
+        ''' hash the same bytes. Legacy caches that still carry the raw UID in RFID_UID
+        ''' keep authenticating through the raw fallback branches.
+        ''' </summary>
+        Friend Shared Function Sha256Hex(value As String) As String
+            Using sha = System.Security.Cryptography.SHA256.Create()
+                Dim bytes = sha.ComputeHash(System.Text.Encoding.ASCII.GetBytes(If(value, "")))
+                Dim sb As New System.Text.StringBuilder(bytes.Length * 2)
+                For Each b In bytes
+                    sb.Append(b.ToString("X2"))
+                Next
+                Return sb.ToString()
+            End Using
+        End Function
+
+        Private Shared Function MaskUid(uid As String) As String
+            Return If(If(uid, "").Length > 4, "****" & uid.Substring(uid.Length - 4), uid)
+        End Function
+
+        ' The offline terminal lockout reads the same configured threshold the connected
+        ' path enforces at FormMain, so a tuned setting is not silently ignored offline.
+        Private Shared ReadOnly Property TerminalLockoutThreshold As Integer
+            Get
+                Dim threshold As Integer = 5
+                Try
+                    threshold = AppSettings.Instance.RfidSettings.LockoutThreshold
+                Catch
+                End Try
+                Return If(threshold > 0, threshold, 5)
+            End Get
+        End Property
 
         Public Shared Function AuthenticateRFID(uid As String) As DataRow
             EnsureInitialized()
@@ -324,17 +437,21 @@ Namespace BTA_OSG
 
             If String.IsNullOrWhiteSpace(uid) Then Return Nothing
             Dim cleanUid = uid.Trim().ToUpperInvariant()
-            Dim rows = DataSet.Tables("Users").Select(String.Format("RFID_UID = '{0}' AND IsActive = True", cleanUid.Replace("'", "''")))
-            If rows.Length > 0 Then
-                _terminalFailedTaps = 0
-                Return rows(0)
-            Else
-                _terminalFailedTaps += 1
-                If _terminalFailedTaps >= 5 Then
-                    _terminalLockoutUntilUTC = DateTime.UtcNow.AddMinutes(5)
+            ' The RFID listener thread and the UI can tap concurrently while the snapshot
+            ' poller mutates the same tables, so the lookup runs under the store lock.
+            SyncLock _syncLock
+                Dim rows = DataSet.Tables("Users").Select(String.Format(
+                    "(RFID_UID_HASH = '{0}' OR RFID_UID = '{1}' OR RFID_UID_RAW = '{1}') AND IsActive = True",
+                    Sha256Hex(cleanUid).Replace("'", "''"), cleanUid.Replace("'", "''")))
+                If rows.Length > 0 Then
+                    System.Threading.Interlocked.Exchange(_terminalFailedTaps, 0)
+                    Return rows(0)
                 End If
-                Return Nothing
+            End SyncLock
+            If System.Threading.Interlocked.Increment(_terminalFailedTaps) >= TerminalLockoutThreshold Then
+                _terminalLockoutUntilUTC = DateTime.UtcNow.AddMinutes(5)
             End If
+            Return Nothing
         End Function
 
         Public Shared Function GenerateDocCode(docType As String) As String
@@ -390,7 +507,7 @@ Namespace BTA_OSG
             End Try
         End Function
 
-        Public Shared Function AddDocument(code As String, docType As String, title As String, origin As String, dest As String, cab As String, shelf As String, box As String, url As String, status As String, assigned As String, Optional flowDirection As String = "INCOMING", Optional assignedSection As String = "", Optional targetDeadline As String = "", Optional punchlist As String = "", Optional lastAction As String = "", Optional externalControlNumber As String = "", Optional isOffline As Boolean = True) As Integer
+        Public Shared Function AddDocument(code As String, docType As String, title As String, origin As String, dest As String, cab As String, shelf As String, box As String, url As String, status As String, assigned As String, Optional flowDirection As String = "INCOMING", Optional assignedSection As String = "", Optional targetDeadline As String = "", Optional punchlist As String = "", Optional lastAction As String = "", Optional externalControlNumber As String = "", Optional isOffline As Boolean = True, Optional createdByUserId As Integer = 1, Optional requesterGender As String = "") As Integer
             SyncLock _syncLock
                 EnsureInitialized()
                 Dim dt = DataSet.Tables("Documents")
@@ -413,18 +530,22 @@ Namespace BTA_OSG
                 r("RevisionPunchlist") = punchlist
                 r("LastActionTaken") = If(String.IsNullOrEmpty(lastAction), "Registered and routed to " & r("AssignedSection").ToString(), lastAction)
                 r("ExternalControlNumber") = If(externalControlNumber, "")
+                If dt.Columns.Contains("RequesterGender") Then r("RequesterGender") = If(requesterGender, "")
+                If dt.Columns.Contains("CreatedByUserID") Then r("CreatedByUserID") = createdByUserId
+                If dt.Columns.Contains("ModifiedByUserID") Then r("ModifiedByUserID") = createdByUserId
+                If dt.Columns.Contains("IsNewOfflineRecord") Then r("IsNewOfflineRecord") = isOffline
                 If dt.Columns.Contains("PendingSync") Then r("PendingSync") = isOffline
                 dt.Rows.Add(r)
                 MarkDirty()
 
                 Dim docId = CInt(r("DocumentID"))
-                AddRoutingLog(docId, origin, dest, assigned, "REGISTERED", "Document registered in OSG System.", isOffline)
-                AddMovementLog(docId, "INCOMING", String.Format("{0}/{1}/{2}", cab, shelf, box), assigned, "Initial storage assignment.", isOffline)
+                AddRoutingLog(docId, origin, dest, assigned, "REGISTERED", "Document registered in OSG System.", isOffline, createdByUserId)
+                AddMovementLog(docId, "INCOMING", String.Format("{0}/{1}/{2}", cab, shelf, box), assigned, "Initial storage assignment.", isOffline, createdByUserId)
                 Return docId
             End SyncLock
         End Function
 
-        Public Shared Sub AddDirective(docId As Integer, directive As String, assignedTo As String, notes As String, staffName As String, Optional isOffline As Boolean = True)
+        Public Shared Sub AddDirective(docId As Integer, directive As String, assignedTo As String, notes As String, staffName As String, Optional isOffline As Boolean = True, Optional issuedByUserId As Integer = 1, Optional directiveCode As String = "IMMEDIATE_ACTION")
             SyncLock _syncLock
                 Dim dt = DataSet.Tables("Directives")
                 Dim r = dt.NewRow()
@@ -434,19 +555,28 @@ Namespace BTA_OSG
                 r("Notes") = notes
                 r("LogUser") = staffName
                 r("Timestamp") = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                If dt.Columns.Contains("DirectiveCode") Then r("DirectiveCode") = directiveCode
+                If dt.Columns.Contains("IssuedByUserID") Then r("IssuedByUserID") = issuedByUserId
                 If dt.Columns.Contains("PendingSync") Then r("PendingSync") = isOffline
                 dt.Rows.Add(r)
 
                 Dim docRows = DataSet.Tables("Documents").Select("DocumentID = " & docId)
                 If docRows.Length > 0 Then
+                    ' Only directives with a real status outcome move the status column; the
+                    ' directive text itself belongs in LastActionTaken. Free text in
+                    ' CurrentStatus replayed to a RECEIVED fallback corrupted the status.
+                    ' "Approved & Archived" maps to ARCHIVED to match the connected path,
+                    ' where the APPROVE_ARCHIVE type's ResultStatusID is the archived status.
                     If directive = "REVISION_REQUESTED" Then
                         docRows(0)("CurrentStatus") = "FOR_REVISION"
                     ElseIf directive = "APPROVED" Then
                         docRows(0)("CurrentStatus") = "APPROVED"
-                    Else
-                        docRows(0)("CurrentStatus") = "SG Directive: " & directive
+                    ElseIf directive = "Approved & Archived" Then
+                        docRows(0)("CurrentStatus") = "ARCHIVED"
                     End If
+                    docRows(0)("LastActionTaken") = "SG Directive: " & directive
                     If Not String.IsNullOrEmpty(assignedTo) Then docRows(0)("AssignedStaff") = assignedTo
+                    If docRows(0).Table.Columns.Contains("ModifiedByUserID") Then docRows(0)("ModifiedByUserID") = issuedByUserId
                     If isOffline AndAlso docRows(0).Table.Columns.Contains("PendingSync") Then
                         docRows(0)("PendingSync") = True
                     End If
@@ -455,7 +585,7 @@ Namespace BTA_OSG
             End SyncLock
         End Sub
 
-        Public Shared Sub AddRoutingLog(docId As Integer, fromOffice As String, toOffice As String, routedBy As String, action As String, remarks As String, Optional isOffline As Boolean = True)
+        Public Shared Sub AddRoutingLog(docId As Integer, fromOffice As String, toOffice As String, routedBy As String, action As String, remarks As String, Optional isOffline As Boolean = True, Optional routedByUserId As Integer = 1)
             SyncLock _syncLock
                 Dim dt = DataSet.Tables("RoutingLogs")
                 Dim r = dt.NewRow()
@@ -466,6 +596,7 @@ Namespace BTA_OSG
                 r("ActionTaken") = action
                 r("Remarks") = remarks
                 r("Timestamp") = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                If dt.Columns.Contains("RoutedByUserID") Then r("RoutedByUserID") = routedByUserId
                 If dt.Columns.Contains("PendingSync") Then r("PendingSync") = isOffline
                 dt.Rows.Add(r)
 
@@ -476,6 +607,7 @@ Namespace BTA_OSG
                     If Not action.Equals("REVISION_REQUESTED", StringComparison.OrdinalIgnoreCase) Then
                         docRows(0)("LastActionTaken") = "Routed to " & toOffice & ": " & action
                     End If
+                    If docRows(0).Table.Columns.Contains("ModifiedByUserID") Then docRows(0)("ModifiedByUserID") = routedByUserId
                     If isOffline AndAlso docRows(0).Table.Columns.Contains("PendingSync") Then
                         docRows(0)("PendingSync") = True
                     End If
@@ -484,7 +616,7 @@ Namespace BTA_OSG
             End SyncLock
         End Sub
 
-        Public Shared Sub AddMovementLog(docId As Integer, fromLoc As String, toLoc As String, movedBy As String, reason As String, Optional isOffline As Boolean = True)
+        Public Shared Sub AddMovementLog(docId As Integer, fromLoc As String, toLoc As String, movedBy As String, reason As String, Optional isOffline As Boolean = True, Optional movedByUserId As Integer = 1)
             SyncLock _syncLock
                 Dim dt = DataSet.Tables("Movements")
                 Dim r = dt.NewRow()
@@ -494,6 +626,7 @@ Namespace BTA_OSG
                 r("MovedBy") = movedBy
                 r("Reason") = reason
                 r("Timestamp") = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                If dt.Columns.Contains("MovedByUserID") Then r("MovedByUserID") = movedByUserId
                 If dt.Columns.Contains("PendingSync") Then r("PendingSync") = isOffline
                 dt.Rows.Add(r)
 
@@ -506,6 +639,7 @@ Namespace BTA_OSG
                         docRows(0)("BoxCode") = parts(2).Trim()
                     End If
                     docRows(0)("LastActionTaken") = "Moved storage to " & toLoc
+                    If docRows(0).Table.Columns.Contains("ModifiedByUserID") Then docRows(0)("ModifiedByUserID") = movedByUserId
                     If isOffline AndAlso docRows(0).Table.Columns.Contains("PendingSync") Then
                         docRows(0)("PendingSync") = True
                     End If
@@ -514,26 +648,26 @@ Namespace BTA_OSG
             End SyncLock
         End Sub
 
-        Public Shared Sub LogAudit(user As String, action As String, Optional isOffline As Boolean = True)
+        Public Shared Sub LogAudit(user As String, action As String, Optional isOffline As Boolean = True, Optional userId As Integer = 1, Optional actionType As String = "")
             SyncLock _syncLock
                 Dim dt = DataSet.Tables("AuditTrail")
                 Dim r = dt.NewRow()
                 r("UserName") = user
                 r("ActionDescription") = action
                 r("Timestamp") = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                If dt.Columns.Contains("ActionType") Then r("ActionType") = actionType
+                If dt.Columns.Contains("UserID") Then r("UserID") = userId
                 If dt.Columns.Contains("PendingSync") Then r("PendingSync") = isOffline
                 dt.Rows.Add(r)
                 MarkDirty()
             End SyncLock
         End Sub
 
-        Public Shared Sub RequestRevision(docId As Integer, punchlistNotes As String, returnSection As String, staffName As String)
-            Dim extCnRev As String = ""
+        Public Shared Sub RequestRevision(docId As Integer, punchlistNotes As String, returnSection As String, staffName As String, Optional staffUserId As Integer = 1)
+            Dim extCn As String = ""
             SyncLock _syncLock
-                EnsureInitialized()
-                Dim docRows = DataSet.Tables("Documents").Select("DocumentID = " & docId)
-                If docRows.Length = 0 Then Return
-                Dim doc = docRows(0)
+                Dim doc = FindDocumentRow(docId)
+                If doc Is Nothing Then Return
 
                 doc("CurrentStatus") = "FOR_REVISION"
                 Dim prevPunchlist As String = doc("RevisionPunchlist").ToString()
@@ -542,93 +676,100 @@ Namespace BTA_OSG
 
                 Dim targetSec As String = If(Not String.IsNullOrWhiteSpace(returnSection), returnSection, DocumentService.GetDefaultSectionForCategory(doc("DocType").ToString()))
                 doc("AssignedSection") = targetSec
-                doc("LastActionTaken") = "Sec Gen requested revision: " & punchlistNotes
+                doc("LastActionTaken") = "Revision requested by " & staffName & ": " & punchlistNotes
+                If doc.Table.Columns.Contains("ModifiedByUserID") Then doc("ModifiedByUserID") = staffUserId
                 MarkDirty()
 
-                AddDirective(docId, "REVISION_REQUESTED", targetSec, punchlistNotes, staffName)
-                AddRoutingLog(docId, "Office of the Secretary-General", targetSec, staffName, "REVISION_REQUESTED", punchlistNotes)
-                LogAudit(staffName, "Revision requested for Document #" & docId & " with punchlist: " & punchlistNotes)
+                AddDirective(docId, "REVISION_REQUESTED", targetSec, punchlistNotes, staffName, isOffline:=True, issuedByUserId:=staffUserId)
+                AddRoutingLog(docId, "Office of the Secretary-General", targetSec, staffName, "REVISION_REQUESTED", punchlistNotes, isOffline:=True, routedByUserId:=staffUserId)
+                LogAudit(staffName, "Revision requested for Document #" & docId & " with punchlist: " & punchlistNotes, isOffline:=True, userId:=staffUserId)
 
-                extCnRev = If(doc.Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(doc("ExternalControlNumber")), doc("ExternalControlNumber").ToString(), "")
+                extCn = RowString(doc, "ExternalControlNumber")
             End SyncLock
 
-            If Not String.IsNullOrWhiteSpace(extCnRev) Then
-                DocumentService.PushPortalStatusSafe(extCnRev, "FOR_REVISION")
-            End If
+            PushPortalStatusFor(extCn, "FOR_REVISION")
         End Sub
 
-        Public Shared Sub ResubmitDocument(docId As Integer, staffName As String, notes As String)
-            Dim extCnResub As String = ""
+        Public Shared Sub ResubmitDocument(docId As Integer, staffName As String, notes As String, Optional staffUserId As Integer = 1)
+            Dim extCn As String = ""
             SyncLock _syncLock
-                EnsureInitialized()
-                Dim docRows = DataSet.Tables("Documents").Select("DocumentID = " & docId)
-                If docRows.Length = 0 Then Return
-                Dim doc = docRows(0)
+                Dim doc = FindDocumentRow(docId)
+                If doc Is Nothing Then Return
 
                 Dim originSec As String = doc("AssignedSection").ToString()
                 doc("CurrentStatus") = "FOR_REVIEW"
                 doc("AssignedSection") = "Secretary-General"
                 doc("LastActionTaken") = "Resubmitted for Sec Gen review: " & notes
+                If doc.Table.Columns.Contains("ModifiedByUserID") Then doc("ModifiedByUserID") = staffUserId
                 MarkDirty()
 
-                AddRoutingLog(docId, originSec, "Office of the Secretary-General", staffName, "RESUBMITTED", notes)
-                LogAudit(staffName, "Document #" & docId & " resubmitted by " & originSec & " to Sec Gen: " & notes)
+                AddRoutingLog(docId, originSec, "Office of the Secretary-General", staffName, "RESUBMITTED", notes, isOffline:=True, routedByUserId:=staffUserId)
+                LogAudit(staffName, "Document #" & docId & " resubmitted by " & originSec & " to Sec Gen: " & notes, isOffline:=True, userId:=staffUserId)
 
-                extCnResub = If(doc.Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(doc("ExternalControlNumber")), doc("ExternalControlNumber").ToString(), "")
+                extCn = RowString(doc, "ExternalControlNumber")
             End SyncLock
 
-            If Not String.IsNullOrWhiteSpace(extCnResub) Then
-                DocumentService.PushPortalStatusSafe(extCnResub, "FOR_REVIEW")
-            End If
+            PushPortalStatusFor(extCn, "FOR_REVIEW")
         End Sub
 
-        Public Shared Sub ApproveDocument(docId As Integer, staffName As String, notes As String)
-            Dim extCnAppr As String = ""
+        Public Shared Sub ApproveDocument(docId As Integer, staffName As String, notes As String, Optional staffUserId As Integer = 1)
+            Dim extCn As String = ""
             SyncLock _syncLock
-                EnsureInitialized()
-                Dim docRows = DataSet.Tables("Documents").Select("DocumentID = " & docId)
-                If docRows.Length = 0 Then Return
-                Dim doc = docRows(0)
+                Dim doc = FindDocumentRow(docId)
+                If doc Is Nothing Then Return
 
                 doc("CurrentStatus") = "APPROVED"
                 doc("AssignedSection") = "Records Section"
-                doc("LastActionTaken") = "Approved by Secretary-General: " & notes
+                doc("LastActionTaken") = "Approved by " & staffName & ": " & notes
+                If doc.Table.Columns.Contains("ModifiedByUserID") Then doc("ModifiedByUserID") = staffUserId
                 MarkDirty()
 
-                AddDirective(docId, "APPROVED", "Records Section", notes, staffName)
-                AddRoutingLog(docId, "Office of the Secretary-General", "Records Section", staffName, "APPROVED", notes)
-                LogAudit(staffName, "Document #" & docId & " approved by Sec Gen: " & notes)
+                AddDirective(docId, "APPROVED", "Records Section", notes, staffName, isOffline:=True, issuedByUserId:=staffUserId)
+                AddRoutingLog(docId, "Office of the Secretary-General", "Records Section", staffName, "APPROVED", notes, isOffline:=True, routedByUserId:=staffUserId)
+                LogAudit(staffName, "Document #" & docId & " approved by " & staffName & ": " & notes, isOffline:=True, userId:=staffUserId)
 
-                extCnAppr = If(doc.Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(doc("ExternalControlNumber")), doc("ExternalControlNumber").ToString(), "")
+                extCn = RowString(doc, "ExternalControlNumber")
             End SyncLock
 
-            If Not String.IsNullOrWhiteSpace(extCnAppr) Then
-                DocumentService.PushPortalStatusSafe(extCnAppr, "APPROVED")
-            End If
+            PushPortalStatusFor(extCn, "APPROVED")
         End Sub
 
-        Public Shared Sub ReleaseDocument(docId As Integer, staffName As String, notes As String)
-            Dim extCnRel As String = ""
+        Public Shared Sub ReleaseDocument(docId As Integer, staffName As String, notes As String, Optional staffUserId As Integer = 1)
+            Dim extCn As String = ""
             SyncLock _syncLock
-                EnsureInitialized()
-                Dim docRows = DataSet.Tables("Documents").Select("DocumentID = " & docId)
-                If docRows.Length = 0 Then Return
-                Dim doc = docRows(0)
+                Dim doc = FindDocumentRow(docId)
+                If doc Is Nothing Then Return
 
                 Dim dest As String = doc("DestinationOffice").ToString()
                 doc("CurrentStatus") = "RELEASED"
                 doc("AssignedSection") = "Archived / Released"
                 doc("LastActionTaken") = "Released to " & dest & ": " & notes
+                If doc.Table.Columns.Contains("ModifiedByUserID") Then doc("ModifiedByUserID") = staffUserId
                 MarkDirty()
 
-                AddRoutingLog(docId, "Records Section", dest, staffName, "RELEASED", notes)
-                LogAudit(staffName, "Document #" & docId & " released: " & notes)
+                AddRoutingLog(docId, "Records Section", dest, staffName, "RELEASED", notes, isOffline:=True, routedByUserId:=staffUserId)
+                LogAudit(staffName, "Document #" & docId & " released: " & notes, isOffline:=True, userId:=staffUserId)
 
-                extCnRel = If(doc.Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(doc("ExternalControlNumber")), doc("ExternalControlNumber").ToString(), "")
+                extCn = RowString(doc, "ExternalControlNumber")
             End SyncLock
 
-            If Not String.IsNullOrWhiteSpace(extCnRel) Then
-                DocumentService.PushPortalStatusSafe(extCnRel, "RELEASED")
+            PushPortalStatusFor(extCn, "RELEASED")
+        End Sub
+
+        Private Shared Function FindDocumentRow(docId As Integer) As DataRow
+            EnsureInitialized()
+            Dim dt = DataSet.Tables("Documents")
+            If dt Is Nothing Then Return Nothing
+            Dim rows = dt.Select("DocumentID = " & docId)
+            If rows.Length = 0 Then Return Nothing
+            Return rows(0)
+        End Function
+
+        ' The portal push runs after _syncLock releases: it performs network I/O and must not
+        ' hold the cache lock across it.
+        Private Shared Sub PushPortalStatusFor(externalControlNumber As String, statusCode As String)
+            If Not String.IsNullOrWhiteSpace(externalControlNumber) Then
+                DocumentService.PushPortalStatusSafe(externalControlNumber, statusCode)
             End If
         End Sub
 
@@ -640,6 +781,8 @@ Namespace BTA_OSG
             SyncLock _syncLock
                 EnsureInitialized()
                 Dim dt = DataSet.Tables("Documents")
+                ' No session, no documents: a logged-out desk must not browse the registry,
+                ' and section isolation has no anonymous case.
                 If user Is Nothing Then Return New DataView(dt.Clone())
 
                 Dim role As String = user("Role").ToString()
@@ -677,25 +820,22 @@ Namespace BTA_OSG
 
         Public Shared Function MapRowToDocument(row As DataRow) As Document
             If row Is Nothing Then Return Nothing
-            Dim docId = If(row.Table.Columns.Contains("DocumentID") AndAlso Not IsDBNull(row("DocumentID")), Convert.ToInt32(row("DocumentID")), 0)
             Dim docObj As New Document With {
-                .DocumentID = docId,
-                .DocCode = If(row.Table.Columns.Contains("DocCode") AndAlso Not IsDBNull(row("DocCode")), row("DocCode").ToString(), ""),
-                .Title = If(row.Table.Columns.Contains("Title") AndAlso Not IsDBNull(row("Title")), row("Title").ToString(), ""),
-                .OriginOffice = If(row.Table.Columns.Contains("OriginatingOffice") AndAlso Not IsDBNull(row("OriginatingOffice")), row("OriginatingOffice").ToString(), ""),
-                .DestinationOffice = If(row.Table.Columns.Contains("DestinationOffice") AndAlso Not IsDBNull(row("DestinationOffice")), row("DestinationOffice").ToString(), ""),
-                .FlowDirection = If(row.Table.Columns.Contains("FlowDirection") AndAlso Not IsDBNull(row("FlowDirection")), row("FlowDirection").ToString(), "INCOMING"),
-                .AssignedSection = If(row.Table.Columns.Contains("AssignedSection") AndAlso Not IsDBNull(row("AssignedSection")), row("AssignedSection").ToString(), ""),
-                .RevisionPunchlist = If(row.Table.Columns.Contains("RevisionPunchlist") AndAlso Not IsDBNull(row("RevisionPunchlist")), row("RevisionPunchlist").ToString(), ""),
-                .LastActionTaken = If(row.Table.Columns.Contains("LastActionTaken") AndAlso Not IsDBNull(row("LastActionTaken")), row("LastActionTaken").ToString(), ""),
+                .DocumentID = RowInt(row, "DocumentID"),
+                .DocCode = RowString(row, "DocCode"),
+                .Title = RowString(row, "Title"),
+                .OriginOffice = RowString(row, "OriginatingOffice"),
+                .DestinationOffice = RowString(row, "DestinationOffice"),
+                .FlowDirection = RowString(row, "FlowDirection", "INCOMING"),
+                .AssignedSection = RowString(row, "AssignedSection"),
+                .RevisionPunchlist = RowString(row, "RevisionPunchlist"),
+                .LastActionTaken = RowString(row, "LastActionTaken"),
                 .RegisteredAtUTC = DateTime.UtcNow
             }
 
-            If row.Table.Columns.Contains("Remarks") AndAlso Not IsDBNull(row("Remarks")) Then
-                docObj.Remarks = row("Remarks").ToString()
-            End If
+            docObj.Remarks = RowStringOrNull(row, "Remarks")
 
-            Dim typeStr = If(row.Table.Columns.Contains("DocType") AndAlso Not IsDBNull(row("DocType")), row("DocType").ToString().ToUpperInvariant(), "")
+            Dim typeStr = RowString(row, "DocType").ToUpperInvariant()
             Select Case typeStr
                 Case "FINANCE", "FIN": docObj.DocumentTypeID = 3
                 Case "TRAVEL", "TRAVEL ORDER", "TO": docObj.DocumentTypeID = 4
@@ -703,7 +843,7 @@ Namespace BTA_OSG
                 Case Else: docObj.DocumentTypeID = 1
             End Select
 
-            Dim statusStr = If(row.Table.Columns.Contains("CurrentStatus") AndAlso Not IsDBNull(row("CurrentStatus")), row("CurrentStatus").ToString().ToUpperInvariant(), "")
+            Dim statusStr = RowString(row, "CurrentStatus").ToUpperInvariant()
             Select Case statusStr
                 Case "RECEIVED", "LOGGED": docObj.StatusID = 1
                 Case "FOR_REVIEW": docObj.StatusID = 2
@@ -714,36 +854,52 @@ Namespace BTA_OSG
                 Case Else: docObj.StatusID = 1
             End Select
 
-            If row.Table.Columns.Contains("TargetDeadlineUTC") AndAlso Not IsDBNull(row("TargetDeadlineUTC")) Then
-                Dim dVal As DateTime
-                If DateTime.TryParse(row("TargetDeadlineUTC").ToString(), dVal) Then
-                    docObj.TargetDeadlineUTC = dVal
-                End If
-            End If
+            docObj.TargetDeadlineUTC = RowDateTimeOrNull(row, "TargetDeadlineUTC")
+            docObj.CurrentStorageLocationID = RowIntOrNull(row, "CurrentStorageLocationID")
 
-            If row.Table.Columns.Contains("CurrentStorageLocationID") AndAlso Not IsDBNull(row("CurrentStorageLocationID")) Then
-                Dim sId As Integer
-                If Integer.TryParse(row("CurrentStorageLocationID").ToString(), sId) Then
-                    docObj.CurrentStorageLocationID = sId
-                End If
-            End If
-
-            If row.Table.Columns.Contains("CabinetID") AndAlso Not IsDBNull(row("CabinetID")) Then docObj.CabinetID = row("CabinetID").ToString()
-            If row.Table.Columns.Contains("ShelfNo") AndAlso Not IsDBNull(row("ShelfNo")) Then docObj.ShelfNo = row("ShelfNo").ToString()
-            If row.Table.Columns.Contains("BoxCode") AndAlso Not IsDBNull(row("BoxCode")) Then docObj.BoxCode = row("BoxCode").ToString()
-            If row.Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(row("ExternalControlNumber")) Then docObj.ExternalControlNumber = row("ExternalControlNumber").ToString()
+            docObj.CabinetID = RowStringOrNull(row, "CabinetID")
+            docObj.ShelfNo = RowStringOrNull(row, "ShelfNo")
+            docObj.BoxCode = RowStringOrNull(row, "BoxCode")
+            docObj.ExternalControlNumber = RowStringOrNull(row, "ExternalControlNumber")
 
             Return docObj
         End Function
 
+        ' Cache rows come from two writers (embedded XML and SQL mirrors) at different schema
+        ' generations, so every column read must tolerate the column being absent entirely.
+        Private Shared Function RowStringOrNull(row As DataRow, columnName As String) As String
+            If Not row.Table.Columns.Contains(columnName) OrElse IsDBNull(row(columnName)) Then Return Nothing
+            Return row(columnName).ToString()
+        End Function
+
+        Private Shared Function RowString(row As DataRow, columnName As String, Optional fallback As String = "") As String
+            Return If(RowStringOrNull(row, columnName), fallback)
+        End Function
+
+        Private Shared Function RowIntOrNull(row As DataRow, columnName As String) As Integer?
+            If Not row.Table.Columns.Contains(columnName) OrElse IsDBNull(row(columnName)) Then Return Nothing
+            Dim parsed As Integer
+            If Integer.TryParse(row(columnName).ToString(), parsed) Then Return parsed
+            Return Nothing
+        End Function
+
+        Private Shared Function RowInt(row As DataRow, columnName As String) As Integer
+            Dim parsed = RowIntOrNull(row, columnName)
+            Return If(parsed.HasValue, parsed.Value, 0)
+        End Function
+
+        Private Shared Function RowDateTimeOrNull(row As DataRow, columnName As String) As DateTime?
+            If Not row.Table.Columns.Contains(columnName) OrElse IsDBNull(row(columnName)) Then Return Nothing
+            Dim parsed As DateTime
+            If DateTime.TryParse(row(columnName).ToString(), parsed) Then Return parsed
+            Return Nothing
+        End Function
+
         Public Shared Function GetDocumentByID(docId As Integer) As Document
             SyncLock _syncLock
-                EnsureInitialized()
-                Dim dt = DataSet.Tables("Documents")
-                If dt Is Nothing Then Return Nothing
-                Dim rows = dt.Select("DocumentID = " & docId)
-                If rows.Length = 0 Then Return Nothing
-                Return MapRowToDocument(rows(0))
+                Dim doc = FindDocumentRow(docId)
+                If doc Is Nothing Then Return Nothing
+                Return MapRowToDocument(doc)
             End SyncLock
         End Function
 
@@ -764,12 +920,8 @@ Namespace BTA_OSG
                         .RoutingRemarks = r("Remarks").ToString(),
                         .RoutedAtUTC = DateTime.UtcNow
                     }
-                    If r.Table.Columns.Contains("Timestamp") AndAlso Not IsDBNull(r("Timestamp")) Then
-                        Dim dtVal As DateTime
-                        If DateTime.TryParse(r("Timestamp").ToString(), dtVal) Then
-                            logEntry.RoutedAtUTC = dtVal
-                        End If
-                    End If
+                    Dim routedAt = RowDateTimeOrNull(r, "Timestamp")
+                    If routedAt.HasValue Then logEntry.RoutedAtUTC = routedAt.Value
                     list.Add(logEntry)
                 Next
                 Return list
@@ -792,12 +944,8 @@ Namespace BTA_OSG
                         .Remarks = r("Notes").ToString(),
                         .IssuedAtUTC = DateTime.UtcNow
                     }
-                    If r.Table.Columns.Contains("Timestamp") AndAlso Not IsDBNull(r("Timestamp")) Then
-                        Dim dtVal As DateTime
-                        If DateTime.TryParse(r("Timestamp").ToString(), dtVal) Then
-                            dirEntry.IssuedAtUTC = dtVal
-                        End If
-                    End If
+                    Dim issuedAt = RowDateTimeOrNull(r, "Timestamp")
+                    If issuedAt.HasValue Then dirEntry.IssuedAtUTC = issuedAt.Value
                     list.Add(dirEntry)
                 Next
                 Return list

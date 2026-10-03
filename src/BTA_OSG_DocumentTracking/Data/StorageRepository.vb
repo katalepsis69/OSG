@@ -61,16 +61,19 @@ Namespace BTA_OSG
 
         ''' <summary>
         ''' Resolves a landmark to its SQL location id, creating the row if it does not yet exist.
+        ''' With a transaction supplied, both the lookup and the insert join it so the created
+        ''' landmark rolls back with the registration that triggered it.
         ''' </summary>
-        Public Function GetOrCreateByKey(cabinet As String, shelf As String, box As String) As Integer
+        Public Function GetOrCreateByKey(cabinet As String, shelf As String, box As String, Optional transaction As SqlTransaction = Nothing) As Integer
             Dim cab = If(cabinet, "").Trim()
             Dim shf = If(shelf, "").Trim()
             Dim bx = If(box, "").Trim()
             If cab.Length = 0 Then cab = "UNFILED"
             Dim key As String = cab & "|" & shf & "|" & bx
 
-            Using conn = _connectionFactory.CreateConnection()
-                Using cmd = New SqlCommand("SELECT StorageLocationID FROM tbl_StorageLocations WHERE LocationKey = @key", conn)
+            Dim conn As SqlConnection = If(transaction IsNot Nothing, transaction.Connection, _connectionFactory.CreateConnection())
+            Try
+                Using cmd = New SqlCommand("SELECT StorageLocationID FROM tbl_StorageLocations WHERE LocationKey = @key", conn, transaction)
                     cmd.Parameters.AddWithValue("@key", key)
                     Dim existing = cmd.ExecuteScalar()
                     If existing IsNot Nothing AndAlso Not IsDBNull(existing) Then Return Convert.ToInt32(existing)
@@ -78,13 +81,15 @@ Namespace BTA_OSG
 
                 Dim insertSql = "INSERT INTO tbl_StorageLocations (CabinetID, ShelfNo, BoxCode, Description) " &
                                 "OUTPUT INSERTED.StorageLocationID VALUES (@cab, @shelf, @box, 'Auto-created from document registration')"
-                Using cmd = New SqlCommand(insertSql, conn)
+                Using cmd = New SqlCommand(insertSql, conn, transaction)
                     cmd.Parameters.AddWithValue("@cab", cab)
                     cmd.Parameters.AddWithValue("@shelf", If(shf.Length = 0, CType(DBNull.Value, Object), shf))
                     cmd.Parameters.AddWithValue("@box", If(bx.Length = 0, CType(DBNull.Value, Object), bx))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
-            End Using
+            Finally
+                If transaction Is Nothing Then conn.Dispose()
+            End Try
         End Function
 
         Public Function GetMovements(docId As Integer) As List(Of DocumentMovement)

@@ -10,10 +10,29 @@
     <OptionStrict>On</OptionStrict>
     <OptionCompare>Binary</OptionCompare>
     <OptionInfer>On</OptionInfer>
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <!-- Release publish ships one self-contained exe. Native SqlClient libraries are
+       embedded so nothing sits loose next to it; the bundle is compressed; debug
+       symbols are embedded so no .pdb is emitted; SqlClient's translated error
+       satellites are trimmed to English (the UI is English-only). Config json
+       files deliberately stay loose under Resources\ so IT can edit the
+       connection string without a rebuild. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <DebugType>embedded</DebugType>
+    <DebugSymbols>false</DebugSymbols>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
   </ItemGroup>
 
   <ItemGroup>
@@ -23,6 +42,78 @@
     <None Update="Resources\appsettings.Production.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <Content Include="Resources\app.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\bta_logo.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\logo_64.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\logo_48.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Resources\logo_96.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <!-- The canonical schema rides inside the exe (logical names are explicit because the
+       RootNamespace is empty), so the setup wizard's Prepare Server needs no scripts on
+       disk and db/scripts never has to ship with a publish. -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\db\scripts\001_create_database.sql">
+      <LogicalName>osgsql.001_create_database.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\002_create_reference_tables.sql">
+      <LogicalName>osgsql.002_create_reference_tables.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\003_create_security_tables.sql">
+      <LogicalName>osgsql.003_create_security_tables.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\004_create_document_tables.sql">
+      <LogicalName>osgsql.004_create_document_tables.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\005_create_audit_tables.sql">
+      <LogicalName>osgsql.005_create_audit_tables.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\006_create_indexes.sql">
+      <LogicalName>osgsql.006_create_indexes.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\007_create_seed_data.sql">
+      <LogicalName>osgsql.007_create_seed_data.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\008_osg_target_migration.sql">
+      <LogicalName>osgsql.008_osg_target_migration.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\009_portal_external_control_number.sql">
+      <LogicalName>osgsql.009_portal_external_control_number.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\010_osg_workstation_alignment.sql">
+      <LogicalName>osgsql.010_osg_workstation_alignment.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\011_create_workstation_heartbeat.sql">
+      <LogicalName>osgsql.011_create_workstation_heartbeat.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\012_retire_bootstrap_admin.sql">
+      <LogicalName>osgsql.012_retire_bootstrap_admin.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\013_realign_document_sequences.sql">
+      <LogicalName>osgsql.013_realign_document_sequences.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\014_audit_hash_chain.sql">
+      <LogicalName>osgsql.014_audit_hash_chain.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\015_replay_and_integrity_fixes.sql">
+      <LogicalName>osgsql.015_replay_and_integrity_fixes.sql</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>BTA_OSG_DocumentTracking.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

@@ -45,7 +45,7 @@ Namespace BTA_OSG.Tests
         Public Sub FormMain_InitializesWithCivicCalmColors()
             Dim form As New FormMain()
             Assert.AreEqual(CivicCalmTheme.ColorCanvas, form.BackColor)
-            Assert.IsFalse(form.Text.Contains("—"))
+            Assert.IsFalse(form.Text.Contains(ChrW(&H2014)))
             form.Dispose()
         End Sub
 

@@ -145,5 +145,64 @@ Namespace BTA_OSG.Tests
             Assert.IsTrue(docRow("LastActionTaken").ToString().Contains("Office of the Secretary-General"), "LastActionTaken must reflect destination office")
             Assert.IsTrue(docRow("LastActionTaken").ToString().Contains("FOR_REVIEW"), "LastActionTaken must reflect the routing action")
         End Sub
+
+        <TestMethod>
+        Public Sub AddDocument_Offline_TagsNewOfflineRecord()
+            EmbeddedDB.Initialize()
+            Dim localId = EmbeddedDB.AddDocument("LOC-NEW-001", "Finance", "Offline Document", "Records Section", "Finance Section", "CAB-A", "S-1", "BOX-01", "", "RECEIVED", "Hassim A. Ibrahim", "INCOMING", "Finance Section", isOffline:=True, createdByUserId:=4)
+
+            Dim docRow = EmbeddedDB.DataSet.Tables("Documents").Rows.Find(localId)
+            Assert.IsNotNull(docRow)
+            Assert.IsTrue(CBool(docRow("PendingSync")), "New offline documents must be tagged PendingSync = True")
+            Assert.IsTrue(CBool(docRow("IsNewOfflineRecord")), "New offline documents must be tagged IsNewOfflineRecord = True")
+            Assert.AreEqual(4, CInt(docRow("CreatedByUserID")), "CreatedByUserID must be recorded on offline creation")
+        End Sub
+
+        <TestMethod>
+        Public Sub RouteDocument_Offline_OnExistingDocument_KeepsIsNewOfflineRecordFalse()
+            EmbeddedDB.Initialize()
+            ' Simulate document previously mirrored from SQL Server (IsNewOfflineRecord is False)
+            EmbeddedDB.ApplySnapshot("Documents", BuildSnapshot(5001))
+            Dim docRow = EmbeddedDB.DataSet.Tables("Documents").Rows.Find(5001)
+            Assert.IsNotNull(docRow)
+            Assert.IsFalse(CBool(docRow("PendingSync")), "Mirrored document initially not pending sync")
+            Assert.IsFalse(CBool(docRow("IsNewOfflineRecord")), "Mirrored document must have IsNewOfflineRecord = False")
+
+            ' Route the document while offline
+            Dim coordinator As New DesktopDataCoordinator(False)
+            coordinator.RouteDocument(5001, "Finance Section", "Office of the Secretary-General", "FOR_REVIEW", "Review remarks", "Hassim A. Ibrahim", 4)
+
+            docRow = EmbeddedDB.DataSet.Tables("Documents").Rows.Find(5001)
+            Assert.IsTrue(CBool(docRow("PendingSync")), "Workflow action offline must set PendingSync = True")
+            Assert.IsFalse(CBool(docRow("IsNewOfflineRecord")), "Workflow action on existing document must keep IsNewOfflineRecord = False")
+        End Sub
+
+        <TestMethod>
+        Public Sub RemapOfflineChildRecords_UpdatesChildDocumentIdsCorrectly()
+            EmbeddedDB.Initialize()
+            Dim oldDocId As Integer = 999
+            Dim newDocId As Integer = 8888
+
+            ' Add child rows pointing to oldDocId
+            EmbeddedDB.AddDirective(oldDocId, "APPROVED", "Records Section", "Please audit immediately", "Hassim A. Ibrahim", isOffline:=True, issuedByUserId:=4)
+            EmbeddedDB.AddRoutingLog(oldDocId, "Records", "Finance", "Hassim A. Ibrahim", "FOR_REVIEW", "Action remarks", isOffline:=True, routedByUserId:=4)
+            EmbeddedDB.AddMovementLog(oldDocId, "CAB-A|S-1|BOX-01", "CAB-B|S-2|BOX-02", "Hassim A. Ibrahim", "Move for storage", isOffline:=True, movedByUserId:=4)
+
+            Dim coordinator As New DesktopDataCoordinator(False)
+            coordinator.RemapOfflineChildRecords(oldDocId, newDocId)
+
+            ' Verify all child records now reference newDocId
+            Dim directives = EmbeddedDB.DataSet.Tables("Directives").Select(String.Format("DocumentID = {0}", newDocId))
+            Assert.AreEqual(1, directives.Length, "Directive must be remapped to newDocId")
+            Assert.AreEqual(0, EmbeddedDB.DataSet.Tables("Directives").Select(String.Format("DocumentID = {0}", oldDocId)).Length)
+
+            Dim routings = EmbeddedDB.DataSet.Tables("RoutingLogs").Select(String.Format("DocumentID = {0}", newDocId))
+            Assert.AreEqual(1, routings.Length, "RoutingLog must be remapped to newDocId")
+            Assert.AreEqual(0, EmbeddedDB.DataSet.Tables("RoutingLogs").Select(String.Format("DocumentID = {0}", oldDocId)).Length)
+
+            Dim movements = EmbeddedDB.DataSet.Tables("Movements").Select(String.Format("DocumentID = {0}", newDocId))
+            Assert.AreEqual(1, movements.Length, "Movement must be remapped to newDocId")
+            Assert.AreEqual(0, EmbeddedDB.DataSet.Tables("Movements").Select(String.Format("DocumentID = {0}", oldDocId)).Length)
+        End Sub
     End Class
 End Namespace

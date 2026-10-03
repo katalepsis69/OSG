@@ -112,12 +112,15 @@ Namespace BTA_OSG
             Return GetByFilter(titleLike, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, pageSize, pageNumber)
         End Function
 
-        Public Function Insert(doc As Document) As Integer
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber) " &
-                           "OUTPUT INSERTED.DocumentID " &
-                           "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID, @FlowDirection, @AssignedSection, @TargetDeadlineUTC, @RevisionPunchlist, @LastActionTaken, @ExternalControlNumber)"
-                Using cmd = New SqlCommand(sql, conn)
+        ' When a transaction is supplied its connection is already open and the command
+        ' joins it; otherwise the method owns a short-lived connection, as before.
+        Public Function Insert(doc As Document, Optional transaction As SqlTransaction = Nothing) As Integer
+            Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber) " &
+                       "OUTPUT INSERTED.DocumentID " &
+                       "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID, @FlowDirection, @AssignedSection, @TargetDeadlineUTC, @RevisionPunchlist, @LastActionTaken, @ExternalControlNumber)"
+            Dim conn As SqlConnection = If(transaction IsNot Nothing, transaction.Connection, _connectionFactory.CreateConnection())
+            Try
+                Using cmd = New SqlCommand(sql, conn, transaction)
                     cmd.Parameters.AddWithValue("@DocCode", doc.DocCode)
                     cmd.Parameters.AddWithValue("@Title", doc.Title)
                     cmd.Parameters.AddWithValue("@DocumentTypeID", doc.DocumentTypeID)
@@ -133,10 +136,12 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@TargetDeadlineUTC", If(doc.TargetDeadlineUTC.HasValue, CType(doc.TargetDeadlineUTC.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@RevisionPunchlist", If(doc.RevisionPunchlist IsNot Nothing, CType(doc.RevisionPunchlist, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@LastActionTaken", If(doc.LastActionTaken IsNot Nothing, CType(doc.LastActionTaken, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ExternalControlNumber", If(doc.ExternalControlNumber IsNot Nothing, CType(doc.ExternalControlNumber, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ExternalControlNumber", ExternalControlNumberParam(doc.ExternalControlNumber))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
-            End Using
+            Finally
+                If transaction Is Nothing Then conn.Dispose()
+            End Try
         End Function
 
         Public Sub Update(doc As Document, modifiedBy As Integer?)
@@ -162,7 +167,7 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@TargetDeadlineUTC", If(doc.TargetDeadlineUTC.HasValue, CType(doc.TargetDeadlineUTC.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@RevisionPunchlist", If(doc.RevisionPunchlist IsNot Nothing, CType(doc.RevisionPunchlist, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@LastActionTaken", If(doc.LastActionTaken IsNot Nothing, CType(doc.LastActionTaken, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ExternalControlNumber", If(doc.ExternalControlNumber IsNot Nothing, CType(doc.ExternalControlNumber, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@ExternalControlNumber", ExternalControlNumberParam(doc.ExternalControlNumber))
                     cmd.Parameters.AddWithValue("@ModifiedByUserID", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", doc.DocumentID)
                     cmd.ExecuteNonQuery()
@@ -170,15 +175,23 @@ Namespace BTA_OSG
             End Using
         End Sub
 
-        Public Sub UpdateStatus(docId As Integer, statusId As Integer)
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Documents SET StatusID = @statusId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
-                Using cmd = New SqlCommand(sql, conn)
+        Public Sub UpdateStatus(docId As Integer, statusId As Integer, Optional transaction As SqlTransaction = Nothing)
+            Dim sql = "UPDATE tbl_Documents SET StatusID = @statusId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
+            If transaction IsNot Nothing Then
+                Using cmd = New SqlCommand(sql, transaction.Connection, transaction)
                     cmd.Parameters.AddWithValue("@statusId", statusId)
                     cmd.Parameters.AddWithValue("@id", docId)
                     cmd.ExecuteNonQuery()
                 End Using
-            End Using
+            Else
+                Using conn = _connectionFactory.CreateConnection()
+                    Using cmd = New SqlCommand(sql, conn)
+                        cmd.Parameters.AddWithValue("@statusId", statusId)
+                        cmd.Parameters.AddWithValue("@id", docId)
+                        cmd.ExecuteNonQuery()
+                    End Using
+                End Using
+            End If
         End Sub
 
         Public Sub UpdateWorkflowState(docId As Integer, statusId As Integer, assignedSection As String, punchlist As String, lastAction As String, modifiedBy As Integer?, Optional transaction As SqlTransaction = Nothing, Optional destinationOffice As String = Nothing, Optional originOffice As String = Nothing)
@@ -218,6 +231,79 @@ Namespace BTA_OSG
                 End Using
             End If
         End Sub
+
+        ''' <summary>
+        ''' From-status guard for the connected workflow actions: the update lands only when
+        ''' the server row still carries the status the operator's form was showing, so a
+        ''' document another seat already approved, released, or archived cannot be pushed
+        ''' through the same transition again. Returns the rows affected; 0 means the state
+        ''' moved and the caller must surface that instead of writing a duplicate.
+        ''' </summary>
+        Public Function UpdateWorkflowStateFromStatus(docId As Integer, expectedFromStatusId As Integer, statusId As Integer, assignedSection As String, punchlist As String, lastAction As String, modifiedBy As Integer?, Optional transaction As SqlTransaction = Nothing, Optional destinationOffice As String = Nothing, Optional originOffice As String = Nothing) As Integer
+            Dim sql = "UPDATE tbl_Documents SET StatusID = @statusId, " &
+                       "AssignedSection = COALESCE(@assignedSection, AssignedSection), " &
+                       "RevisionPunchlist = COALESCE(@punchlist, RevisionPunchlist), " &
+                       "LastActionTaken = COALESCE(@lastAction, LastActionTaken), " &
+                       "DestinationOffice = COALESCE(@destinationOffice, DestinationOffice), " &
+                       "OriginOffice = COALESCE(@originOffice, OriginOffice), " &
+                       "ModifiedByUserID = @modifiedBy, ModifiedAtUTC = SYSUTCDATETIME() " &
+                       "WHERE DocumentID = @id AND StatusID = @expectedFrom"
+            Dim Execute = Sub(cmd As SqlCommand)
+                              cmd.Parameters.AddWithValue("@statusId", statusId)
+                              cmd.Parameters.AddWithValue("@assignedSection", If(assignedSection IsNot Nothing, CType(assignedSection, Object), DBNull.Value))
+                              cmd.Parameters.AddWithValue("@punchlist", If(punchlist IsNot Nothing, CType(punchlist, Object), DBNull.Value))
+                              cmd.Parameters.AddWithValue("@lastAction", If(lastAction IsNot Nothing, CType(lastAction, Object), DBNull.Value))
+                              cmd.Parameters.AddWithValue("@destinationOffice", If(destinationOffice IsNot Nothing, CType(destinationOffice, Object), DBNull.Value))
+                              cmd.Parameters.AddWithValue("@originOffice", If(originOffice IsNot Nothing, CType(originOffice, Object), DBNull.Value))
+                              cmd.Parameters.AddWithValue("@modifiedBy", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
+                              cmd.Parameters.AddWithValue("@id", docId)
+                              cmd.Parameters.AddWithValue("@expectedFrom", expectedFromStatusId)
+                          End Sub
+            If transaction IsNot Nothing Then
+                Using cmd = New SqlCommand(sql, transaction.Connection, transaction)
+                    Execute(cmd)
+                    Return cmd.ExecuteNonQuery()
+                End Using
+            Else
+                Using conn = _connectionFactory.CreateConnection()
+                    Using cmd = New SqlCommand(sql, conn)
+                        Execute(cmd)
+                        Return cmd.ExecuteNonQuery()
+                    End Using
+                End Using
+            End If
+        End Function
+
+        ''' <summary>
+        ''' Optimistic-concurrency variant for the offline replay: the update lands only when
+        ''' the server row still carries the rowversion this seat mirrored before going
+        ''' offline. Returns the rows affected, so 0 means another seat already moved the
+        ''' document past that version and the caller must not stomp the newer truth.
+        ''' </summary>
+        Public Function UpdateWorkflowStateChecked(docId As Integer, expectedRowVersion As Byte(), statusId As Integer, assignedSection As String, punchlist As String, lastAction As String, modifiedBy As Integer?, Optional destinationOffice As String = Nothing, Optional originOffice As String = Nothing) As Integer
+            Dim sql = "UPDATE tbl_Documents SET StatusID = @statusId, " &
+                       "AssignedSection = COALESCE(@assignedSection, AssignedSection), " &
+                       "RevisionPunchlist = COALESCE(@punchlist, RevisionPunchlist), " &
+                       "LastActionTaken = COALESCE(@lastAction, LastActionTaken), " &
+                       "DestinationOffice = COALESCE(@destinationOffice, DestinationOffice), " &
+                       "OriginOffice = COALESCE(@originOffice, OriginOffice), " &
+                       "ModifiedByUserID = @modifiedBy, ModifiedAtUTC = SYSUTCDATETIME() " &
+                       "WHERE DocumentID = @id AND RowVersion = @rv"
+            Using conn = _connectionFactory.CreateConnection()
+                Using cmd = New SqlCommand(sql, conn)
+                    cmd.Parameters.AddWithValue("@statusId", statusId)
+                    cmd.Parameters.AddWithValue("@assignedSection", If(assignedSection IsNot Nothing, CType(assignedSection, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@punchlist", If(punchlist IsNot Nothing, CType(punchlist, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@lastAction", If(lastAction IsNot Nothing, CType(lastAction, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@destinationOffice", If(destinationOffice IsNot Nothing, CType(destinationOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@originOffice", If(originOffice IsNot Nothing, CType(originOffice, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@modifiedBy", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@id", docId)
+                    cmd.Parameters.AddWithValue("@rv", expectedRowVersion)
+                    Return cmd.ExecuteNonQuery()
+                End Using
+            End Using
+        End Function
 
         Public Sub UpdateStorageLocation(docId As Integer, storageLocationId As Integer, Optional transaction As SqlTransaction = Nothing)
             Dim sql = "UPDATE tbl_Documents SET CurrentStorageLocationID = @storageId, ModifiedAtUTC = SYSUTCDATETIME() WHERE DocumentID = @id"
@@ -272,11 +358,12 @@ Namespace BTA_OSG
             Return list
         End Function
 
-        Public Sub AddAssignment(assignment As DocumentAssignment)
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_DocumentAssignments (DocumentID, AssignedUserID, AssignedByUserID, AssignedAtUTC, Remarks) " &
-                           "VALUES (@DocumentID, @AssignedUserID, @AssignedByUserID, @AssignedAtUTC, @Remarks)"
-                Using cmd = New SqlCommand(sql, conn)
+        Public Sub AddAssignment(assignment As DocumentAssignment, Optional transaction As SqlTransaction = Nothing)
+            Dim sql = "INSERT INTO tbl_DocumentAssignments (DocumentID, AssignedUserID, AssignedByUserID, AssignedAtUTC, Remarks) " &
+                       "VALUES (@DocumentID, @AssignedUserID, @AssignedByUserID, @AssignedAtUTC, @Remarks)"
+            Dim conn As SqlConnection = If(transaction IsNot Nothing, transaction.Connection, _connectionFactory.CreateConnection())
+            Try
+                Using cmd = New SqlCommand(sql, conn, transaction)
                     cmd.Parameters.AddWithValue("@DocumentID", assignment.DocumentID)
                     cmd.Parameters.AddWithValue("@AssignedUserID", assignment.AssignedUserID)
                     cmd.Parameters.AddWithValue("@AssignedByUserID", assignment.AssignedByUserID)
@@ -284,7 +371,9 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@Remarks", If(assignment.Remarks IsNot Nothing, CType(assignment.Remarks, Object), DBNull.Value))
                     cmd.ExecuteNonQuery()
                 End Using
-            End Using
+            Finally
+                If transaction Is Nothing Then conn.Dispose()
+            End Try
         End Sub
 
         Public Function SearchDocuments(hasViewAll As Boolean, userId As Integer, titleLike As String, typeId As Integer?, statusId As Integer?, originLike As String, destLike As String, storageId As Integer?, dateFrom As DateTime?, dateTo As DateTime?, pageSize As Integer, pageNumber As Integer) As List(Of Document)
@@ -342,6 +431,14 @@ Namespace BTA_OSG
                 .LastActionTaken = If(IsDBNull(reader("LastActionTaken")), Nothing, Convert.ToString(reader("LastActionTaken"))),
                 .ExternalControlNumber = If(IsDBNull(reader("ExternalControlNumber")), Nothing, Convert.ToString(reader("ExternalControlNumber")))
             }
+        End Function
+
+        ' The filtered unique index on ExternalControlNumber excludes only NULL, so an
+        ' absent control number must be stored as NULL: an empty string would collide
+        ' across every non-portal document in the registry.
+        Private Shared Function ExternalControlNumberParam(value As String) As Object
+            If String.IsNullOrWhiteSpace(value) Then Return DBNull.Value
+            Return CType(value, Object)
         End Function
 
         Public Function GetByExternalControlNumber(externalCn As String) As Document

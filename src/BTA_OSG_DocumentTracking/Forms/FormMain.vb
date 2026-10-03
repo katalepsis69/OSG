@@ -32,6 +32,7 @@ Namespace BTA_OSG
         Private lblStatusMessage As ToolStripStatusLabel
         Private lblStatusCount As ToolStripStatusLabel
         Private lblStatusClock As ToolStripStatusLabel
+        Private lblDbState As ToolStripStatusLabel
         Private epValidation As ErrorProvider
         Private tmrClock As Timer
         Private tmrPortalPoll As Timer
@@ -43,6 +44,7 @@ Namespace BTA_OSG
         ' Header Controls
         Private lblTitle As Label
         Private lblUserBadge As Label
+        Private btnCheckUpdate As Button
         Private btnScanRFID As Button
         Private btnLogout As Button
 
@@ -57,6 +59,7 @@ Namespace BTA_OSG
 
         ' Views (Panels)
         Private viewDashboard As Panel
+        Private viewAnalytics As Panel
         Private viewRegistry As Panel
         Private viewDirectives As Panel
         Private viewSearch As Panel
@@ -66,6 +69,8 @@ Namespace BTA_OSG
 
         ' Portal Intake Controls
         Private dgvPortalQueue As DataGridView
+        Private btnOpenPortal As Button
+        Private btnStartTunnel As Button
         Private btnPortalRefresh As Button
         Private btnPortalImportSelected As Button
         Private lblPortalStatus As Label
@@ -89,11 +94,12 @@ Namespace BTA_OSG
         Private cmbFlowDirection As ComboBox
         Private cmbDeadlinePreset As ComboBox
         Private dtpDeadline As DateTimePicker
-        Private txtOrigin As TextBox
-        Private txtDest As TextBox
-        Private txtCabinet As TextBox
-        Private txtShelf As TextBox
-        Private txtBox As TextBox
+        Private lblDeadlineHint As Label
+        Private cmbOrigin As ComboBox
+        Private cmbDest As ComboBox
+        Private cmbCabinet As ComboBox
+        Private cmbShelf As ComboBox
+        Private cmbBox As ComboBox
         Private txtGDrive As TextBox
         Private btnAttachScan As Button
         Private cmbAssignedStaff As ComboBox
@@ -132,30 +138,49 @@ Namespace BTA_OSG
         Private chkCanSoftCopy As CheckBox
         Private txtNewUserUID As TextBox
         Private btnAddUser As Button
+        Private btnUnlockUser As Button
 
         ' Audit Controls
         Private txtAuditSearch As TextBox
         Private btnAuditFilter As Button
         Private btnAuditReset As Button
+        Private btnAuditVerify As Button
         Private dgvAudit As DataGridView
         Private lblAuditWatermark As Label
+
+        ' Workstation Sync Status (Admin tab)
+        Private dgvSeats As DataGridView
+        Private lblSeatsWatermark As Label
+
+        ' One draw per process: the whole point is that simultaneous morning boots do not
+        ' land on the same tick, so a fresh Random per instance is enough.
+        Private ReadOnly _sqlSyncJitterMs As Integer = New Random().Next(0, 3000)
 
         Public Sub New()
             EmbeddedDB.Initialize()
             InitializeUI()
             PopulateStaffDropdowns()
 
+            ' Data-layer failures must reach the operator's banner, not just the Trace log
+            ' of a WinExe: SQL fallbacks, replay errors, and cache save failures.
+            Program.OperatorWarningSink = AddressOf ShowOperatorWarningThreadSafe
+            AddHandler EmbeddedDB.PersistenceFailed, AddressOf OnCacheSaveFailed
             SetStyle(ControlStyles.OptimizedDoubleBuffer Or ControlStyles.AllPaintingInWmPaint, True)
             UpdateStyles()
 
-            ' Run initial SQL sync before opening login dialog so badges enrolled on other desks are active.
+            ' Sync only when the startup probe found the host live; the offline re-probe belongs
+            ' to the sync timer tick, not to a 5s stall in front of the login dialog. The grid
+            ' refresh runs here so the dashboard balances against the real client size.
             AddHandler Me.Shown, Async Sub()
-                                     Await RunSqlSyncAsync()
+                                     If Program.IsDatabaseConnected Then Await RunSqlSyncAsync()
+                                     RefreshActiveTabGrid()
+                                     If AppSettings.Instance.PortalSettings.PortalEnabled Then OnPortalPollTick()
                                      ShowRFIDLoginDialog()
                                  End Sub
         End Sub
 
         Private Sub InitializeUI()
+            AppAssets.ApplyFormIcon(Me)
             Me.Text = "Bangsamoro Transition Authority Parliament | OSG Document Status Tracking & Monitoring System"
             Me.Size = New Size(1380, 850)
             Me.MinimumSize = New Size(1100, 720)
@@ -180,6 +205,7 @@ Namespace BTA_OSG
             pnlContent.BringToFront()
 
             SetupDashboardView()
+            SetupAnalyticsView()
             SetupRegistryView()
             SetupDirectivesView()
             SetupSearchView()
@@ -194,7 +220,9 @@ Namespace BTA_OSG
             SwitchNavView(0)
 
             If AppSettings.Instance.PortalSettings.PortalEnabled Then
-                OnPortalPollTick()
+                Task.Run(Async Function()
+                             Await PortalServerManager.EnsureRunningAsync(AddressOf SetPortalStatusThreadSafe).ConfigureAwait(False)
+                         End Function)
             End If
         End Sub
 
@@ -231,7 +259,18 @@ Namespace BTA_OSG
                 .Padding = New Padding(8, 0, 8, 0)
             }
 
-            stsFooter.Items.AddRange(New ToolStripItem() {lblStatusMessage, lblStatusCount, lblStatusClock})
+            ' The DB badge lives in its own slot so the clock tick can restate it when the
+            ' sync poller flips the connection mid-session, without clobbering operator
+            ' warnings that use the message slot.
+            lblDbState = New ToolStripStatusLabel With {
+                .Text = dbBadge,
+                .BorderSides = ToolStripStatusLabelBorderSides.Left,
+                .BorderStyle = Border3DStyle.Etched,
+                .ForeColor = CivicCalmTheme.ColorInkMuted,
+                .Padding = New Padding(8, 0, 8, 0)
+            }
+
+            stsFooter.Items.AddRange(New ToolStripItem() {lblStatusMessage, lblStatusCount, lblDbState, lblStatusClock})
             Me.Controls.Add(stsFooter)
 
             tmrClock = New Timer With {
@@ -242,12 +281,16 @@ Namespace BTA_OSG
                                           If lblStatusClock IsNot Nothing AndAlso Not Me.IsDisposed Then
                                               lblStatusClock.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
                                           End If
+                                          If lblDbState IsNot Nothing AndAlso Not Me.IsDisposed Then
+                                              lblDbState.Text = If(Program.IsDatabaseConnected, "[ DB: SQL Server Connected ]", "[ DB: Offline Embedded Cache ]")
+                                          End If
+                                          EnforceSessionTimeout()
                                       End Sub
 
-            ' Multi-workstation sync polling interval (5 seconds).
-            Const SqlSyncIntervalMs As Integer = 5000
+            ' Multi-workstation sync polling: the configured interval (floor 5s) plus a
+            ' one-time jitter so seats booted at the same time do not poll in one wave.
             tmrSqlSync = New Timer With {
-                .Interval = SqlSyncIntervalMs,
+                .Interval = AppSettings.Instance.DatabaseSettings.EffectiveSyncIntervalSeconds() * 1000 + _sqlSyncJitterMs,
                 .Enabled = True
             }
             AddHandler tmrSqlSync.Tick, Sub() OnSqlSyncTick()
@@ -276,6 +319,15 @@ Namespace BTA_OSG
                                             End Sub)
                          Catch ex As Exception
                              System.Diagnostics.Trace.WriteLine("Portal polling exception: " & ex.Message)
+                             ' The badge would otherwise go stale with no on-screen hint, so
+                             ' surface the failure the same way RefreshPortalQueue does.
+                             If Me.IsDisposed OrElse Not Me.IsHandleCreated Then Return
+                             Me.BeginInvoke(Sub()
+                                                If Not Me.IsDisposed AndAlso Me.IsHandleCreated AndAlso lblPortalStatus IsNot Nothing Then
+                                                    lblPortalStatus.Text = "Portal Bridge: Offline / Unreachable"
+                                                    lblStatusMessage.Text = "Portal polling failed: " & ex.Message
+                                                End If
+                                            End Sub)
                          End Try
                      End Function)
         End Sub
@@ -284,10 +336,12 @@ Namespace BTA_OSG
         ''' Pulls SQL Server into the cache on a background thread, then applies the snapshot
         ''' on the UI thread (Await resumes here) so bound grids refresh on one layout pass.
         ''' A disconnected or unreachable host costs one pointer flip and nothing else.
+        ''' The tick also runs while the probe reports offline: BuildSqlSnapshot's connect
+        ''' attempt is the re-probe that lets a workstation recover after a startup blip.
         ''' </summary>
         Private Async Function RunSqlSyncAsync() As Task
             If Me.IsDisposed OrElse Not Me.IsHandleCreated Then Return
-            If Not Program.IsDatabaseConnected OrElse Program.Coordinator Is Nothing Then Return
+            If Program.Coordinator Is Nothing Then Return
             If System.Threading.Interlocked.CompareExchange(_sqlSyncInFlight, 1, 0) <> 0 Then Return
             Try
                 Await Task.Run(Sub() Program.Coordinator.SyncOfflineOutbox())
@@ -315,13 +369,54 @@ Namespace BTA_OSG
         End Sub
 
         ''' <summary>
+        ''' The configured inactivity timeout is enforced here: the clock timer checks real
+        ''' user input (UiActivityMonitor) every second and ends the session when the desk
+        ''' has been idle past the limit. Until this existed the TimeoutMinutes setting had
+        ''' no caller and sessions lived until manual logout.
+        ''' </summary>
+        Private Sub EnforceSessionTimeout()
+            If CurrentUser Is Nothing OrElse Me.IsDisposed Then Return
+            Dim timeoutMinutes = AppSettings.Instance.SessionSettings.TimeoutMinutes
+            If timeoutMinutes <= 0 Then Return
+            If UiActivityMonitor.Instance.IdleSeconds < timeoutMinutes * 60 Then Return
+
+            Dim who As String = "Unknown Staff"
+            Try
+                who = CurrentUser("FullName").ToString()
+            Catch
+            End Try
+            EmbeddedDB.LogAudit(who, String.Format("Session ended automatically after {0} minutes of inactivity.", timeoutMinutes), userId:=0, actionType:="SESSION_TIMEOUT")
+            AuthenticateUser("")
+            lblStatusMessage.Text = String.Format("Session timed out after {0} minutes of inactivity. Tap your RFID card to sign in again.", timeoutMinutes)
+        End Sub
+
+        Private Sub ShowOperatorWarningThreadSafe(message As String)
+            If Me.IsDisposed OrElse Not Me.IsHandleCreated Then Return
+            If Me.InvokeRequired Then
+                Me.BeginInvoke(Sub() ShowOperatorWarning(message))
+            Else
+                ShowOperatorWarning(message)
+            End If
+        End Sub
+
+        Private Sub ShowOperatorWarning(message As String)
+            lblStatusMessage.Text = message
+            lblStatusMessage.ForeColor = CivicCalmTheme.ColorWarning
+        End Sub
+
+        Private Sub OnCacheSaveFailed(message As String)
+            ShowOperatorWarningThreadSafe("WARNING: local offline cache could not be saved (" & message & "). Recent offline work is at risk until this is resolved.")
+        End Sub
+
+        ''' <summary>
         ''' The session row is captured at login, while the mirror moves Users rows from
         ''' cache-local ids onto SQL identities. Re-point it at the mirrored row for the same
         ''' badge so UserID stays the SQL identity every write path puts into a foreign key.
-        ''' When the mirrored table no longer carries the badge (offline enrolment that SQL
-        ''' never saw, or a disabled account) the held row is detached and every later read
-        ''' throws RowNotInTableException, so the session drops to the logged-out state that
-        ''' every CurrentUser call site already checks for.
+        ''' When the mirrored table no longer carries the badge (disabled account) the held
+        ''' row is detached and every later read throws RowNotInTableException, so the
+        ''' session drops to the logged-out state that every CurrentUser call site checks
+        ''' for. The drop is now announced on the status banner: offline enrolments replay
+        ''' to SQL before the pull, so a vanished badge means the account was disabled.
         ''' </summary>
         Private Sub RebindCurrentUser()
             If CurrentUser Is Nothing Then Return
@@ -334,6 +429,9 @@ Namespace BTA_OSG
             Else
                 System.Diagnostics.Trace.WriteLine("Session badge " & uid & " is not in the mirrored user list; ending the session view.")
                 CurrentUser = Nothing
+                lblUserBadge.Text = "[ RFID Logged Out: Access Restricted ]"
+                lblUserBadge.ForeColor = CivicCalmTheme.ColorDanger
+                lblStatusMessage.Text = "Session ended: your badge is no longer active in the user registry."
             End If
         End Sub
 
@@ -368,7 +466,27 @@ Namespace BTA_OSG
 
             pnlBrand = New Panel With {
                 .Dock = DockStyle.Top,
-                .Height = 85,
+                .Height = 88,
+                .BackColor = CivicCalmTheme.ColorSurface,
+                .Margin = New Padding(0, 0, 0, 8)
+            }
+            Dim tblBrandLayout As New TableLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .ColumnCount = 2,
+                .RowCount = 1,
+                .BackColor = CivicCalmTheme.ColorSurface
+            }
+            tblBrandLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 74.0F))
+            tblBrandLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+            tblBrandLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+
+            Dim picSidebarLogo = AppAssets.CreateLogoPictureBox(64)
+            picSidebarLogo.Anchor = AnchorStyles.Left
+            picSidebarLogo.Margin = New Padding(0, 0, 10, 0)
+
+            Dim pnlBrandText As New Panel With {
+                .Dock = DockStyle.Fill,
+                .Padding = New Padding(0, 10, 0, 0),
                 .BackColor = CivicCalmTheme.ColorSurface
             }
             Dim lblBrand As New Label With {
@@ -376,7 +494,7 @@ Namespace BTA_OSG
                 .Font = CivicCalmTheme.FontFormTitle,
                 .ForeColor = CivicCalmTheme.ColorPrimary,
                 .Dock = DockStyle.Top,
-                .Height = 50,
+                .Height = 44,
                 .TextAlign = ContentAlignment.MiddleLeft
             }
             Dim lblBrandSub As New Label With {
@@ -384,10 +502,13 @@ Namespace BTA_OSG
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .ForeColor = CivicCalmTheme.ColorInkMuted,
                 .Dock = DockStyle.Top,
-                .Height = 25,
+                .Height = 20,
                 .TextAlign = ContentAlignment.MiddleLeft
             }
-            pnlBrand.Controls.AddRange(New Control() {lblBrandSub, lblBrand})
+            pnlBrandText.Controls.AddRange(New Control() {lblBrandSub, lblBrand})
+            tblBrandLayout.Controls.Add(picSidebarLogo, 0, 0)
+            tblBrandLayout.Controls.Add(pnlBrandText, 1, 0)
+            pnlBrand.Controls.Add(tblBrandLayout)
 
             Dim pnlNavStack As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,
@@ -399,25 +520,7 @@ Namespace BTA_OSG
 
             tipNav = New ToolTip()
 
-            Dim btnToggle As New Button With {
-                .Name = "btnNav_Toggle",
-                .Text = "«  Collapse",
-                .Size = New Size(218, 30),
-                .Margin = New Padding(0, 0, 0, 10),
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontMicrocopy,
-                .Cursor = Cursors.Hand,
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .ForeColor = CivicCalmTheme.ColorInkMuted,
-                .BackColor = CivicCalmTheme.ColorWell
-            }
-            btnToggle.FlatAppearance.BorderSize = 1
-            btnToggle.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
-            btnToggle.FlatAppearance.MouseOverBackColor = CivicCalmTheme.ColorWell
-            AddHandler btnToggle.Click, Sub() ToggleSidebar(btnToggle)
-            pnlNavStack.Controls.Add(btnToggle)
-
-            Dim navItems As New List(Of String) From {"Dashboard", "Document Registry", "SG Directives", "Search & Storage", "User & RFID Admin", "Audit Trail", "Portal Intake"}
+            Dim navItems As New List(Of String) From {"Dashboard", "Data Analytics", "Document Registry", "SG Directives", "Search & Storage", "User & RFID Admin", "Audit Trail", "Portal Intake"}
 
             For i As Integer = 0 To navItems.Count - 1
                 Dim idx As Integer = i
@@ -439,6 +542,12 @@ Namespace BTA_OSG
                 btn.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
                 btn.FlatAppearance.MouseOverBackColor = CivicCalmTheme.ColorWell
 
+                ' Feature-gated destinations drop out of the nav when switched off in the
+                ' connect dialog's options. Visible toggling keeps every button's index
+                ' stable, so the view switcher's fixed cases never shift.
+                If navItems(i) = "Data Analytics" AndAlso Not AppSettings.Instance.AnalyticsEnabled Then btn.Visible = False
+                If navItems(i) = "Portal Intake" AndAlso Not AppSettings.Instance.PortalSettings.PortalEnabled Then btn.Visible = False
+
                 AddHandler btn.Click, Sub() SwitchNavView(idx)
                 navButtons.Add(btn)
                 pnlNavStack.Controls.Add(btn)
@@ -446,44 +555,24 @@ Namespace BTA_OSG
 
             pnlSidebar.Controls.Add(pnlNavStack)
             pnlSidebar.Controls.Add(pnlBrand)
-            ' Lowest dock index docks last, so the Fill nav stack is measured after the
-            ' Top brand block and cannot be overlapped by it.
             pnlNavStack.BringToFront()
             Me.Controls.Add(pnlSidebar)
         End Sub
 
-        ' DESIGN.md variance exception: the docked sidebar collapses to a 56px rail; only text
-        ' is dropped, order and behaviour are identical, and hover tooltips identify the views.
-        Private Sub ToggleSidebar(btnToggle As Button)
-            sidebarCollapsed = Not sidebarCollapsed
-            pnlSidebar.Width = If(sidebarCollapsed, 56, 246)
-            pnlBrand.Visible = Not sidebarCollapsed
-            For i As Integer = 0 To navButtons.Count - 1
-                If sidebarCollapsed Then
-                    navButtons(i).Text = ""
-                    navButtons(i).Size = New Size(32, 44)
-                    Dim tip = navNames(i)
-                    If i = 6 AndAlso _portalSubmissions IsNot Nothing AndAlso _portalSubmissions.Count > 0 Then
-                        tip = $"Portal Intake ({_portalSubmissions.Count} pending)"
-                    End If
-                    tipNav.SetToolTip(navButtons(i), tip)
-                Else
-                    Dim labelText = navNames(i)
-                    If i = 6 AndAlso _portalSubmissions IsNot Nothing AndAlso _portalSubmissions.Count > 0 Then
-                        labelText = $"Portal Intake ({_portalSubmissions.Count})"
-                    End If
-                    navButtons(i).Text = "  " & labelText
-                    navButtons(i).Size = New Size(218, 44)
-                    tipNav.SetToolTip(navButtons(i), Nothing)
-                End If
-            Next
-            btnToggle.Text = If(sidebarCollapsed, "»", "«  Collapse")
-            btnToggle.Size = If(sidebarCollapsed, New Size(32, 30), New Size(218, 30))
-            btnToggle.TextAlign = If(sidebarCollapsed, ContentAlignment.MiddleCenter, ContentAlignment.MiddleLeft)
-            tipNav.SetToolTip(btnToggle, If(sidebarCollapsed, "Expand navigation", Nothing))
-        End Sub
-
         Private Sub SwitchNavView(index As Integer)
+            ' Admin and Audit expose every user's record (badge UIDs included) and every
+            ' audit event. Evaluated per click so a logout re-gates without rebuilding the
+            ' sidebar; the write actions stay gated separately at their own sites.
+            Dim navName = navNames(index)
+            Dim role = If(CurrentUser IsNot Nothing AndAlso CurrentUser.Table.Columns.Contains("Role") AndAlso Not IsDBNull(CurrentUser("Role")), CurrentUser("Role").ToString(), "")
+            Dim privileged As Boolean = (role = "System Administrator" OrElse role = "Secretary-General")
+            If (navName = "User & RFID Admin" OrElse navName = "Audit Trail") AndAlso Not privileged Then
+                lblStatusMessage.Text = If(CurrentUser Is Nothing,
+                    "Sign in with a badge before opening this screen.",
+                    "Access Denied: this screen is limited to the System Administrator and the Secretary-General.")
+                lblStatusMessage.ForeColor = CivicCalmTheme.ColorDanger
+                Return
+            End If
             activeNavIndex = index
             For i As Integer = 0 To navButtons.Count - 1
                 If i = index Then
@@ -500,8 +589,7 @@ Namespace BTA_OSG
             Next
 
             ' Controls.Clear() disposes what it removes, and these view panels are built once, so
-            ' remove them without disposing or the next visit re-adds a dead control. The swap and
-            ' the grid refresh are wrapped so the whole switch settles in a single layout pass.
+            ' remove them without disposing or the next visit re-adds a dead control.
             pnlContent.SuspendLayout()
             Try
                 While pnlContent.Controls.Count > 0
@@ -509,26 +597,29 @@ Namespace BTA_OSG
                 End While
                 Select Case index
                     Case 0 : pnlContent.Controls.Add(viewDashboard)
-                    Case 1 : pnlContent.Controls.Add(viewRegistry)
-                    Case 2 : pnlContent.Controls.Add(viewDirectives)
-                    Case 3 : pnlContent.Controls.Add(viewSearch)
-                    Case 4 : pnlContent.Controls.Add(viewAdmin)
-                    Case 5 : pnlContent.Controls.Add(viewAudit)
-                    Case 6 : If viewPortalIntake IsNot Nothing Then pnlContent.Controls.Add(viewPortalIntake)
+                    Case 1 : If viewAnalytics IsNot Nothing Then pnlContent.Controls.Add(viewAnalytics)
+                    Case 2 : pnlContent.Controls.Add(viewRegistry)
+                    Case 3 : pnlContent.Controls.Add(viewDirectives)
+                    Case 4 : pnlContent.Controls.Add(viewSearch)
+                    Case 5 : pnlContent.Controls.Add(viewAdmin)
+                    Case 6 : pnlContent.Controls.Add(viewAudit)
+                    Case 7 : If viewPortalIntake IsNot Nothing Then pnlContent.Controls.Add(viewPortalIntake)
                 End Select
-
-                RefreshActiveTabGrid()
             Finally
                 pnlContent.ResumeLayout(True)
             End Try
+
+            ' The grid balance must measure after layout resumes: inside the suspended pass it
+            ' read pre-layout bounds and cached wrong column widths until the next visit.
+            RefreshActiveTabGrid()
         End Sub
 
         Private Sub SetupHeader()
             pnlHeader = New Panel With {
                 .Dock = DockStyle.Top,
-                .Height = 70,
+                .Height = 86,
                 .BackColor = CivicCalmTheme.ColorSurface,
-                .Padding = New Padding(20, 12, 20, 12)
+                .Padding = New Padding(20, 8, 20, 8)
             }
 
             Dim pnlBorderBottom As New Panel With {
@@ -546,11 +637,28 @@ Namespace BTA_OSG
             }
             tblHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 60.0F))
             tblHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 40.0F))
+            tblHeader.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+
+            Dim pnlHeaderBrand As New TableLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .ColumnCount = 2,
+                .RowCount = 1,
+                .BackColor = CivicCalmTheme.ColorSurface
+            }
+            pnlHeaderBrand.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 74.0F))
+            pnlHeaderBrand.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+            pnlHeaderBrand.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
+
+            Dim picHeaderLogo = AppAssets.CreateLogoPictureBox(64)
+            picHeaderLogo.Anchor = AnchorStyles.Left
+            picHeaderLogo.Margin = New Padding(0, 0, 10, 0)
 
             Dim pnlTitles As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,
                 .FlowDirection = FlowDirection.TopDown,
                 .WrapContents = False,
+                .Margin = New Padding(0),
+                .Padding = New Padding(0, 8, 0, 0),
                 .BackColor = CivicCalmTheme.ColorSurface
             }
 
@@ -566,10 +674,13 @@ Namespace BTA_OSG
                 .Text = "[ RFID Logged Out: Access Restricted ]",
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .ForeColor = CivicCalmTheme.ColorDanger,
-                .AutoSize = True
+                .AutoSize = True,
+                .Margin = New Padding(0)
             }
 
             pnlTitles.Controls.AddRange(New Control() {lblTitle, lblUserBadge})
+            pnlHeaderBrand.Controls.Add(picHeaderLogo, 0, 0)
+            pnlHeaderBrand.Controls.Add(pnlTitles, 1, 0)
 
             Dim pnlAuthActions As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,
@@ -586,7 +697,7 @@ Namespace BTA_OSG
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 4, 0, 0)
+                .Margin = New Padding(8, 14, 0, 0)
             }
             btnLogout.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnLogout.Click, Sub() AuthenticateUser("")
@@ -599,29 +710,60 @@ Namespace BTA_OSG
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 0, 0)
+                .Margin = New Padding(0, 14, 0, 0)
             }
             btnScanRFID.FlatAppearance.BorderSize = 0
             AddHandler btnScanRFID.Click, Sub() ShowRFIDLoginDialog()
 
-            pnlAuthActions.Controls.AddRange(New Control() {btnLogout, btnScanRFID})
+            btnCheckUpdate = New Button With {
+                .Text = "🔄 &Update",
+                .Size = New Size(95, 36),
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontBody,
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .Cursor = Cursors.Hand,
+                .Margin = New Padding(8, 14, 0, 0)
+            }
+            btnCheckUpdate.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            AddHandler btnCheckUpdate.Click, Async Sub()
+                btnCheckUpdate.Enabled = False
+                btnCheckUpdate.Text = "Checking..."
+                Try
+                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True)
+                Finally
+                    btnCheckUpdate.Text = "🔄 &Update"
+                    btnCheckUpdate.Enabled = True
+                End Try
+            End Sub
 
-            tblHeader.Controls.Add(pnlTitles, 0, 0)
+            pnlAuthActions.Controls.AddRange(New Control() {btnLogout, btnScanRFID, btnCheckUpdate})
+
+            tblHeader.Controls.Add(pnlHeaderBrand, 0, 0)
             tblHeader.Controls.Add(pnlAuthActions, 1, 0)
             pnlHeader.Controls.Add(tblHeader)
+            tblHeader.BringToFront()
             Me.Controls.Add(pnlHeader)
         End Sub
 
         Private Sub ShowRFIDLoginDialog()
             Using dlg As New FormLogin()
                 If dlg.ShowDialog(Me) = DialogResult.OK AndAlso Not String.IsNullOrEmpty(dlg.ScannedUID) Then
-                    AuthenticateUser(dlg.ScannedUID)
+                    AuthenticateUser(dlg.ScannedUID, dlg.PickedOnScreen)
                 End If
             End Using
         End Sub
 
-        Public Sub AuthenticateUser(uid As String)
+        Public Sub AuthenticateUser(uid As String, Optional simulated As Boolean = False)
             If String.IsNullOrEmpty(uid) Then
+                If CurrentUser IsNot Nothing Then
+                    Dim who As String = ""
+                    Try
+                        who = CurrentUser("FullName").ToString()
+                    Catch
+                    End Try
+                    EmbeddedDB.LogAudit(who, "User logged out.", actionType:="LOGOUT")
+                End If
                 CurrentUser = Nothing
                 lblUserBadge.Text = "[ RFID Logged Out: Access Restricted ]"
                 lblUserBadge.ForeColor = CivicCalmTheme.ColorDanger
@@ -634,6 +776,15 @@ Namespace BTA_OSG
                 Dim maskedUid As String = If(uid.Length > 4, "****" & uid.Substring(uid.Length - 4), uid)
                 Dim user = EmbeddedDB.AuthenticateRFID(uid)
                 If user IsNot Nothing Then
+                    ' The mirror carries IsLocked: a locked account must not unlock itself by
+                    ' tapping, and the success path below clears the SQL-side counter, which
+                    ' would reset the lock along with it. Refuse here instead.
+                    If user.Table.Columns.Contains("IsLocked") AndAlso Not IsDBNull(user("IsLocked")) AndAlso Convert.ToBoolean(user("IsLocked")) Then
+                        EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Blocked: account is locked [Card: " & maskedUid & "]", actionType:="LOGIN_LOCKED")
+                        lblStatusMessage.Text = "Access Denied: this account is locked after repeated failed badge reads. Ask a System Administrator to unlock it."
+                        lblStatusMessage.ForeColor = CivicCalmTheme.ColorDanger
+                        Return
+                    End If
                     CurrentUser = user
                     Dim role = user("Role").ToString()
                     Dim office = If(user.Table.Columns.Contains("Office") AndAlso Not IsDBNull(user("Office")), user("Office").ToString(), "")
@@ -643,7 +794,20 @@ Namespace BTA_OSG
                     lblUserBadge.Text = String.Format("AUTHENTICATED: {0} [{1}] : {2}", user("FullName").ToString().ToUpperInvariant(), displayRole, If(isGlobal, "GLOBAL ACCESS", "SECTION DESK VIEW"))
                     lblUserBadge.ForeColor = CivicCalmTheme.ColorPrimary
                     lblStatusMessage.Text = "Authenticated: " & user("FullName").ToString()
-                    EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Authenticated [Card: " & maskedUid & "]")
+                    lblStatusMessage.ForeColor = CivicCalmTheme.ColorInk
+                    EmbeddedDB.LogAudit(user("FullName").ToString(), If(simulated,
+                        "On-screen badge selection authenticated [Card: " & maskedUid & "] (no reader tap)",
+                        "RFID Badge Tap Authenticated [Card: " & maskedUid & "]"), actionType:="LOGIN_SUCCESS")
+
+                    ' Successful tap clears the SQL-side failed tap counter so the per-user
+                    ' lockout (tbl_Users.FailedTapCount) tracks live state, not stale counts.
+                    If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
+                        Try
+                            Dim userId = If(user.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(user("UserID")), Convert.ToInt32(user("UserID")), 0)
+                            If userId > 0 Then AppStartup.UserRepo.ResetFailedTaps(userId)
+                        Catch
+                        End Try
+                    End If
 
                     If cmbDashSection IsNot Nothing Then
                         If isGlobal Then
@@ -659,6 +823,22 @@ Namespace BTA_OSG
                         End If
                     End If
                 Else
+                    ' A failed tap increments the SQL-side counter for the card's owner when
+                    ' the host is reachable, and locks the account at the configured threshold,
+                    ' so the 5-tap lockout is real and shared across workstations, not just the
+                    ' in-memory terminal lockout.
+                    If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
+                        Try
+                            Dim knownUser = AppStartup.UserRepo.GetByCardPublicID(uid.Trim().ToUpperInvariant())
+                            If knownUser IsNot Nothing Then
+                                AppStartup.UserRepo.IncrementFailedTaps(knownUser.UserID)
+                                If knownUser.FailedTapCount + 1 >= AppSettings.Instance.RfidSettings.LockoutThreshold AndAlso Not knownUser.IsLocked Then
+                                    AppStartup.UserRepo.LockUser(knownUser.UserID)
+                                End If
+                            End If
+                        Catch
+                        End Try
+                    End If
                     If EmbeddedDB.IsTerminalLockedOut() Then
                         lblStatusMessage.Text = "Security Lockout: Terminal locked for 5 minutes due to 5 consecutive failed card reads."
                         MessageBox.Show("Terminal has been temporarily locked out due to 5 consecutive failed RFID smart card badge reads. Please notify the System Administrator or wait 5 minutes.", "Security Lockout", MessageBoxButtons.OK, MessageBoxIcon.Error)
@@ -735,6 +915,21 @@ Namespace BTA_OSG
             lblStatusMessage.Text = message
         End Sub
 
+        ''' <summary>
+        ''' Portal status strings arrive from background tasks; marshal the label write onto
+        ''' the UI thread. The Nothing guard covers callbacks that fire before the intake
+        ''' view exists.
+        ''' </summary>
+        Private Sub SetPortalStatusThreadSafe(message As String)
+            If Me.InvokeRequired Then
+                Me.Invoke(Sub()
+                              If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = message
+                          End Sub)
+            Else
+                If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = message
+            End If
+        End Sub
+
         Private Sub TryRetryActiveView()
             If activeViewRetry Is Nothing Then Return
             lblStatusMessage.Text = "Retrying the failed load..."
@@ -752,6 +947,13 @@ Namespace BTA_OSG
             End If
 
             Dim docId = CInt(dgv.CurrentRow.Cells("DocumentID").Value)
+            ' The row can vanish between grid paint and click when a sync deletes or
+            ' re-filters it; the dialog constructor would dispose itself and ShowDialog
+            ' would throw on a dead object.
+            If EmbeddedDB.GetDocumentByID(docId) Is Nothing Then
+                lblStatusMessage.Text = "This document is no longer available. Refresh the grid and try again."
+                Return
+            End If
             Using dlg As New FormDocumentDetail(docId, Me)
                 dlg.ShowDialog(Me)
             End Using
@@ -775,115 +977,129 @@ Namespace BTA_OSG
         End Sub
 
         Public Sub RefreshActiveTabGrid()
+            If Me.WindowState = FormWindowState.Minimized OrElse Me.ClientRectangle.Width <= 0 OrElse Me.ClientRectangle.Height <= 0 Then
+                Return
+            End If
+
             Dim selSec As String = If(cmbDashSection IsNot Nothing AndAlso cmbDashSection.SelectedItem IsNot Nothing, cmbDashSection.SelectedItem.ToString(), "")
             Dim selCat As String = If(cmbDashCategory IsNot Nothing AndAlso cmbDashCategory.SelectedItem IsNot Nothing, cmbDashCategory.SelectedItem.ToString(), "")
             Dim visibleDocs = EmbeddedDB.GetVisibleDocuments(CurrentUser, selSec, selCat)
 
             Select Case activeNavIndex
-                Case 0 ' Dashboard View (stats and recent grid only refresh while the dashboard is on screen)
-                    Dim allDocs = EmbeddedDB.DataSet.Tables("Documents")
-                    Dim forReviewCount As Integer = 0
-                    Dim forRevisionCount As Integer = 0
-                    Dim approvedReleasedCount As Integer = 0
-                    For Each row As DataRow In allDocs.Rows
-                        Dim st = row("CurrentStatus").ToString()
-                        If st.IndexOf("REVIEW", StringComparison.OrdinalIgnoreCase) >= 0 Then forReviewCount += 1
-                        If st.IndexOf("REVISION", StringComparison.OrdinalIgnoreCase) >= 0 Then forRevisionCount += 1
-                        If st.Equals("APPROVED", StringComparison.OrdinalIgnoreCase) OrElse st.Equals("RELEASED", StringComparison.OrdinalIgnoreCase) Then approvedReleasedCount += 1
-                    Next
-
-                    lblStatTotalDocs.Text = allDocs.Rows.Count.ToString()
-                    lblStatDirectives.Text = forReviewCount.ToString()
-                    lblStatActiveRoute.Text = forRevisionCount.ToString()
-                    lblStatVaultStorage.Text = approvedReleasedCount.ToString()
-                    dgvDashRecent.DataSource = visibleDocs
-                    DataGridStyler.FormatDocumentColumns(dgvDashRecent)
-                    If dgvDashRecent.Rows.Count = 0 Then
-                        DataGridStyler.SetEmptyState(dgvDashRecent, lblDashWatermark)
-                    Else
-                        DataGridStyler.SetPopulatedState(dgvDashRecent, lblDashWatermark)
-                    End If
-                Case 1 ' Registry View
-                    dgvRegistry.DataSource = visibleDocs
-                    DataGridStyler.FormatDocumentColumns(dgvRegistry)
-                    If dgvRegistry.Rows.Count = 0 Then
-                        DataGridStyler.SetEmptyState(dgvRegistry, lblRegistryWatermark)
-                    Else
-                        DataGridStyler.SetPopulatedState(dgvRegistry, lblRegistryWatermark)
-                    End If
-                    lblStatusCount.Text = dgvRegistry.Rows.Count.ToString() & " Documents"
-                Case 2 ' Directives View
-                    Dim previousDocId As Integer = 0
-                    If cmbDirDocs.SelectedItem IsNot Nothing Then
-                        Dim selectedStr = cmbDirDocs.SelectedItem.ToString()
-                        Dim match = System.Text.RegularExpressions.Regex.Match(selectedStr, "^ID (\d+):")
-                        If match.Success Then Integer.TryParse(match.Groups(1).Value, previousDocId)
-                    End If
-
-                    cmbDirDocs.BeginUpdate()
-                    Try
-                        cmbDirDocs.Items.Clear()
-                        Dim restoreIdx As Integer = -1
-                        Dim currentIdx As Integer = 0
-                        For Each drv As DataRowView In visibleDocs
-                            Dim docId = Convert.ToInt32(drv("DocumentID"))
-                            cmbDirDocs.Items.Add(String.Format("ID {0}: [{1}] {2}", docId, drv("DocCode"), drv("Title")))
-                            If docId = previousDocId Then restoreIdx = currentIdx
-                            currentIdx += 1
-                        Next
-                        If restoreIdx >= 0 Then
-                            cmbDirDocs.SelectedIndex = restoreIdx
-                        ElseIf cmbDirDocs.Items.Count > 0 Then
-                            cmbDirDocs.SelectedIndex = 0
-                        End If
-                    Finally
-                        cmbDirDocs.EndUpdate()
-                    End Try
-                    Dim dtDirectives = EmbeddedDB.DataSet.Tables("Directives")
-                    dgvDirectives.DataSource = dtDirectives
-                    DataGridStyler.FormatDirectiveColumns(dgvDirectives)
-                    If dgvDirectives.Rows.Count = 0 Then
-                        DataGridStyler.SetEmptyState(dgvDirectives, lblDirectivesWatermark, "No active action directives found.")
-                    Else
-                        DataGridStyler.SetPopulatedState(dgvDirectives, lblDirectivesWatermark)
-                    End If
-                    lblStatusCount.Text = dgvDirectives.Rows.Count.ToString() & " Directives"
-                Case 3 ' Search View
-                    dgvSearch.DataSource = visibleDocs
-                    DataGridStyler.FormatDocumentColumns(dgvSearch)
-                    If dgvSearch.Rows.Count = 0 Then
-                        DataGridStyler.SetEmptyState(dgvSearch, lblSearchWatermark)
-                    Else
-                        DataGridStyler.SetPopulatedState(dgvSearch, lblSearchWatermark)
-                    End If
-                    lblStatusCount.Text = dgvSearch.Rows.Count.ToString() & " Documents"
-                Case 4 ' Admin View
-                    Dim dtUsers = EmbeddedDB.DataSet.Tables("Users")
-                    dgvUsers.DataSource = dtUsers
-                    DataGridStyler.FormatUserColumns(dgvUsers)
-                    If dgvUsers.Rows.Count = 0 Then
-                        DataGridStyler.SetEmptyState(dgvUsers, lblUsersWatermark, "No users registered.")
-                    Else
-                        DataGridStyler.SetPopulatedState(dgvUsers, lblUsersWatermark)
-                    End If
-                    lblStatusCount.Text = dgvUsers.Rows.Count.ToString() & " Users"
-                Case 5 ' Audit View
-                    If txtAuditSearch Is Nothing OrElse String.IsNullOrWhiteSpace(txtAuditSearch.Text) Then
-                        Dim dtAudit = EmbeddedDB.DataSet.Tables("AuditTrail")
-                        dgvAudit.DataSource = dtAudit
-                        DataGridStyler.FormatAuditColumns(dgvAudit)
-                        If dgvAudit.Rows.Count = 0 Then
-                            DataGridStyler.SetEmptyState(dgvAudit, lblAuditWatermark, "No audit trail events recorded.")
-                        Else
-                            DataGridStyler.SetPopulatedState(dgvAudit, lblAuditWatermark)
-                        End If
-                        lblStatusCount.Text = dgvAudit.Rows.Count.ToString() & " Audit Events"
-                    End If
-                Case 6 ' Portal Intake View
-                    RefreshPortalQueue()
+                Case 0 : RefreshDashboardGrid(visibleDocs)
+                Case 1 : RefreshAnalyticsView()
+                Case 2 : RefreshRegistryGrid(visibleDocs)
+                Case 3 : RefreshDirectivesGrid(visibleDocs)
+                Case 4 : RefreshSearchGrid(visibleDocs)
+                Case 5 : RefreshAdminGrid()
+                Case 6 : RefreshAuditGrid()
+                Case 7 : RefreshPortalQueue()
             End Select
 
             lblStatusClock.Text = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss")
+        End Sub
+
+        ''' <summary>
+        ''' Binds a grid, applies its column formatter, switches the empty/populated watermark,
+        ''' and (when a noun is given) mirrors the row count into the footer count badge.
+        ''' </summary>
+        Private Sub BindGridWithState(dgv As DataGridView, watermark As Label, dataSource As Object, formatter As Action(Of DataGridView), countNoun As String, Optional emptyMessage As String = Nothing)
+            dgv.DataSource = dataSource
+            formatter(dgv)
+            If dgv.Rows.Count = 0 Then
+                DataGridStyler.SetEmptyState(dgv, watermark, emptyMessage)
+            Else
+                DataGridStyler.SetPopulatedState(dgv, watermark)
+            End If
+            If countNoun <> "" Then
+                lblStatusCount.Text = dgv.Rows.Count.ToString() & " " & countNoun
+            End If
+        End Sub
+
+        Private Sub RefreshDashboardGrid(visibleDocs As DataView)
+            Dim allDocs = EmbeddedDB.DataSet.Tables("Documents")
+            Dim forReviewCount As Integer = 0
+            Dim forRevisionCount As Integer = 0
+            Dim approvedReleasedCount As Integer = 0
+            For Each row As DataRow In allDocs.Rows
+                Dim st = row("CurrentStatus").ToString()
+                If st.IndexOf("REVIEW", StringComparison.OrdinalIgnoreCase) >= 0 Then forReviewCount += 1
+                If st.IndexOf("REVISION", StringComparison.OrdinalIgnoreCase) >= 0 Then forRevisionCount += 1
+                If st.Equals("APPROVED", StringComparison.OrdinalIgnoreCase) OrElse st.Equals("RELEASED", StringComparison.OrdinalIgnoreCase) Then approvedReleasedCount += 1
+            Next
+
+            lblStatTotalDocs.Text = allDocs.Rows.Count.ToString()
+            lblStatDirectives.Text = forReviewCount.ToString()
+            lblStatActiveRoute.Text = forRevisionCount.ToString()
+            lblStatVaultStorage.Text = approvedReleasedCount.ToString()
+            BindGridWithState(dgvDashRecent, lblDashWatermark, visibleDocs, AddressOf DataGridStyler.FormatDocumentColumns, "")
+        End Sub
+
+        Private Sub RefreshRegistryGrid(visibleDocs As DataView)
+            BindGridWithState(dgvRegistry, lblRegistryWatermark, visibleDocs, AddressOf DataGridStyler.FormatDocumentColumns, "Documents")
+            LoadRegistrySuggestions()
+        End Sub
+
+        Private Sub RefreshDirectivesGrid(visibleDocs As DataView)
+            Dim previousDocId As Integer = 0
+            If cmbDirDocs.SelectedItem IsNot Nothing Then
+                Dim selectedStr = cmbDirDocs.SelectedItem.ToString()
+                Dim match = System.Text.RegularExpressions.Regex.Match(selectedStr, "^ID (\d+):")
+                If match.Success Then Integer.TryParse(match.Groups(1).Value, previousDocId)
+            End If
+
+            cmbDirDocs.BeginUpdate()
+            Try
+                cmbDirDocs.Items.Clear()
+                Dim restoreIdx As Integer = -1
+                Dim currentIdx As Integer = 0
+                For Each drv As DataRowView In visibleDocs
+                    Dim docId = Convert.ToInt32(drv("DocumentID"))
+                    cmbDirDocs.Items.Add(String.Format("ID {0}: [{1}] {2}", docId, drv("DocCode"), drv("Title")))
+                    If docId = previousDocId Then restoreIdx = currentIdx
+                    currentIdx += 1
+                Next
+                If restoreIdx >= 0 Then
+                    cmbDirDocs.SelectedIndex = restoreIdx
+                ElseIf cmbDirDocs.Items.Count > 0 Then
+                    cmbDirDocs.SelectedIndex = 0
+                End If
+            Finally
+                cmbDirDocs.EndUpdate()
+            End Try
+            Dim dtDirectives = EmbeddedDB.DataSet.Tables("Directives")
+            BindGridWithState(dgvDirectives, lblDirectivesWatermark, dtDirectives, AddressOf DataGridStyler.FormatDirectiveColumns, "Directives", "No active action directives found. Select a document above and click 'Log Action Directive' to issue an executive directive.")
+        End Sub
+
+        Private Sub RefreshSearchGrid(visibleDocs As DataView)
+            BindGridWithState(dgvSearch, lblSearchWatermark, visibleDocs, AddressOf DataGridStyler.FormatDocumentColumns, "Documents")
+        End Sub
+
+        Private Sub RefreshAdminGrid()
+            Dim dtUsers = EmbeddedDB.DataSet.Tables("Users")
+            BindGridWithState(dgvUsers, lblUsersWatermark, dtUsers, AddressOf DataGridStyler.FormatUserColumns, "Users", "No users registered.")
+            If dgvSeats IsNot Nothing Then
+                Dim dtHeartbeat = EmbeddedDB.DataSet.Tables("Heartbeat")
+                BindGridWithState(dgvSeats, lblSeatsWatermark, dtHeartbeat, AddressOf DataGridStyler.FormatSeatColumns, "Seats",
+                                  "No workstation has reported a sync yet. Seats appear here after their first sync; Stale means the seat has been silent past three intervals (offline by design).")
+            End If
+        End Sub
+
+        Private Sub RefreshAuditGrid()
+            ' While a filter query is active the grid is owned by OnFilterAudit; a sync tick
+            ' must not reset what the operator is looking at.
+            If txtAuditSearch Is Nothing OrElse String.IsNullOrWhiteSpace(txtAuditSearch.Text) Then
+                Dim dtAudit = EmbeddedDB.DataSet.Tables("AuditTrail")
+                Dim dvAudit As New DataView(dtAudit) With {.Sort = "AuditID DESC"}
+                BindGridWithState(dgvAudit, lblAuditWatermark, dvAudit, AddressOf DataGridStyler.FormatAuditColumns, "Audit Events", "No audit trail events recorded.")
+            End If
+        End Sub
+
+        Protected Overrides Sub OnResize(e As EventArgs)
+            MyBase.OnResize(e)
+            If Me.WindowState <> FormWindowState.Minimized AndAlso Me.IsHandleCreated AndAlso Not Me.IsDisposed Then
+                RefreshActiveTabGrid()
+            End If
         End Sub
 
         Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
@@ -900,11 +1116,17 @@ Namespace BTA_OSG
 
         Private Sub ClearActiveViewFilters()
             Select Case activeNavIndex
-                Case 0, 1
+                Case 0
                     btnDashResetFilters.PerformClick()
-                Case 3
+                Case 1
+                    If cmbAnalyticsTimeframe IsNot Nothing Then cmbAnalyticsTimeframe.SelectedIndex = 2
+                    If cmbAnalyticsSection IsNot Nothing Then cmbAnalyticsSection.SelectedIndex = 0
+                    RefreshAnalyticsView()
+                Case 2
+                    btnDashResetFilters.PerformClick()
+                Case 4
                     btnClearSearch.PerformClick()
-                Case 5
+                Case 6
                     btnAuditReset.PerformClick()
                 Case Else
                     lblStatusMessage.Text = "This view has no filters to clear."

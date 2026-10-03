@@ -14,8 +14,16 @@ Namespace BTA_OSG
         Private StaffUserId As Integer
         Private txtFrom As TextBox
         Private txtTo As TextBox
-        Private txtAction As TextBox
+        Private cmbAction As ComboBox
         Private txtRemarks As TextBox
+
+        ' The seeded status codes an operator can route a document into (db/scripts 007/008).
+        ' Seed-stable vocabulary, so the list is a constant rather than a live lookup that
+        ' would differ between the connected and offline paths.
+        Private Shared ReadOnly RoutingStatusCodes As String() = {
+            "ROUTED", "FOR_REVIEW", "FOR_REVISION", "APPROVED", "RELEASED", "FILED",
+            "IN_PROGRESS", "COMPLETED", "ARCHIVED"
+        }
         Private btnSave As Button
         Private btnCancel As Button
 
@@ -23,6 +31,7 @@ Namespace BTA_OSG
             Me.DocID = docId
             Me.StaffName = user
             Me.StaffUserId = staffUserId
+            AppAssets.ApplyFormIcon(Me)
 
             Me.Text = "Log Document Office Routing Step"
             Me.Size = New Size(500, 360)
@@ -56,7 +65,12 @@ Namespace BTA_OSG
 
             txtFrom = New TextBox With {.Dock = DockStyle.Fill, .Text = currentOffice, .TabIndex = 1, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
             txtTo = New TextBox With {.Dock = DockStyle.Fill, .Text = "", .TabIndex = 2, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
-            txtAction = New TextBox With {.Dock = DockStyle.Fill, .Text = "FOR_TRANSMITTAL", .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            ' A free-text action used to default to FOR_TRANSMITTAL, which is not a status
+            ' code, and the connected path then regressed the document to RECEIVED. The
+            ' dropdown carries the seeded status codes only; ROUTED is the neutral default.
+            cmbAction = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .FlatStyle = FlatStyle.Flat}
+            cmbAction.Items.AddRange(RoutingStatusCodes)
+            cmbAction.SelectedIndex = 0
             txtRemarks = New TextBox With {.Dock = DockStyle.Fill, .Multiline = True, .Text = "", .TabIndex = 4, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             Dim flwButtons As New FlowLayoutPanel With {
@@ -101,7 +115,7 @@ Namespace BTA_OSG
             tblLayout.Controls.Add(New Label With {.Text = "To Office:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}, 0, 1)
             tblLayout.Controls.Add(txtTo, 1, 1)
             tblLayout.Controls.Add(New Label With {.Text = "Action Taken:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .Dock = DockStyle.Fill, .TextAlign = ContentAlignment.MiddleLeft}, 0, 2)
-            tblLayout.Controls.Add(txtAction, 1, 2)
+            tblLayout.Controls.Add(cmbAction, 1, 2)
             tblLayout.Controls.Add(New Label With {.Text = "Remarks:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .Dock = DockStyle.Fill, .TextAlign = ContentAlignment.TopLeft}, 0, 3)
             tblLayout.Controls.Add(txtRemarks, 1, 3)
             tblLayout.Controls.Add(flwButtons, 1, 4)
@@ -123,9 +137,9 @@ Namespace BTA_OSG
 
             Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
             If Program.Coordinator IsNot Nothing Then
-                Program.Coordinator.RouteDocument(DocID, txtFrom.Text.Trim(), toOffice, txtAction.Text.Trim(), txtRemarks.Text.Trim(), StaffName, currentUserId)
+                Program.Coordinator.RouteDocument(DocID, txtFrom.Text.Trim(), toOffice, cmbAction.Text, txtRemarks.Text.Trim(), StaffName, currentUserId)
             Else
-                EmbeddedDB.AddRoutingLog(DocID, txtFrom.Text.Trim(), toOffice, StaffName, txtAction.Text.Trim(), txtRemarks.Text.Trim())
+                EmbeddedDB.AddRoutingLog(DocID, txtFrom.Text.Trim(), toOffice, StaffName, cmbAction.Text, txtRemarks.Text.Trim())
                 EmbeddedDB.LogAudit(StaffName, $"Routed Doc #{DocID} from {txtFrom.Text.Trim()} to {toOffice}")
             End If
             Me.DialogResult = DialogResult.OK

@@ -3,12 +3,11 @@ Option Strict On
 
 Imports System
 Imports System.Data
-Imports System.Diagnostics
 Imports System.Drawing
 Imports System.Windows.Forms
 
 Namespace BTA_OSG
-    Public Class FormDocumentDetail
+    Partial Public Class FormDocumentDetail
         Inherits Form
 
         Private DocID As Integer
@@ -20,19 +19,56 @@ Namespace BTA_OSG
         Private lblTitle As Label
         Private lblStatusBadge As Label
 
+        Private btnRoutingSlip As Button
+        Private pnlWorkflowRibbon As Panel
+        Private lblStationBadge As Label
+        Private lblNextStationBadge As Label
+        Private lblProgressBadge As Label
+        Private dgvSteps As DataGridView
+
+        Private pnlPunchlistBanner As Panel
+        Private lblPunchlistContent As Label
+
+        Private btnRequestRevision As Button
+        Private btnResubmit As Button
+        Private btnApprove As Button
+        Private btnRelease As Button
+        Private btnRoute As Button
+        Private btnMove As Button
+        Private btnLaunchPdf As Button
+        Private btnClose As Button
+
         Private tabDetail As TabControl
         Private tabOverview As TabPage
         Private tabDirectives As TabPage
         Private tabRouting As TabPage
         Private tabMovements As TabPage
+        Private tabPreview As TabPage
 
         Private dgvDirectives As DataGridView
         Private dgvRouting As DataGridView
         Private dgvMovements As DataGridView
+        Private wvPreview As Microsoft.Web.WebView2.WinForms.WebView2
+        Private wvEnvironment As Microsoft.Web.WebView2.Core.CoreWebView2Environment
+        Private lblPreviewPlaceholder As Label
+        Private lblDirectivesWatermark As Label
+        Private lblRoutingWatermark As Label
+        Private lblMovementsWatermark As Label
+        Private lblStepsWatermark As Label
 
         Private pnlOverviewTable As TableLayoutPanel
-        Private btnClose As Button
 
+        ' Tracks the URL the embedded preview last navigated to so repeat visits to the preview
+        ' tab do not reload the page.
+        Private previewNavigatedUrl As String = Nothing
+
+        ' This dialog deliberately does NOT use UiBuffering.WsExComposited, unlike the main
+        ' window. Compositing renders the whole child tree through one redirection surface, and
+        ' the embedded WebView2 preview paints its own Chromium surface into that same window:
+        ' while the preview is on screen the header and ribbon siblings re-present on every web
+        ' frame, which reads as blinking. Panel-level double buffering (EnableDeep below) stays
+        ' on, so ordinary repaint flicker is still covered. The cost is that maximize and
+        ' restore can ghost the relaid-out action buttons, which this dialog rarely sees.
         Public Sub New(id As Integer, parentForm As FormMain)
             DocID = id
             MainFrm = parentForm
@@ -41,175 +77,53 @@ Namespace BTA_OSG
 
         Private Sub InitializeForm()
             If Not LoadDocData() Then Return
+            AppAssets.ApplyFormIcon(Me)
 
             Me.Text = String.Format("Document Details & Specifications : [{0}] {1}", DocRow("DocCode"), DocRow("Title"))
-            Me.Size = New Size(1080, 760)
-            Me.MinimumSize = New Size(920, 640)
+            Me.Size = New Size(1180, 820)
+            Me.MinimumSize = New Size(980, 680)
             Me.StartPosition = FormStartPosition.CenterParent
             Me.Font = CivicCalmTheme.FontBody
             Me.BackColor = CivicCalmTheme.ColorCanvas
 
-            ' Top Header Panel
-            pnlHeader = New Panel With {
-                .Dock = DockStyle.Top,
-                .Height = 125,
-                .BackColor = CivicCalmTheme.ColorSurface,
-                .Padding = New Padding(20, 16, 20, 16)
-            }
+            SetupHeaderPanel()
+            SetupWorkflowRibbon()
+            SetupPunchlistBanner()
+            SetupTabControl()
+            AddHandler tabDetail.Selected, Sub(s As Object, e As TabControlEventArgs)
+                                               If e.TabPage Is tabPreview Then LoadPreviewTab()
+                                           End Sub
 
-            Dim pnlBorderBottom As New Panel With {
-                .Dock = DockStyle.Bottom,
-                .Height = 1,
-                .BackColor = CivicCalmTheme.ColorBorder
-            }
-            pnlHeader.Controls.Add(pnlBorderBottom)
-
-            Dim tblHeader As New TableLayoutPanel With {
-                .Dock = DockStyle.Fill,
-                .ColumnCount = 2,
-                .RowCount = 1,
-                .BackColor = CivicCalmTheme.ColorSurface
-            }
-            tblHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 65.0F))
-            tblHeader.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 35.0F))
-
-            Dim pnlTitles As New FlowLayoutPanel With {
-                .Dock = DockStyle.Fill,
-                .FlowDirection = FlowDirection.TopDown,
-                .WrapContents = False,
-                .BackColor = CivicCalmTheme.ColorSurface
-            }
-
-            lblCode = New Label With {
-                .Text = String.Format("DOC CODE: {0}   |   TYPE: {1}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpperInvariant()),
-                .Font = CivicCalmTheme.FontFormTitle,
-                .ForeColor = CivicCalmTheme.ColorPrimary,
-                .AutoSize = True,
-                .Margin = New Padding(0, 0, 0, 4)
-            }
-
-            lblTitle = New Label With {
-                .Text = DocRow("Title").ToString(),
-                .Font = CivicCalmTheme.FontSectionHeader,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .AutoSize = True,
-                .MaximumSize = New Size(620, 40),
-                .Margin = New Padding(0, 0, 0, 4)
-            }
-
-            lblStatusBadge = New Label With {
-                .Text = String.Format("Status: {0}  |  Assigned Staff: {1}", DocRow("CurrentStatus"), DocRow("AssignedStaff")),
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .ForeColor = CivicCalmTheme.ColorInkMuted,
-                .AutoSize = True
-            }
-            pnlTitles.Controls.AddRange(New Control() {lblCode, lblTitle, lblStatusBadge})
-
-            Dim pnlActions As New FlowLayoutPanel With {
-                .Dock = DockStyle.Fill,
-                .FlowDirection = FlowDirection.RightToLeft,
-                .WrapContents = True,
-                .BackColor = CivicCalmTheme.ColorSurface
-            }
-
-            Dim btnRoute As New Button With {
-                .Text = "&Route Document",
-                .Size = New Size(150, 34),
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(6, 4, 0, 4)
-            }
-            btnRoute.FlatAppearance.BorderSize = 0
-            AddHandler btnRoute.Click, AddressOf OnRouteDocument
-
-            Dim btnMove As New Button With {
-                .Text = "&Transfer Storage",
-                .Size = New Size(150, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(6, 4, 0, 4)
-            }
-            btnMove.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
-            AddHandler btnMove.Click, AddressOf OnMoveStorage
-
-            Dim btnLaunchPdf As New Button With {
-                .Text = "&Launch PDF",
-                .Size = New Size(120, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(6, 4, 0, 4)
-            }
-            btnLaunchPdf.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
-            AddHandler btnLaunchPdf.Click, AddressOf OnLaunchPDF
-
-            btnClose = New Button With {
-                .Text = "&Close",
-                .Size = New Size(90, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(6, 4, 0, 4)
-            }
-            btnClose.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
-            AddHandler btnClose.Click, Sub() Me.Close()
-
-            Me.CancelButton = btnClose
-
-            pnlActions.Controls.AddRange(New Control() {btnClose, btnLaunchPdf, btnMove, btnRoute})
-
-            tblHeader.Controls.Add(pnlTitles, 0, 0)
-            tblHeader.Controls.Add(pnlActions, 1, 0)
-            pnlHeader.Controls.Add(tblHeader)
-
+            Me.Controls.Add(tabDetail)
+            Me.Controls.Add(pnlPunchlistBanner)
+            Me.Controls.Add(pnlWorkflowRibbon)
             Me.Controls.Add(pnlHeader)
 
-            ' Tab Navigation
-            tabDetail = New TabControl With {
-                .Dock = DockStyle.Fill,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Padding = New Point(12, 6)
-            }
-
-            tabOverview = New TabPage(" Document Overview & Specifications ")
-            tabDirectives = New TabPage(" SG Directives Timeline ")
-            tabRouting = New TabPage(" Office Routing Logs ")
-            tabMovements = New TabPage(" Physical Storage Movement History ")
-
-            tabOverview.BackColor = CivicCalmTheme.ColorSurface
-            tabDirectives.BackColor = CivicCalmTheme.ColorSurface
-            tabRouting.BackColor = CivicCalmTheme.ColorSurface
-            tabMovements.BackColor = CivicCalmTheme.ColorSurface
-
-            SetupOverviewTab()
-
-            dgvDirectives = CreateDetailGrid()
-            dgvRouting = CreateDetailGrid()
-            dgvMovements = CreateDetailGrid()
-
-            tabDirectives.Controls.Add(dgvDirectives)
-            tabRouting.Controls.Add(dgvRouting)
-            tabMovements.Controls.Add(dgvMovements)
-
-            tabDetail.TabPages.AddRange(New TabPage() {tabOverview, tabDirectives, tabRouting, tabMovements})
-            Me.Controls.Add(tabDetail)
-            pnlHeader.SendToBack()
+            ' Buffer every container so maximize/restore repaints atomically (same treatment as
+            ' the main window).
+            UiBuffering.EnableDeep(Me)
 
             RefreshGrids()
+
+            ' RefreshGrids balanced the grids before this form was laid out, so first open shows
+            ' widths measured against pre-layout bounds; re-balance once the client size is real.
+            ' dgvSteps is included: it is filled in PopulateStepsGrid during the pre-layout pass
+            ' and needs the same post-layout measurement (first-click render bug class).
+            AddHandler Me.Shown, Sub()
+                                     DataGridStyler.FormatDirectiveColumns(dgvDirectives)
+                                     DataGridStyler.FormatRoutingColumns(dgvRouting)
+                                     DataGridStyler.FormatMovementColumns(dgvMovements)
+                                     dgvSteps.AutoResizeRows(DataGridViewAutoSizeRowsMode.AllCells)
+                                 End Sub
         End Sub
 
         Private Function LoadDocData() As Boolean
-            Dim rows = EmbeddedDB.DataSet.Tables("Documents").Select("DocumentID = " & DocID)
+            Dim rows As DataRow()
+            ' The replay writer mutates these tables on the sync thread; read under the
+            ' store lock like every other cross-thread select.
+            SyncLock EmbeddedDB.SyncRoot
+                rows = EmbeddedDB.DataSet.Tables("Documents").Select("DocumentID = " & DocID)
+            End SyncLock
             If rows.Length = 0 Then
                 MessageBox.Show("Document record not found.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 Me.Close()
@@ -219,150 +133,144 @@ Namespace BTA_OSG
             Return True
         End Function
 
-        Private Sub SetupOverviewTab()
-            tabOverview.Controls.Clear()
-
-            Dim pnlScroll As New Panel With {
-                .Dock = DockStyle.Fill,
-                .AutoScroll = True,
-                .Padding = New Padding(20),
-                .BackColor = CivicCalmTheme.ColorSurface
-            }
-
-            pnlOverviewTable = New TableLayoutPanel With {
-                .Dock = DockStyle.Top,
-                .AutoSize = True,
-                .ColumnCount = 2,
-                .CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
-                .BackColor = CivicCalmTheme.ColorSurface,
-                .Padding = New Padding(10)
-            }
-
-            pnlOverviewTable.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 30.0F))
-            pnlOverviewTable.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 70.0F))
-
-            AddOverviewRow("Document System ID:", "#" & DocRow("DocumentID").ToString())
-            AddOverviewRow("Document Code:", DocRow("DocCode").ToString())
-            AddOverviewRow("Document Classification Type:", DocRow("DocType").ToString())
-            AddOverviewRow("Official Document Title:", DocRow("Title").ToString())
-            AddOverviewRow("Date Received / Registered:", DocRow("DateReceived").ToString())
-            AddOverviewRow("Originating Office:", DocRow("OriginatingOffice").ToString())
-            AddOverviewRow("Destination Office:", DocRow("DestinationOffice").ToString())
-            AddOverviewRow("Cabinet Landmark ID:", DocRow("CabinetID").ToString())
-            AddOverviewRow("Shelf Landmark No:", DocRow("ShelfNo").ToString())
-            AddOverviewRow("Box Landmark Code:", DocRow("BoxCode").ToString())
-            AddOverviewRow("Full Physical Location String:", String.Format("Cabinet {0} / Shelf {1} / Box {2}", DocRow("CabinetID"), DocRow("ShelfNo"), DocRow("BoxCode")))
-            AddOverviewRow("Current Processing Status:", DocRow("CurrentStatus").ToString())
-            AddOverviewRow("Assigned OSG Staff Member:", DocRow("AssignedStaff").ToString())
-            AddOverviewRow("Google Drive Soft Copy URL:", DocRow("GDriveURL").ToString())
-
-            pnlScroll.Controls.Add(pnlOverviewTable)
-            tabOverview.Controls.Add(pnlScroll)
-        End Sub
-
-        Private Sub AddOverviewRow(label As String, value As String)
-            Dim lblField As New Label With {
-                .Text = label,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .ForeColor = CivicCalmTheme.ColorInkMuted,
-                .Dock = DockStyle.Fill,
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .Padding = New Padding(8),
-                .AutoSize = True
-            }
-
-            Dim lblVal As New Label With {
-                .Text = If(String.IsNullOrWhiteSpace(value), "(None Specified)", value),
-                .Font = CivicCalmTheme.FontBody,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .Dock = DockStyle.Fill,
-                .TextAlign = ContentAlignment.MiddleLeft,
-                .Padding = New Padding(8),
-                .AutoSize = True
-            }
-
-            Dim rowIndex = pnlOverviewTable.RowCount
-            pnlOverviewTable.RowCount += 1
-            pnlOverviewTable.Controls.Add(lblField, 0, rowIndex)
-            pnlOverviewTable.Controls.Add(lblVal, 1, rowIndex)
-        End Sub
-
-        Private Function CreateDetailGrid() As DataGridView
-            Dim dgv As New DataGridView With {
-                .Dock = DockStyle.Fill,
-                .ReadOnly = True,
-                .AllowUserToAddRows = False
-            }
-            DataGridStyler.ApplyCivicStyle(dgv)
-            Return dgv
-        End Function
-
         Private Sub RefreshGrids()
             If Not LoadDocData() Then Return
 
-            lblCode.Text = String.Format("DOC CODE: {0}   |   TYPE: {1}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpperInvariant())
+            lblCode.Text = String.Format("DOC CODE: {0}   |   TYPE: {1}   |   FLOW: {2}", DocRow("DocCode"), DocRow("DocType").ToString().ToUpperInvariant(), DocRow("FlowDirection"))
             lblTitle.Text = DocRow("Title").ToString()
-            lblStatusBadge.Text = String.Format("Status: {0}  |  Assigned Staff: {1}", DocRow("CurrentStatus"), DocRow("AssignedStaff"))
+            lblStatusBadge.Text = String.Format("Status: {0}   |   Section: {1}   |   Staff: {2}", DocumentStatus.DisplayName(DocRow("CurrentStatus").ToString()), DocRow("AssignedSection"), DocRow("AssignedStaff"))
 
+            Dim punchlist = DocRow("RevisionPunchlist").ToString().Trim()
+            If Not String.IsNullOrEmpty(punchlist) Then
+                lblPunchlistContent.Text = punchlist
+                ' Size the banner to the wrapped text so a long punchlist is not clipped by
+                ' the original fixed 70px height; 44 covers the title row, padding, border.
+                pnlPunchlistBanner.Height = Math.Max(70,
+                    TextRenderer.MeasureText(punchlist, CivicCalmTheme.FontBody,
+                        New Size(Math.Max(400, Me.ClientSize.Width - 72), 0),
+                        TextFormatFlags.WordBreak).Height + 44)
+                pnlPunchlistBanner.Visible = True
+            Else
+                pnlPunchlistBanner.Visible = False
+            End If
+
+            UpdateActionButtons()
             SetupOverviewTab()
+
+            ' Preview navigation is deferred until the operator actually opens the preview tab;
+            ' a refresh after an action only re-renders it when that tab is already on screen.
+            If tabDetail.SelectedTab Is tabPreview Then LoadPreviewTab()
 
             Dim dvDir As New DataView(EmbeddedDB.DataSet.Tables("Directives"))
             dvDir.RowFilter = "DocumentID = " & DocID
-            dgvDirectives.DataSource = dvDir.ToTable()
+            dgvDirectives.DataSource = dvDir
             DataGridStyler.FormatDirectiveColumns(dgvDirectives)
+            ShowGridState(dgvDirectives, lblDirectivesWatermark, "No SG directives have been issued for this document.")
 
             Dim dvRoute As New DataView(EmbeddedDB.DataSet.Tables("RoutingLogs"))
             dvRoute.RowFilter = "DocumentID = " & DocID
-            dgvRouting.DataSource = dvRoute.ToTable()
+            dgvRouting.DataSource = dvRoute
             DataGridStyler.FormatRoutingColumns(dgvRouting)
+            ShowGridState(dgvRouting, lblRoutingWatermark, "No transmittal logs yet. Route the document to begin its custody trail.")
 
             Dim dvMove As New DataView(EmbeddedDB.DataSet.Tables("Movements"))
             dvMove.RowFilter = "DocumentID = " & DocID
-            dgvMovements.DataSource = dvMove.ToTable()
+            dgvMovements.DataSource = dvMove
             DataGridStyler.FormatMovementColumns(dgvMovements)
+            ShowGridState(dgvMovements, lblMovementsWatermark, "The storage landmark has not moved since registration.")
+
+            ' Calculate Step-by-Step Pipeline
+            Dim currentDoc = GetCurrentDocumentObject()
+            Dim currentLogs = GetCurrentRoutingLogsList()
+            Dim steps = RoutingStepService.GetStepsForDocument(currentDoc, currentLogs)
+
+            Dim curStation = RoutingStepService.GetCurrentStation(steps)
+            Dim nxtStation = RoutingStepService.GetNextStation(steps)
+            Dim pct = RoutingStepService.GetProgressPercentage(steps)
+
+            If curStation IsNot Nothing Then
+                lblStationBadge.Text = String.Format("CURRENT STATION: {0} ({1})", curStation.ResponsibleOffice, curStation.StageName)
+            Else
+                lblStationBadge.Text = "CURRENT STATION: Completed"
+            End If
+
+            If nxtStation IsNot Nothing Then
+                lblNextStationBadge.Text = String.Format("Next Step: {0} ({1})", nxtStation.StageName, nxtStation.ResponsibleOffice)
+            Else
+                lblNextStationBadge.Text = "Next Step: Completed / Archived"
+            End If
+
+            lblProgressBadge.Text = String.Format("{0}% Complete", pct)
+            PopulateStepsGrid(steps)
         End Sub
 
-        Private Sub OnRouteDocument(sender As Object, e As EventArgs)
-            If MainFrm.CurrentUser Is Nothing Then
-                MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+        ' The embedded browser pays its navigation cost only when the operator actually opens
+        ' the preview tab; re-entry with the same URL keeps the page that is already rendered.
+        ' WebView2 (Edge) replaces the retired IE-based WebBrowser control, whose engine
+        ' cannot run Google Drive's preview.
+        Private Async Sub LoadPreviewTab()
+            ' Deny-by-default: a dropped session or a NULL flag must not expose the preview.
+            Dim canSoftCopyUser As Boolean = False
+            If MainFrm.CurrentUser IsNot Nothing AndAlso MainFrm.CurrentUser.Table.Columns.Contains("CanSoftCopy") AndAlso Not IsDBNull(MainFrm.CurrentUser("CanSoftCopy")) Then
+                canSoftCopyUser = Convert.ToBoolean(MainFrm.CurrentUser("CanSoftCopy"))
+            End If
+
+            If Not canSoftCopyUser Then
+                lblPreviewPlaceholder.Text = "Access Denied: Account policy does not permit soft-copy document preview."
+                lblPreviewPlaceholder.Visible = True
+                wvPreview.Visible = False
                 Return
             End If
 
-            Using dlg As New FormRouteDocument(DocID, DocRow("DestinationOffice").ToString(), MainFrm.CurrentUser("FullName").ToString())
-                If dlg.ShowDialog(Me) = DialogResult.OK Then
-                    RefreshGrids()
+            Dim url = DocRow("GDriveURL").ToString().Trim()
+            ' The preview is a soft-copy surface like Launch, so it validates against the
+            ' same allowlist: a mirrored row or an "All Files" attachment must not render
+            ' here what Launch would refuse.
+            Dim validationError As String = ""
+            If String.IsNullOrEmpty(url) OrElse Not EmbeddedDB.ValidateGDriveURL(url, validationError) Then
+                wvPreview.Visible = False
+                lblPreviewPlaceholder.Visible = True
+                lblPreviewPlaceholder.Text = If(String.IsNullOrEmpty(url),
+                    "No soft-copy attachment is linked to this document.",
+                    "Soft-copy preview refused: " & validationError)
+                previewNavigatedUrl = Nothing
+                Return
+            End If
+
+            Dim navUrl = url
+            If navUrl.Contains("drive.google.com/file/d/") Then
+                If navUrl.EndsWith("/view", StringComparison.OrdinalIgnoreCase) Then
+                    navUrl = navUrl.Substring(0, navUrl.Length - 5) & "/preview"
+                ElseIf navUrl.Contains("/view?") Then
+                    navUrl = navUrl.Replace("/view?", "/preview?")
                 End If
-            End Using
-        End Sub
+            End If
 
-        Private Sub OnMoveStorage(sender As Object, e As EventArgs)
-            If MainFrm.CurrentUser Is Nothing Then
-                MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            If String.Equals(previewNavigatedUrl, navUrl, StringComparison.OrdinalIgnoreCase) Then
+                lblPreviewPlaceholder.Visible = False
+                wvPreview.Visible = True
                 Return
             End If
 
-            Dim currentLoc = String.Format("{0}/{1}/{2}", DocRow("CabinetID"), DocRow("ShelfNo"), DocRow("BoxCode"))
-            Using dlg As New FormMoveStorage(DocID, currentLoc, MainFrm.CurrentUser("FullName").ToString())
-                If dlg.ShowDialog(Me) = DialogResult.OK Then
-                    RefreshGrids()
-                End If
-            End Using
-        End Sub
-
-        Private Sub OnLaunchPDF(sender As Object, e As EventArgs)
-            Dim url = DocRow("GDriveURL").ToString()
-            Dim errUrl As String = ""
-            If Not EmbeddedDB.ValidateGDriveURL(url, errUrl) Then
-                MessageBox.Show(errUrl, "Security Validation Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                Return
-            End If
+            lblPreviewPlaceholder.Visible = False
+            wvPreview.Visible = True
             Try
-                Process.Start(New ProcessStartInfo With {.FileName = url, .UseShellExecute = True})
-                If MainFrm.CurrentUser IsNot Nothing Then
-                    EmbeddedDB.LogAudit(MainFrm.CurrentUser("FullName").ToString(), "Launched Google Drive Soft Copy PDF: " & url)
+                If wvEnvironment Is Nothing Then
+                    ' The profile cache lives in AppData because a Program Files install
+                    ' folder is read-only and WebView2 refuses the executable directory.
+                    Dim profileDir = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BTA_OSG_DocumentTracking", "WebView2")
+                    wvEnvironment = Await Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(Nothing, profileDir)
                 End If
+                Await wvPreview.EnsureCoreWebView2Async(wvEnvironment)
+                wvPreview.CoreWebView2.Navigate(New Uri(navUrl).AbsoluteUri)
+                previewNavigatedUrl = navUrl
             Catch ex As Exception
-                MessageBox.Show("Error opening URL: " & ex.Message, "Launch Failed", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                ' Missing Evergreen Runtime (possible on Server 2022) or a failed browser
+                ' process must not look like a frozen tab: name the cause and the escape hatch.
+                wvPreview.Visible = False
+                lblPreviewPlaceholder.Text = "Embedded preview is unavailable: " & ex.Message & " Install the Microsoft WebView2 Runtime, or use Open in External Browser."
+                lblPreviewPlaceholder.Visible = True
+                previewNavigatedUrl = Nothing
             End Try
         End Sub
     End Class

@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System
 
 Namespace BTA_OSG

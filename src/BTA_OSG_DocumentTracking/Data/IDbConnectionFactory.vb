@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports Microsoft.Data.SqlClient
 
 Namespace BTA_OSG

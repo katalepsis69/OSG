@@ -2,6 +2,7 @@ Option Explicit On
 Option Strict On
 
 Imports System
+Imports System.Data
 Imports System.Drawing
 Imports System.Threading.Tasks
 Imports System.Windows.Forms
@@ -41,6 +42,34 @@ Namespace BTA_OSG
                 .BackColor = CivicCalmTheme.ColorSurface
             }
 
+            btnOpenPortal = New Button With {
+                .Name = "btnOpenOSGPortal",
+                .Text = "🌐 &Open OSGPortal",
+                .Size = New Size(165, 34),
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .Cursor = Cursors.Hand,
+                .Margin = New Padding(0, 6, 8, 0)
+            }
+            btnOpenPortal.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            AddHandler btnOpenPortal.Click, AddressOf OnOpenPortalClicked
+
+            btnStartTunnel = New Button With {
+                .Name = "btnStartCloudflareTunnel",
+                .Text = "☁️ &Cloudflare Tunnel",
+                .Size = New Size(180, 34),
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .Cursor = Cursors.Hand,
+                .Margin = New Padding(0, 6, 8, 0)
+            }
+            btnStartTunnel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            AddHandler btnStartTunnel.Click, AddressOf OnStartTunnelClicked
+
             btnPortalRefresh = New Button With {
                 .Text = "&Refresh Queue",
                 .Size = New Size(130, 34),
@@ -68,7 +97,7 @@ Namespace BTA_OSG
             AddHandler btnPortalImportSelected.Click, AddressOf OnImportPortalSubmission
 
             lblPortalStatus = New Label With {
-                .Text = "Portal Bridge: Standby",
+                .Text = "OSGPortal Bridge: Standby",
                 .UseMnemonic = False,
                 .Font = CivicCalmTheme.FontBody,
                 .ForeColor = CivicCalmTheme.ColorInkMuted,
@@ -76,7 +105,7 @@ Namespace BTA_OSG
                 .Margin = New Padding(0, 12, 0, 0)
             }
 
-            flwPortalActions.Controls.AddRange(New Control() {btnPortalRefresh, btnPortalImportSelected, lblPortalStatus})
+            flwPortalActions.Controls.AddRange(New Control() {btnOpenPortal, btnStartTunnel, btnPortalRefresh, btnPortalImportSelected, lblPortalStatus})
             pnlPortalActionCard.Controls.Add(flwPortalActions)
 
             Dim pnlGridCard As New Panel With {
@@ -117,25 +146,21 @@ Namespace BTA_OSG
             If Me.IsDisposed Then Return
             _portalSubmissions = If(items, New List(Of PortalSubmission)())
 
-            ' Update sidebar nav button for Portal Intake (Index 6)
-            If navButtons IsNot Nothing AndAlso navButtons.Count > 6 Then
-                Dim btnPortal = navButtons(6)
+            ' Update sidebar nav button for Portal Intake (Index 7)
+            If navButtons IsNot Nothing AndAlso navButtons.Count > 7 Then
+                Dim btnPortal = navButtons(7)
                 Dim count = _portalSubmissions.Count
                 If count > 0 Then
-                    If Not sidebarCollapsed Then
-                        btnPortal.Text = $"  Portal Intake ({count})"
-                    End If
+                    btnPortal.Text = $"  Portal Intake ({count})"
                     tipNav.SetToolTip(btnPortal, $"Portal Intake ({count} pending submission(s))")
                 Else
-                    If Not sidebarCollapsed Then
-                        btnPortal.Text = "  Portal Intake"
-                    End If
-                    tipNav.SetToolTip(btnPortal, If(sidebarCollapsed, "Portal Intake", Nothing))
+                    btnPortal.Text = "  Portal Intake"
+                    tipNav.SetToolTip(btnPortal, Nothing)
                 End If
             End If
 
             ' If Portal Intake view is currently open, update its grid and status
-            If activeNavIndex = 6 AndAlso dgvPortalQueue IsNot Nothing Then
+            If activeNavIndex = 7 AndAlso dgvPortalQueue IsNot Nothing Then
                 activeViewRetry = Nothing
                 dgvPortalQueue.DataSource = Nothing
                 dgvPortalQueue.DataSource = _portalSubmissions
@@ -186,10 +211,19 @@ Namespace BTA_OSG
         End Sub
 
         Private Async Sub OnImportPortalSubmission(sender As Object, e As EventArgs)
-            Dim submission As PortalSubmission = Nothing
-            If Not ValidateSelectedPortalSubmission(submission) Then Return
-            If Not ConfirmSubmissionImport(submission) Then Return
-            Await ExecuteSubmissionImportAsync(submission)
+            ' The import awaits SQL and HTTP work; a second click (or grid double-click or
+            ' Enter) inside that window would import the same submission twice, so the
+            ' button is held disabled across the whole flow.
+            If Not btnPortalImportSelected.Enabled Then Return
+            btnPortalImportSelected.Enabled = False
+            Try
+                Dim submission As PortalSubmission = Nothing
+                If Not ValidateSelectedPortalSubmission(submission) Then Return
+                If Not ConfirmSubmissionImport(submission) Then Return
+                Await ExecuteSubmissionImportAsync(submission)
+            Finally
+                btnPortalImportSelected.Enabled = True
+            End Try
         End Sub
 
         Private Function ValidateSelectedPortalSubmission(ByRef submission As PortalSubmission) As Boolean
@@ -199,7 +233,11 @@ Namespace BTA_OSG
                 Return False
             End If
 
-            ' Role security check: RECORDS, SG, SYSADMIN
+            ' Role security check: RECORDS, SG, SYSADMIN, OSG CHIEF. The mirror Role column
+            ' carries either the seeded role codes (SG, RECORDS, SYSADMIN...) or the display
+            ' names ("Records Section", "Secretary-General"...), so both vocabularies are
+            ' matched explicitly. A bare Contains("ADMIN") would also admit "Administrative
+            ' Staff", which is an over-grant.
             If CurrentUser Is Nothing Then
                 MessageBox.Show("RFID Badge Authentication is required before importing documents into the official registry.", "Authentication Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return False
@@ -207,7 +245,11 @@ Namespace BTA_OSG
 
             Dim role = CurrentUser("Role").ToString().ToUpperInvariant()
             Dim office = If(CurrentUser.Table.Columns.Contains("Office") AndAlso Not IsDBNull(CurrentUser("Office")), CurrentUser("Office").ToString().ToUpperInvariant(), "")
-            Dim isAuthorized = role.Contains("RECORDS") OrElse office.Contains("RECORDS") OrElse role.Contains("SECRETARY-GENERAL") OrElse role.Contains("ADMIN") OrElse role.Contains("CHIEF")
+            Dim isAuthorized =
+                role.Contains("RECORDS") OrElse office.Contains("RECORDS") OrElse
+                role.Contains("SECRETARY-GENERAL") OrElse role = "SG" OrElse
+                role.Contains("SYSTEM ADMINISTRATOR") OrElse role = "SYSADMIN" OrElse
+                role.Contains("OSG CHIEF") OrElse role = "OSG_CHIEF"
             If Not isAuthorized Then
                 MessageBox.Show("Access Denied: Only Records Section, Secretary-General, or System Administrator staff may import external submissions.", "Unauthorized", MessageBoxButtons.OK, MessageBoxIcon.Stop)
                 Return False
@@ -236,20 +278,27 @@ Namespace BTA_OSG
         ' breaker: once SQL is known offline, imports register locally without paying stacked
         ' connect timeouts, and the one retry per app run executes off the UI thread.
         Private Async Function ExecuteSubmissionImportAsync(submission As PortalSubmission) As Task
-            Dim alreadyRegistered = EmbeddedDB.DataSet.Tables("Documents").Select("ExternalControlNumber = '" & submission.ControlNumber.Replace("'", "''") & "'")
+            Dim alreadyRegistered As DataRow()
+            SyncLock EmbeddedDB.SyncRoot
+                alreadyRegistered = EmbeddedDB.DataSet.Tables("Documents").Select("ExternalControlNumber = '" & submission.ControlNumber.Replace("'", "''") & "'")
+            End SyncLock
             If alreadyRegistered.Length > 0 Then
                 MessageBox.Show($"Submission {submission.ControlNumber} is already in the registry as {alreadyRegistered(0)("DocCode")}.", "Already Imported", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 RefreshPortalQueue()
                 Return
             End If
 
-            Dim userId = CInt(CurrentUser("UserID"))
+            Dim userId As Integer = 1
+            If CurrentUser IsNot Nothing AndAlso CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(CurrentUser("UserID")) Then
+                userId = Convert.ToInt32(CurrentUser("UserID"))
+            End If
             Dim docCode = EmbeddedDB.GenerateDocCode(submission.Category)
             Dim origin = submission.RequesterName & " (" & submission.RequesterEmail & ")"
             Dim dest = "Office of the Secretary-General"
             Dim assignedSection = DocumentService.GetDefaultSectionForCategory(submission.Category)
             Dim lastAction = "Imported from Public Portal and routed to " & assignedSection
 
+            Dim sqlImported As Boolean = False
             If Program.IsDatabaseConnected Then
                 Try
                     Dim importedDoc = Await Task.Run(Function() AppStartup.DocService.RegisterImportedExternalDocument(submission, userId))
@@ -258,6 +307,7 @@ Namespace BTA_OSG
                     dest = importedDoc.DestinationOffice
                     assignedSection = importedDoc.AssignedSection
                     lastAction = importedDoc.LastActionTaken
+                    sqlImported = True
                 Catch ex As Microsoft.Data.SqlClient.SqlException
                     ' Fall back to local embedded database cache when SQL Server is unreachable.
                     Program.IsDatabaseConnected = False
@@ -268,20 +318,30 @@ Namespace BTA_OSG
                 End Try
             End If
 
+            ' When the SQL import succeeded the SQL row (with its routing log and storage
+            ' movement) is already durable: the local row is a read-only mirror, NOT an
+            ' offline record. Marking it offline replayed it as a brand-new registration
+            ' under a fresh code, double-registering the submission in SQL.
             EmbeddedDB.AddDocument(
                 code:=docCode,
                 docType:=submission.Category,
                 title:=submission.DocumentTitle,
                 origin:=origin,
                 dest:=dest,
-                cab:="CAB-A", shelf:="S-1", box:="BOX-01",
+                cab:="UNFILED", shelf:="", box:="",
                 url:="",
                 status:="RECEIVED",
                 assigned:=CurrentUser("FullName").ToString(),
                 flowDirection:="INCOMING",
                 assignedSection:=assignedSection,
                 lastAction:=lastAction,
-                externalControlNumber:=submission.ControlNumber)
+                externalControlNumber:=submission.ControlNumber,
+                isOffline:=Not sqlImported,
+                createdByUserId:=userId,
+                requesterGender:=submission.RequesterGender)
+
+            Dim currentStaffName = If(CurrentUser IsNot Nothing, CurrentUser("FullName").ToString(), "Records Staff")
+            EmbeddedDB.LogAudit(currentStaffName, $"Imported External Portal Submission [{submission.ControlNumber}] as {docCode} (Routed to {assignedSection})", isOffline:=True, userId:=userId)
 
             ' Acknowledged here rather than trusted from DocumentService's fire-and-forget so the
             ' result can be reported truthfully. The portal's ack is idempotent, so the extra call
@@ -313,5 +373,90 @@ Namespace BTA_OSG
             RefreshActiveTabGrid()
             RefreshPortalQueue()
         End Function
+
+        Private Async Sub OnOpenPortalClicked(sender As Object, e As EventArgs)
+            Try
+                If btnOpenPortal IsNot Nothing Then btnOpenPortal.Enabled = False
+                If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "OSGPortal: Launching..."
+
+                Await PortalServerManager.EnsureRunningAndOpenAsync(AddressOf SetPortalStatusThreadSafe).ConfigureAwait(True)
+            Catch ex As Exception
+                MessageBox.Show("Could not launch OSGPortal: " & ex.Message, "OSGPortal", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+            Finally
+                If btnOpenPortal IsNot Nothing Then btnOpenPortal.Enabled = True
+                RefreshPortalQueue()
+            End Try
+        End Sub
+
+        Private Async Sub OnStartTunnelClicked(sender As Object, e As EventArgs)
+            Try
+                If PortalServerManager.IsTunnelRunning AndAlso Not String.IsNullOrEmpty(PortalServerManager.ActiveTunnelUrl) Then
+                    Dim activeUrl = PortalServerManager.ActiveTunnelUrl
+                    Try
+                        Clipboard.SetText(activeUrl)
+                    Catch
+                    End Try
+
+                    Dim ans = MessageBox.Show(
+                        $"Cloudflare Tunnel is currently active!" & vbCrLf & vbCrLf &
+                        $"Public URL: {activeUrl}" & vbCrLf & vbCrLf &
+                        $"(The link has been copied to your clipboard.)" & vbCrLf & vbCrLf &
+                        $"Click YES to turn off the tunnel, or NO to keep it running.",
+                        "Cloudflare Tunnel Running",
+                        MessageBoxButtons.YesNo,
+                        MessageBoxIcon.Information)
+
+                    If ans = DialogResult.Yes Then
+                        PortalServerManager.StopTunnel()
+                        If btnStartTunnel IsNot Nothing Then btnStartTunnel.Text = "☁️ Cloudflare Tunnel"
+                        If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "Cloudflare: Stopped"
+                    End If
+                    Return
+                End If
+
+                If btnStartTunnel IsNot Nothing Then
+                    btnStartTunnel.Enabled = False
+                    btnStartTunnel.Text = "⏳ Connecting..."
+                End If
+                If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "Cloudflare: Launching headless tunnel..."
+
+                Dim tunnelUrl = Await PortalServerManager.StartCloudflareTunnelHeadlessAsync(AddressOf SetPortalStatusThreadSafe).ConfigureAwait(True)
+
+                If Not String.IsNullOrEmpty(tunnelUrl) Then
+                    Try
+                        Clipboard.SetText(tunnelUrl)
+                    Catch
+                    End Try
+
+                    If btnStartTunnel IsNot Nothing Then
+                        btnStartTunnel.Text = "☁️ Tunnel Online (Copy Link)"
+                    End If
+                    If lblPortalStatus IsNot Nothing Then
+                        lblPortalStatus.Text = $"Cloudflare: {tunnelUrl}"
+                    End If
+
+                    MessageBox.Show(
+                        $"OSGPortal is now live on the Internet!" & vbCrLf & vbCrLf &
+                        $"Public Link:" & vbCrLf &
+                        $"{tunnelUrl}" & vbCrLf & vbCrLf &
+                        $"(The link has been copied to your clipboard. You can paste it into your phone's browser.)",
+                        "Cloudflare Tunnel Online",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Information)
+                Else
+                    If btnStartTunnel IsNot Nothing Then
+                        btnStartTunnel.Text = "☁️ &Cloudflare Tunnel"
+                    End If
+                    MessageBox.Show("Could not start Cloudflare Tunnel or retrieve public link. Verify portal\cloudflared.exe exists.", "Cloudflare Tunnel", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            Catch ex As Exception
+                MessageBox.Show("Error starting Cloudflare Tunnel: " & ex.Message, "Cloudflare Tunnel", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                If btnStartTunnel IsNot Nothing Then
+                    btnStartTunnel.Text = "☁️ &Cloudflare Tunnel"
+                End If
+            Finally
+                If btnStartTunnel IsNot Nothing Then btnStartTunnel.Enabled = True
+            End Try
+        End Sub
     End Class
 End Namespace

@@ -105,74 +105,9 @@ WHERE r.RoleCode = 'ADMIN_STAFF' AND p.PermissionCode IN ('DOC_CREATE', 'DOC_EDI
 AND NOT EXISTS (SELECT 1 FROM dbo.tbl_RolePermissions rp WHERE rp.RoleID = r.RoleID AND rp.PermissionID = p.PermissionID);
 GO
 
--- Users
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_Users WHERE Username = 'apangalian')
-    INSERT INTO dbo.tbl_Users (Username, FullName, Office) VALUES ('apangalian', 'Prof. Ali B. Pangalian', 'SG');
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_Users WHERE Username = 'fzasheed')
-    INSERT INTO dbo.tbl_Users (Username, FullName, Office) VALUES ('fzasheed', 'Atty. Fatima Z. Rasheed', 'OSG Chief');
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_Users WHERE Username = 'oebrahim')
-    INSERT INTO dbo.tbl_Users (Username, FullName, Office) VALUES ('oebrahim', 'Omire Khalid B. Ebrahim', 'SysAdmin');
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_Users WHERE Username = 'hibrahim')
-    INSERT INTO dbo.tbl_Users (Username, FullName, Office) VALUES ('hibrahim', 'Hassim A. Ibrahim', 'Admin Staff');
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_Users WHERE Username = 'cusop')
-    INSERT INTO dbo.tbl_Users (Username, FullName, Office) VALUES ('cusop', 'CJ Fairoz A. Usop', 'Admin Staff');
-GO
-
--- User Roles
-DECLARE @UserId INT;
-DECLARE @RoleId INT;
-
--- SG
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'apangalian';
-SELECT @RoleId = RoleID FROM dbo.tbl_Roles WHERE RoleCode = 'SG';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_UserRoles WHERE UserID = @UserId AND RoleID = @RoleId)
-    INSERT INTO dbo.tbl_UserRoles (UserID, RoleID) VALUES (@UserId, @RoleId);
-
--- OSG_CHIEF
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'fzasheed';
-SELECT @RoleId = RoleID FROM dbo.tbl_Roles WHERE RoleCode = 'OSG_CHIEF';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_UserRoles WHERE UserID = @UserId AND RoleID = @RoleId)
-    INSERT INTO dbo.tbl_UserRoles (UserID, RoleID) VALUES (@UserId, @RoleId);
-
--- SYSADMIN
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'oebrahim';
-SELECT @RoleId = RoleID FROM dbo.tbl_Roles WHERE RoleCode = 'SYSADMIN';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_UserRoles WHERE UserID = @UserId AND RoleID = @RoleId)
-    INSERT INTO dbo.tbl_UserRoles (UserID, RoleID) VALUES (@UserId, @RoleId);
-
--- ADMIN_STAFF
-SELECT @RoleId = RoleID FROM dbo.tbl_Roles WHERE RoleCode = 'ADMIN_STAFF';
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'hibrahim';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_UserRoles WHERE UserID = @UserId AND RoleID = @RoleId)
-    INSERT INTO dbo.tbl_UserRoles (UserID, RoleID) VALUES (@UserId, @RoleId);
-
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'cusop';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_UserRoles WHERE UserID = @UserId AND RoleID = @RoleId)
-    INSERT INTO dbo.tbl_UserRoles (UserID, RoleID) VALUES (@UserId, @RoleId);
-GO
-
--- RFID Cards
-DECLARE @UserId INT;
-
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'apangalian';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_RfidCards WHERE CardPublicID = '88A9F321')
-    INSERT INTO dbo.tbl_RfidCards (UserID, CardPublicID, CardLabel) VALUES (@UserId, '88A9F321', 'Primary Card');
-
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'fzasheed';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_RfidCards WHERE CardPublicID = '99B1C456')
-    INSERT INTO dbo.tbl_RfidCards (UserID, CardPublicID, CardLabel) VALUES (@UserId, '99B1C456', 'Primary Card');
-
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'oebrahim';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_RfidCards WHERE CardPublicID = '77C3D987')
-    INSERT INTO dbo.tbl_RfidCards (UserID, CardPublicID, CardLabel) VALUES (@UserId, '77C3D987', 'Primary Card');
-
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'hibrahim';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_RfidCards WHERE CardPublicID = '55E5F666')
-    INSERT INTO dbo.tbl_RfidCards (UserID, CardPublicID, CardLabel) VALUES (@UserId, '55E5F666', 'Primary Card');
-
-SELECT @UserId = UserID FROM dbo.tbl_Users WHERE Username = 'cusop';
-IF NOT EXISTS (SELECT 1 FROM dbo.tbl_RfidCards WHERE CardPublicID = '11A2B3C4')
-    INSERT INTO dbo.tbl_RfidCards (UserID, CardPublicID, CardLabel) VALUES (@UserId, '11A2B3C4', 'Primary Card');
+-- Users. None. A provisioned server ships with no identity at all: the first run of the
+-- desktop app on it opens the claim step, which enrols the real System Administrator and the
+-- card that officer will actually tap. Demo profiles seed their own staff in code, never here.
 GO
 
 -- Directive Types

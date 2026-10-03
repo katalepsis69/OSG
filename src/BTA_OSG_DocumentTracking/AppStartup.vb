@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 
 
 Namespace BTA_OSG
@@ -18,7 +21,6 @@ Namespace BTA_OSG
         ' Services
         Public Shared AuthService As AuthenticationService
         Public Shared DocService As DocumentService
-        Public Shared CodingService As DocumentCodingService
         Public Shared DirectiveService As DirectiveService
         Public Shared RoutingService As RoutingService  
         Public Shared StorageService As StorageService
@@ -27,6 +29,7 @@ Namespace BTA_OSG
         Public Shared UserService As UserService
         Public Shared CardService As RfidCardService
         Public Shared AuditService As AuditService
+        Public Shared PortalBridgeClient As IPortalBridge
         
         Public Shared Sub Initialize()
             Settings = AppSettings.Instance
@@ -44,11 +47,11 @@ Namespace BTA_OSG
             
             ' Wire services
             AuditService = New AuditService(AuditRepo)
+            PortalBridgeClient = New PortalBridge(Settings.PortalSettings, auditService:=AuditService)
             AuthService = New AuthenticationService(UserRepo, AuditRepo, Settings.RfidSettings)
-            CodingService = New DocumentCodingService(SequenceRepo, ReferenceDataRepo)
-            DocService = New DocumentService(DocumentRepo, SequenceRepo, ReferenceDataRepo, AuditService)
-            DirectiveService = New DirectiveService(DirectiveRepo, DocumentRepo, ReferenceDataRepo, AuditService)
-            RoutingService = New RoutingService(RoutingRepo, DocumentRepo, ReferenceDataRepo, AuditService)
+            DocService = New DocumentService(DocumentRepo, SequenceRepo, ReferenceDataRepo, AuditService, PortalBridgeClient, RoutingRepo, StorageRepo)
+            DirectiveService = New DirectiveService(DirectiveRepo, DocumentRepo, ReferenceDataRepo, AuditService, PortalBridgeClient)
+            RoutingService = New RoutingService(RoutingRepo, DocumentRepo, ReferenceDataRepo, AuditService, PortalBridgeClient)
             StorageService = New StorageService(StorageRepo, DocumentRepo, AuditService)
             SearchService = New SearchService(DocumentRepo)
             PdfService = New PdfLinkService(Settings.PdfLinkSettings, AuditService)

@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System
 
 Namespace BTA_OSG
@@ -13,11 +16,20 @@ Namespace BTA_OSG
         Public Property RegisteredAtUTC As DateTime
         Public Property ReceivedDate As Date?
         Public Property CurrentStorageLocationID As Integer?
+        Public Property CabinetID As String
+        Public Property ShelfNo As String
+        Public Property BoxCode As String
         Public Property GoogleDriveUrl As String
         Public Property Remarks As String
         Public Property IsDeleted As Boolean
         Public Property DeletedByUserID As Integer?
         Public Property DeletedAtUTC As DateTime?
         Public Property DeletionReason As String
+        Public Property FlowDirection As String = "INCOMING"
+        Public Property AssignedSection As String
+        Public Property TargetDeadlineUTC As DateTime?
+        Public Property RevisionPunchlist As String
+        Public Property LastActionTaken As String
+        Public Property ExternalControlNumber As String
     End Class
 End Namespace

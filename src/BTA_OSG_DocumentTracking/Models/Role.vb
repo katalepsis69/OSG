@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Namespace BTA_OSG
     Public Class Role
         Public Property RoleID As Integer

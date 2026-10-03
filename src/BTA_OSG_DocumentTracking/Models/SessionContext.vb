@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System
 Imports System.Collections.Generic
 

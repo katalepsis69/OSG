@@ -51,5 +51,6 @@ Skills are installed in [`.agents/skills/`](./.agents/skills/) and [`.gemini/ski
 
 - **Design System:** [`DESIGN.md`](./DESIGN.md) (Desktop WinForms UI/UX rules)
 - **Deployment Guide:** [`docs/deployment.md`](./docs/deployment.md)
-- **Production Plan:** [`doc_text.txt`](./doc_text.txt)
-- **Database Scripts:** [`db/scripts/`](./db/scripts/) (001 to 007)
+- **Database Scripts:** [`db/scripts/`](./db/scripts/) (001 to 015)
+- **Audit Prompt:** [`docs/code-audit-prompt.md`](./docs/code-audit-prompt.md) (v4 canonical audit pass, 2026-10-02)
+- **Refactoring Prompt:** [`docs/refactoring-prompt.md`](./docs/refactoring-prompt.md) (v2, zero-behavior-change passes, 2026-10-02)

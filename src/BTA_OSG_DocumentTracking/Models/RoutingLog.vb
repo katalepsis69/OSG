@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System
 
 Namespace BTA_OSG
@@ -5,7 +8,9 @@ Namespace BTA_OSG
         Public Property RoutingLogID As Integer
         Public Property DocumentID As Integer
         Public Property FromStatusID As Integer?
-        Public Property ToStatusID As Integer
+        ' Nullable: a replayed log whose action is not a status code must not be coerced
+        ' onto RECEIVED, and tbl_RoutingLogs.ToStatusID already accepts NULL.
+        Public Property ToStatusID As Integer?
         Public Property FromOffice As String
         Public Property ToOffice As String
         Public Property RoutingRemarks As String

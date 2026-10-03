@@ -16,7 +16,7 @@ Namespace BTA_OSG
             _auditService = auditService
         End Sub
 
-        Public Function MoveDocument(docId As Integer, storageLocationId As Integer, movedByUserId As Integer, reason As String) As DocumentMovement
+        Public Function MoveDocument(docId As Integer, storageLocationId As Integer, movedByUserId As Integer, reason As String, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing) As DocumentMovement
             Dim movement As New DocumentMovement With {
                 .DocumentID = docId,
                 .StorageLocationID = storageLocationId,
@@ -24,13 +24,35 @@ Namespace BTA_OSG
                 .MovedAtUTC = DateTime.UtcNow,
                 .MovementReason = reason
             }
-            Dim newId As Integer = _storageRepo.InsertMovement(movement)
-            movement.MovementID = newId
 
-            _docRepo.UpdateStorageLocation(docId, storageLocationId)
-
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("STORAGE_LOCATION_CHANGED", "Storage", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
+            If transaction IsNot Nothing Then
+                ' The caller owns the transaction (MoveStorage wraps the landmark lookup and
+                ' this movement together), so the audit row joins it: an audit failure after
+                ' commit must not turn an already-committed move into a cache fallback that
+                ' replays a duplicate movement.
+                Dim newId As Integer = _storageRepo.InsertMovement(movement, transaction)
+                movement.MovementID = newId
+                _docRepo.UpdateStorageLocation(docId, storageLocationId, transaction)
+                If _auditService IsNot Nothing Then
+                    _auditService.LogEvent("STORAGE_LOCATION_CHANGED", "Storage", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, transaction)
+                End If
+            Else
+                Using conn = _docRepo.ConnectionFactory.CreateConnection()
+                    Using trans = conn.BeginTransaction()
+                        Try
+                            Dim newId As Integer = _storageRepo.InsertMovement(movement, trans)
+                            movement.MovementID = newId
+                            _docRepo.UpdateStorageLocation(docId, storageLocationId, trans)
+                            If _auditService IsNot Nothing Then
+                                _auditService.LogEvent("STORAGE_LOCATION_CHANGED", "Storage", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, trans)
+                            End If
+                            trans.Commit()
+                        Catch
+                            trans.Rollback()
+                            Throw
+                        End Try
+                    End Using
+                End Using
             End If
             Return movement
         End Function

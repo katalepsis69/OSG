@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Namespace BTA_OSG
     Public Class PdfLinkSettings
         Public Property AllowedHosts As String() = {"drive.google.com", "docs.google.com"}

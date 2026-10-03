@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System
 
 Namespace BTA_OSG
@@ -22,5 +25,7 @@ Namespace BTA_OSG
         Public Property CorrelationId As Guid?
         Public Property CardPublicIDMasked As String
         Public Property ApplicationVersion As String
+        Public Property PrevHash As Byte()
+        Public Property RowHash As Byte()
     End Class
 End Namespace

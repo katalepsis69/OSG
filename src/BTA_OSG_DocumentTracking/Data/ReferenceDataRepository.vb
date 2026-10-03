@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System.Collections.Generic
 Imports System.Data
 Imports Microsoft.Data.SqlClient

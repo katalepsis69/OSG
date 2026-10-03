@@ -31,7 +31,10 @@ Namespace BTA_OSG
                 canMoveUser = Convert.ToBoolean(user("CanMove"))
             End If
 
-            Dim canSoftCopyUser As Boolean = True
+            ' Soft-copy access is deny-by-default: only an explicit True grants it. The old
+            ' allow-unless-False shape failed open exactly when the session was in the
+            ' anomalous state (dropped mid-dialog, NULL flag) where enforcement matters.
+            Dim canSoftCopyUser As Boolean = False
             If user.Table.Columns.Contains("CanSoftCopy") AndAlso Not IsDBNull(user("CanSoftCopy")) Then
                 canSoftCopyUser = Convert.ToBoolean(user("CanSoftCopy"))
             End If
@@ -66,6 +69,56 @@ Namespace BTA_OSG
             Return EmbeddedDB.MapRowToDocument(DocRow)
         End Function
 
+        ''' <summary>
+        ''' The held DocRow can be detached under the dialog by a sync tick that removes or
+        ''' re-keys the row; touching it then throws RowNotInTableException out of the click
+        ''' handler. Every action validates first and closes the dialog when the document
+        ''' is gone, mirroring what OpenSelectedDocumentDetail does before opening.
+        ''' </summary>
+        Private Function EnsureDocRowLive() As Boolean
+            If DocRow Is Nothing OrElse DocRow.RowState = System.Data.DataRowState.Deleted OrElse DocRow.RowState = System.Data.DataRowState.Detached OrElse EmbeddedDB.GetDocumentByID(DocID) Is Nothing Then
+                MessageBox.Show("This document is no longer available. It may have been removed or changed by another workstation.", "Document Unavailable", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Me.Close()
+                Return False
+            End If
+            ' The buttons were computed when the dialog opened; a sync tick that moved the
+            ' document (another seat approved it, a directive landed) must re-gate them
+            ' now, or a still-visible button would drive a second transition.
+            UpdateActionButtons()
+            Return True
+        End Function
+
+        ''' <summary>
+        ''' The status id this dialog is showing, for the server-side from-status guard.
+        ''' The cache stores status codes while SQL compares ids, so resolve here; an
+        ''' unresolvable code returns 0, which the caller treats as no guard.
+        ''' </summary>
+        Private Function ExpectedFromStatusId() As Integer
+            If AppStartup.ReferenceDataRepo Is Nothing Then Return 0
+            Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(DocRow("CurrentStatus").ToString())
+            Return If(status IsNot Nothing, status.StatusID, 0)
+        End Function
+
+        ''' <summary>
+        ''' True when the server's live row no longer carries the status this dialog was
+        ''' opened with: another seat approved, released, or routed it while it sat open.
+        ''' </summary>
+        Private Function DocumentStateMovedOnServer() As Boolean
+            If Program.Coordinator Is Nothing OrElse Not Program.IsDatabaseConnected Then Return False
+            If AppStartup.DocumentRepo Is Nothing Then Return False
+            Dim expected = ExpectedFromStatusId()
+            If expected = 0 Then Return False
+            Dim liveDoc = AppStartup.DocumentRepo.GetById(DocID)
+            If liveDoc Is Nothing Then Return False
+            Return liveDoc.StatusID <> expected
+        End Function
+
+        Private Sub WarnStateMoved(actionName As String)
+            Program.Coordinator.RefreshFromServer("Documents")
+            RefreshGrids()
+            MessageBox.Show("This document's state changed on the server while you were viewing it. The view has been refreshed; check the current status before " & actionName & ".", "Document State Changed", MessageBoxButtons.OK, MessageBoxIcon.Information)
+        End Sub
+
         Private Function GetCurrentRoutingLogsList() As List(Of RoutingLog)
             Return EmbeddedDB.GetRoutingLogsForDocument(DocID)
         End Function
@@ -75,6 +128,7 @@ Namespace BTA_OSG
         End Function
 
         Private Sub OnPrintRoutingSlip(sender As Object, e As EventArgs)
+            If Not EnsureDocRowLive() Then Return
             Dim docObj = GetCurrentDocumentObject()
             Dim logs = GetCurrentRoutingLogsList()
             Dim directives = GetCurrentDirectivesList()
@@ -86,6 +140,7 @@ Namespace BTA_OSG
                 MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
 
             Using dlg As New FormRevisionDialog(DocID, DocRow("DocCode").ToString(), DocRow("Title").ToString(), DocRow("AssignedSection").ToString())
                 If dlg.ShowDialog(Me) = DialogResult.OK Then
@@ -111,6 +166,11 @@ Namespace BTA_OSG
                 MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
+            If DocumentStateMovedOnServer() Then
+                WarnStateMoved("resubmitting")
+                Return
+            End If
 
             Using promptDlg As New FormInputPrompt("Resubmit Document for Sec Gen Review", "Enter resubmission remarks or notes detailing amendments made:", "Punchlist requirements completed.", True)
                 If promptDlg.ShowDialog(Me) = DialogResult.OK Then
@@ -121,11 +181,11 @@ Namespace BTA_OSG
                         If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
                             staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
                         End If
-                        If Program.Coordinator IsNot Nothing Then
-                            Program.Coordinator.ResubmitDocument(DocID, staffName, notes, staffUserId)
-                        Else
-                            EmbeddedDB.ResubmitDocument(DocID, staffName, notes)
-                        End If
+                If Program.Coordinator IsNot Nothing Then
+                    Program.Coordinator.ResubmitDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
+                Else
+                    EmbeddedDB.ResubmitDocument(DocID, staffName, notes)
+                End If
                         MainFrm.ReportStatus("Document resubmitted to the Secretary-General for review.")
                         RefreshGrids()
                         MainFrm.RefreshActiveTabGrid()
@@ -139,18 +199,30 @@ Namespace BTA_OSG
                 MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
 
             Dim confirm = MessageBox.Show("Approve document " & DocRow("DocCode").ToString() & " for official transmittal?", "Confirm Approval", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
             If confirm = DialogResult.Yes Then
                 Dim staffName = MainFrm.CurrentUser("FullName").ToString()
+                ' Attribute the action to the actual role: OSG Chief and System Administrator
+                ' approvals must not be recorded as Secretary-General approvals.
+                Dim approverRole As String = "OSG Staff"
+                If MainFrm.CurrentUser.Table.Columns.Contains("Role") AndAlso Not IsDBNull(MainFrm.CurrentUser("Role")) Then
+                    approverRole = MainFrm.CurrentUser("Role").ToString()
+                End If
+                Dim notes = "Approved by " & approverRole & "."
                 Dim staffUserId As Integer = 1
                 If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
                     staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
                 End If
+                If DocumentStateMovedOnServer() Then
+                    WarnStateMoved("approving")
+                    Return
+                End If
                 If Program.Coordinator IsNot Nothing Then
-                    Program.Coordinator.ApproveDocument(DocID, staffName, "Approved by Secretary-General.", staffUserId)
+                    Program.Coordinator.ApproveDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
                 Else
-                    EmbeddedDB.ApproveDocument(DocID, staffName, "Approved by Secretary-General.")
+                    EmbeddedDB.ApproveDocument(DocID, staffName, notes)
                 End If
                 MainFrm.ReportStatus("Document approved and routed to Records Section for release.")
                 RefreshGrids()
@@ -163,6 +235,7 @@ Namespace BTA_OSG
                 MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
 
             Dim confirm = MessageBox.Show("Release document " & DocRow("DocCode").ToString() & " to destination office " & DocRow("DestinationOffice").ToString() & "?", "Confirm Release", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
             If confirm = DialogResult.Yes Then
@@ -171,8 +244,12 @@ Namespace BTA_OSG
                 If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
                     staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
                 End If
+                If DocumentStateMovedOnServer() Then
+                    WarnStateMoved("releasing")
+                    Return
+                End If
                 If Program.Coordinator IsNot Nothing Then
-                    Program.Coordinator.ReleaseDocument(DocID, staffName, "Released to destination office.", staffUserId)
+                    Program.Coordinator.ReleaseDocument(DocID, staffName, "Released to destination office.", staffUserId, ExpectedFromStatusId())
                 Else
                     EmbeddedDB.ReleaseDocument(DocID, staffName, "Released to destination office.")
                 End If
@@ -192,6 +269,7 @@ Namespace BTA_OSG
                 MessageBox.Show("Access Denied: Current user does not have permission to route documents.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
 
             Dim staffUserId As Integer = 1
             If MainFrm.CurrentUser IsNot Nothing AndAlso MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
@@ -200,10 +278,14 @@ Namespace BTA_OSG
 
             Using dlg As New FormRouteDocument(DocID, DocRow("DestinationOffice").ToString(), MainFrm.CurrentUser("FullName").ToString(), staffUserId)
                 If dlg.ShowDialog(Me) = DialogResult.OK Then
+                    ' Reload the row first: the coordinator path may have transitioned the
+                    ' status server-side and pulled it back, and the portal must hear the
+                    ' document's real status, not an assumption about what routing did.
+                    LoadDocData()
                     If DocRow.Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(DocRow("ExternalControlNumber")) Then
                         Dim extCn = DocRow("ExternalControlNumber").ToString()
                         If Not String.IsNullOrWhiteSpace(extCn) Then
-                            DocumentService.PushPortalStatusSafe(extCn, "FOR_REVIEW")
+                            DocumentService.PushPortalStatusSafe(extCn, DocRow("CurrentStatus").ToString())
                         End If
                     End If
                     RefreshGrids()
@@ -217,6 +299,7 @@ Namespace BTA_OSG
                 MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
 
             If MainFrm.CurrentUser.Table.Columns.Contains("CanMove") AndAlso Not IsDBNull(MainFrm.CurrentUser("CanMove")) AndAlso Not Convert.ToBoolean(MainFrm.CurrentUser("CanMove")) Then
                 MessageBox.Show("Access Denied: Current user does not have permission to transfer document storage locations.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -238,12 +321,26 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub OnLaunchPDF(sender As Object, e As EventArgs)
-            If MainFrm.CurrentUser IsNot Nothing AndAlso MainFrm.CurrentUser.Table.Columns.Contains("CanSoftCopy") AndAlso Not IsDBNull(MainFrm.CurrentUser("CanSoftCopy")) AndAlso Not Convert.ToBoolean(MainFrm.CurrentUser("CanSoftCopy")) Then
+            ' Deny-by-default: no session, missing column, or NULL flag all refuse.
+            If MainFrm.CurrentUser Is Nothing Then
+                MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+            Dim canSoftCopy As Boolean = False
+            If MainFrm.CurrentUser.Table.Columns.Contains("CanSoftCopy") AndAlso Not IsDBNull(MainFrm.CurrentUser("CanSoftCopy")) Then
+                canSoftCopy = Convert.ToBoolean(MainFrm.CurrentUser("CanSoftCopy"))
+            End If
+            If Not canSoftCopy Then
                 MessageBox.Show("Access Denied: Current user does not have permission to view or launch soft-copy attachments.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
+            If Not EnsureDocRowLive() Then Return
 
             Dim url = DocRow("GDriveURL").ToString()
+            If String.IsNullOrWhiteSpace(url) Then
+                MessageBox.Show("No soft-copy attachment is linked to this document.", "No Attachment", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return
+            End If
             Dim errUrl As String = ""
             If Not EmbeddedDB.ValidateGDriveURL(url, errUrl) Then
                 MessageBox.Show(errUrl, "Security Validation Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning)

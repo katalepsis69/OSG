@@ -17,6 +17,7 @@ Design System Philosophy: Desktop Civic Calm (Derived from universal design engi
   - Fixed, predictable screen structures across all forms.
   - No asymmetric layouts, experimental navigation, or floating unanchored controls.
   - Consistent header banner, standardized search filter bar, central DataGridView, and docked bottom status bar.
+  - Permitted exception: the main window's sidebar may collapse to a 56px icon rail via the explicit collapse/expand toggle; both states share the identical control order and positioning rules.
 * **`MOTION_INTENSITY: 1` (Instantaneous Native Response)**
   - Zero decorative animation, zero spring physics, zero transition delays.
   - State changes happen in 0 to 50ms.
@@ -43,7 +44,7 @@ The visual hierarchy uses an institutional civic palette inspired by the Bangsam
 | `--color-ink-muted` | `#55606A` | Labels, helper microcopy, timestamps, watermark hints | 6.2:1 (AA) |
 | `--color-primary` | `#146A3D` | Primary action buttons (`&Save`, `&Route`), active tab borders | 5.8:1 (AA) |
 | `--color-primary-soft` | `#E6F2EB` | Selected DataGridView row wash, verified status badge | Accent Wash |
-| `--color-accent-sg` | `#B08524` | Secretary-General special directives, gold urgent flags | 4.6:1 (AA) |
+| `--color-accent-sg` | `#8C6414` | Secretary-General special directives, gold urgent flags | 5.2:1 (AA) |
 | `--color-accent-soft` | `#FEF9E7` | Secretary-General directive alert panel background | Warm Highlight |
 | `--color-danger` | `#A93226` | Terminal cancellation, overdue warning flags, critical errors | 6.1:1 (AA) |
 | `--color-danger-soft` | `#FBEAE8` | Overdue badge wash, validation error banner wash | Soft Alert |
@@ -65,7 +66,7 @@ WinForms desktop applications achieve clarity through distinct surface elevation
 
 * **Pending / In Transit:** `#52606B` text on `#ECEDF0` wash.
 * **Received / Verified:** `#146A3D` text on `#E6F2EB` wash.
-* **Secretary-General Directive:** `#B08524` text on `#FEF9E7` wash with bold indicator.
+* **Secretary-General Directive:** `#8C6414` text on `#FEF9E7` wash with bold indicator.
 * **Action Overdue / Urgent:** `#A93226` text on `#FBEAE8` wash.
 * **Archived / Physical Storage:** `#3A4550` text on `#E2E6EA` wash.
 
@@ -129,7 +130,7 @@ $$\text{Outer Form Margin (20–24px)} > \text{GroupBox / Panel Margin (12–16p
 The `DataGridView` is the central operational tool of the application. It must follow strict performance and readability standards:
 
 ### Performance and Visual Configuration
-* `AutoGenerateColumns = False` (all columns explicitly defined with data bindings).
+* `AutoGenerateColumns = True` in tandem with deterministic post-binding `Format*Columns()` methods (all columns explicitly defined with headers, widths, alignment, and visibility).
 * `DoubleBuffered = True` enabled on all grids to eliminate repaint flicker during fast scrolling.
 * `SelectionMode = DataGridViewSelectionMode.FullRowSelect`.
 * `MultiSelect = False` (unless batch routing is explicitly enabled).
@@ -145,9 +146,15 @@ The `DataGridView` is the central operational tool of the application. It must f
 ### Column Alignment Standards
 * Document Tracking Number: Left-aligned, monospace/tabular Segoe UI.
 * Title / Subject / Source Agency: Left-aligned, fill weight column.
-* Status Badge: Centered.
-* Date / Time Stamp: Right-aligned.
-* Sequence / Row Numbers: Right-aligned.
+* Status Badge / Directional Flow: Centered (both header and cells).
+* Date / Time Stamp: Left-aligned (aligned with column header).
+* Sequence / Row Numbers: Right-aligned (both header and cells).
+
+### Cell Value Rendering Standards
+* **Readable status labels:** status cells render the display name seeded in `tbl_DocumentStatuses` (`FOR_REVIEW` shows as `For Review`) inside the semantic badge fill. The bound value keeps the raw code so filters, workflow guards, and audit snapshots are unaffected.
+* **Cell gutter:** every mapped column keeps `Padding = New Padding(8, 2, 8, 2)` so a filled status badge never visually bleeds into the neighbouring column's text.
+* **Unbreakable values:** a value that cannot wrap (a `https://drive.google.com/...` soft copy link is a single token) is never rendered raw, because WinForms text layout clips it mid-string. The Soft Copy Link column states `Attached` / `Not Attached` with the raw link in the cell tooltip, so launching stays on the audited `&Open Link` / `&Launch PDF` buttons instead of an in-cell hyperlink that would compete with the row-level double-click gesture. The Document Details view wraps the same link at path separators instead.
+* **Measurement source:** column widths are measured from the displayed (formatted) text, never from the stored value, so a badge or state label reserves width rather than the code or URL behind it.
 
 ### 4-State Asynchronous DataGrid Lifecycle
 

@@ -188,17 +188,18 @@ Namespace BTA_OSG
             End If
         End Sub
 
-        ' Columns share the grid width in proportion to the widest text they display (measured as
-        ' formatted, never as stored); when that cannot fit, widths are literal and the grid scrolls.
+        ' Columns share the grid width proportionally with responsive Fill mode and minimum bounds
+        ' so text does not clip and tables cleanly fill 100% of available screen width.
         Private Shared Sub BalanceColumns(dgv As DataGridView)
-            Const sampleRows As Integer = 60   ' Bounds measuring overhead during tab refresh
-            Const cellPadding As Integer = 18  ' 8px cell gutter each side plus 2px slack
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Const sampleRows As Integer = 60
+            Const cellPadding As Integer = 18
             Dim cellFont = dgv.DefaultCellStyle.Font
             Dim headerFont = dgv.ColumnHeadersDefaultCellStyle.Font
 
             Dim needs As New List(Of DataGridViewColumn)()
             Dim weights As New List(Of Single)()
-            Dim totalNeeded As Single = 0
 
             For Each col As DataGridViewColumn In dgv.Columns
                 If Not col.Visible Then Continue For
@@ -215,24 +216,19 @@ Namespace BTA_OSG
                     End If
                 Next
 
-                ' One very long value must not drag every column out of Fill, so a single cell is
-                ' allowed to claim at most this much before it is expected to wrap.
-                widest = Math.Min(widest, 260.0F)
-
+                widest = Math.Min(widest, 320.0F)
                 needs.Add(col)
-                weights.Add(Math.Max(24.0F, widest))
-                totalNeeded += Math.Max(24.0F, widest)
+                weights.Add(Math.Max(30.0F, widest))
             Next
 
-            Dim fits As Boolean = totalNeeded <= dgv.DisplayRectangle.Width
             For i As Integer = 0 To needs.Count - 1
-                needs(i).FillWeight = weights(i)
-                If fits Then
-                    needs(i).AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-                Else
-                    needs(i).AutoSizeMode = DataGridViewAutoSizeColumnMode.None
-                    needs(i).Width = CInt(weights(i))
+                Dim col = needs(i)
+                Dim measuredMin = CInt(Math.Max(30.0F, Math.Min(weights(i), 280.0F)))
+                col.MinimumWidth = Math.Max(col.MinimumWidth, measuredMin)
+                If col.FillWeight <= 1.0F OrElse col.FillWeight = 100.0F Then
+                    col.FillWeight = weights(i)
                 End If
+                col.AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
             Next
         End Sub
 
@@ -280,6 +276,11 @@ Namespace BTA_OSG
                             ConfigureColumn(col, "Soft Copy Link")
                         Case "CabinetID", "ShelfNo", "BoxCode", "RevisionPunchlist", "ExternalControlNumber"
                             col.Visible = False
+                        Case "RowVersion"
+                            ' A Byte() column auto-generates as an image cell, and rendering the
+                            ' optimistic-concurrency token as a picture throws "Parameter is not
+                            ' valid" once the mirror fills it in from SQL. It is never display data.
+                            col.Visible = False
                     End Select
                 Next
                 FinishLayout(dgv)
@@ -312,6 +313,65 @@ Namespace BTA_OSG
                             ConfigureColumn(col, "Date / Time Issued")
                     End Select
                 Next
+                FinishLayout(dgv)
+            Finally
+                dgv.ResumeLayout()
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' Admin tab's Workstation Sync Status grid. The Status column is computed at bind
+        ''' time because the cache holds the raw heartbeat only; a seat whose heartbeat is
+        ''' older than three sync intervals reads as Stale, which is how an offline machine
+        ''' is meant to look.
+        ''' </summary>
+        Public Shared Sub FormatSeatColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+
+            Try
+                dgv.SuspendLayout()
+
+                For Each col As DataGridViewColumn In dgv.Columns
+                    Select Case col.Name
+                        Case "MachineName"
+                            ConfigureColumn(col, "Workstation")
+                        Case "LastSyncUTC"
+                            ConfigureColumn(col, "Last Sync (UTC)")
+                        Case "AppVersion"
+                            ConfigureColumn(col, "App Version", font:=CivicCalmTheme.FontIdentifier)
+                        Case "PendingOutbox"
+                            ConfigureColumn(col, "Pending Outbox", DataGridViewContentAlignment.MiddleRight)
+                        Case "LastError"
+                            ConfigureColumn(col, "Last Error")
+                        Case "PendingSync"
+                            col.Visible = False
+                    End Select
+                Next
+
+                If dgv.Columns("SeatStatus") Is Nothing Then
+                    dgv.Columns.Add("SeatStatus", "Status")
+                    Dim statusCol = dgv.Columns("SeatStatus")
+                    statusCol.ReadOnly = True
+                End If
+
+                Dim staleSeconds = AppSettings.Instance.DatabaseSettings.EffectiveSyncIntervalSeconds() * 3
+                For Each row As DataGridViewRow In dgv.Rows
+                    Dim parsed As DateTime
+                    Dim stale As Boolean = True
+                    If DateTime.TryParse(Convert.ToString(row.Cells("LastSyncUTC").Value), parsed) Then
+                        stale = (DateTime.UtcNow - DateTime.SpecifyKind(parsed, DateTimeKind.Utc)).TotalSeconds > staleSeconds
+                    End If
+                    Dim statusCell = row.Cells("SeatStatus")
+                    statusCell.Value = If(stale, "Stale (offline?)", "Syncing")
+                    If stale Then
+                        statusCell.Style.BackColor = Color.FromArgb(255, 243, 205)
+                        statusCell.Style.SelectionBackColor = Color.FromArgb(255, 243, 205)
+                    Else
+                        statusCell.Style.BackColor = Color.Empty
+                        statusCell.Style.SelectionBackColor = Color.Empty
+                    End If
+                Next
+
                 FinishLayout(dgv)
             Finally
                 dgv.ResumeLayout()
@@ -356,16 +416,26 @@ Namespace BTA_OSG
                     Select Case col.Name
                         Case "AuditID"
                             ConfigureColumn(col, "Audit ID", DataGridViewContentAlignment.MiddleRight)
-                        Case "UserID"
+                            col.MinimumWidth = 80
+                            col.FillWeight = 60
+                        Case "UserID", "PendingSync"
                             col.Visible = False
                         Case "UserName"
                             ConfigureColumn(col, "User Account")
+                            col.MinimumWidth = 160
+                            col.FillWeight = 140
                         Case "ActionType"
                             ConfigureColumn(col, "Action Type", DataGridViewContentAlignment.MiddleCenter)
+                            col.MinimumWidth = 130
+                            col.FillWeight = 110
                         Case "ActionDescription"
                             ConfigureColumn(col, "Action Description")
+                            col.MinimumWidth = 260
+                            col.FillWeight = 340
                         Case "Timestamp"
                             ConfigureColumn(col, "Timestamp (UTC)")
+                            col.MinimumWidth = 150
+                            col.FillWeight = 130
                     End Select
                 Next
                 FinishLayout(dgv)
@@ -384,20 +454,34 @@ Namespace BTA_OSG
                     Select Case col.Name
                         Case "RoutingID"
                             ConfigureColumn(col, "Log ID", DataGridViewContentAlignment.MiddleRight)
+                            col.MinimumWidth = 80
+                            col.FillWeight = 60
                         Case "DocumentID"
                             col.Visible = False
                         Case "FromOffice"
                             ConfigureColumn(col, "Originating Office")
+                            col.MinimumWidth = 140
+                            col.FillWeight = 120
                         Case "ToOffice"
                             ConfigureColumn(col, "Destination Office")
+                            col.MinimumWidth = 140
+                            col.FillWeight = 120
                         Case "ActionTaken"
                             ConfigureColumn(col, "Action Taken")
+                            col.MinimumWidth = 120
+                            col.FillWeight = 100
                         Case "Remarks"
                             ConfigureColumn(col, "Routing Remarks")
+                            col.MinimumWidth = 200
+                            col.FillWeight = 240
                         Case "RoutedBy"
                             ConfigureColumn(col, "Routed By")
+                            col.MinimumWidth = 130
+                            col.FillWeight = 110
                         Case "Timestamp"
                             ConfigureColumn(col, "Date Transmitted")
+                            col.MinimumWidth = 130
+                            col.FillWeight = 110
                     End Select
                 Next
                 FinishLayout(dgv)
@@ -416,18 +500,30 @@ Namespace BTA_OSG
                     Select Case col.Name
                         Case "MovementID"
                             ConfigureColumn(col, "Move ID", DataGridViewContentAlignment.MiddleRight)
+                            col.MinimumWidth = 80
+                            col.FillWeight = 60
                         Case "DocumentID"
                             col.Visible = False
                         Case "FromLocation"
                             ConfigureColumn(col, "Prior Storage Landmark")
+                            col.MinimumWidth = 150
+                            col.FillWeight = 130
                         Case "ToLocation"
                             ConfigureColumn(col, "New Storage Landmark")
+                            col.MinimumWidth = 150
+                            col.FillWeight = 130
                         Case "MovedBy"
                             ConfigureColumn(col, "Transferred By")
+                            col.MinimumWidth = 140
+                            col.FillWeight = 120
                         Case "Reason"
                             ConfigureColumn(col, "Transfer Reason / Justification")
+                            col.MinimumWidth = 220
+                            col.FillWeight = 260
                         Case "Timestamp"
                             ConfigureColumn(col, "Date Transferred")
+                            col.MinimumWidth = 140
+                            col.FillWeight = 120
                     End Select
                 Next
                 FinishLayout(dgv)
@@ -446,18 +542,36 @@ Namespace BTA_OSG
                     Select Case col.Name
                         Case "ControlNumber"
                             ConfigureColumn(col, "External CN", font:=CivicCalmTheme.FontTabular)
+                            col.MinimumWidth = 180
+                            col.FillWeight = 140
                         Case "Category"
                             ConfigureColumn(col, "Category", DataGridViewContentAlignment.MiddleCenter)
+                            col.MinimumWidth = 90
+                            col.FillWeight = 70
                         Case "DocumentTitle"
                             ConfigureColumn(col, "Document Title / Subject")
+                            col.MinimumWidth = 240
+                            col.FillWeight = 260
                         Case "RequesterName"
                             ConfigureColumn(col, "Submitter Name")
+                            col.MinimumWidth = 150
+                            col.FillWeight = 130
                         Case "RequesterEmail"
                             ConfigureColumn(col, "Submitter Email")
+                            col.MinimumWidth = 180
+                            col.FillWeight = 150
                         Case "RequesterPhone"
                             ConfigureColumn(col, "Phone")
+                            col.MinimumWidth = 130
+                            col.FillWeight = 100
+                        Case "RequesterGender"
+                            ConfigureColumn(col, "Gender", DataGridViewContentAlignment.MiddleCenter)
+                            col.MinimumWidth = 90
+                            col.FillWeight = 80
                         Case "CreatedAt"
                             ConfigureColumn(col, "Submitted At (UTC)")
+                            col.MinimumWidth = 150
+                            col.FillWeight = 120
                     End Select
                 Next
                 FinishLayout(dgv)

@@ -1,0 +1,19 @@
+# BTA OSG Public Intake Portal: System Crontab Entries
+# Add this to the www-data crontab on the cloud VPS: crontab -u www-data -e
+# The log directory must exist and be writable by www-data (oracle-setup.sh and
+# the runbook create it; to do it by hand: sudo mkdir -p /var/log/osg-portal
+# && sudo chown www-data:www-data /var/log/osg-portal). A redirect into
+# /var/log itself aborts the whole job, because the cron shell cannot write there.
+
+# Hourly batch milestone email notifications (runs every hour on the hour)
+# Email links reuse the last public URL served by the web app (persisted automatically).
+# To pin a fixed domain instead, set PORTAL_BASE_URL_PINNED in config.php, or
+# uncomment and edit the line below:
+# PORTAL_BASE_URL=https://portal.example.gov.ph
+0 * * * * /usr/bin/php /var/www/osg-portal/cron/send_milestones.php >> /var/log/osg-portal/cron.log 2>&1
+
+# Daily portal database + code backup: install this one in ROOT's crontab, not
+# www-data's, because the script reads /etc/osg-portal-backup.cnf (chmod 600,
+# owned by root). Keeping the backup schedule in exactly one place avoids two
+# dumps a night; see docs/portal-deployment-runbook.md step 6.2.
+#   30 2 * * * /usr/bin/bash /var/www/osg-portal/deploy/backup-portal.sh >> /var/log/osg-portal/backup.log 2>&1

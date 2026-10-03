@@ -1,3 +1,6 @@
+﻿Option Explicit On
+Option Strict On
+
 Imports System
 Imports System.Collections.Generic
 
@@ -9,7 +12,7 @@ Namespace BTA_OSG
             _auditRepo = auditRepo
         End Sub
 
-        Public Sub LogEvent(actionType As String, entityType As String, entityId As String, documentCode As String, oldValues As String, newValues As String, success As Boolean, failureReason As String)
+        Public Sub LogEvent(actionType As String, entityType As String, entityId As String, documentCode As String, oldValues As String, newValues As String, success As Boolean, failureReason As String, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing)
             Dim entry As New AuditEntry With {
                 .EventAtUTC = DateTime.UtcNow,
                 .ActionType = actionType,
@@ -34,7 +37,7 @@ Namespace BTA_OSG
                 End If
             End If
 
-            _auditRepo.Insert(entry)
+            _auditRepo.Insert(entry, transaction)
         End Sub
 
         Public Sub LogLoginEvent(actionType As String, userId As Integer?, username As String, fullName As String, role As String, cardPublicIdMasked As String, success As Boolean, failureReason As String)

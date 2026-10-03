@@ -14,23 +14,28 @@ Namespace BTA_OSG
             _auditService = auditService
         End Sub
 
-        Public Function IssueCard(userId As Integer, cardPublicId As String, cardLabel As String, issuedBy As Integer) As Integer
+        Public Function IssueCard(userId As Integer, cardPublicId As String, cardLabel As String, issuedBy As Integer, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing) As Integer
             If String.IsNullOrWhiteSpace(cardPublicId) Then Throw New ArgumentException("CardPublicID cannot be empty.")
             Dim cleanId As String = cardPublicId.Trim().ToUpperInvariant()
             Dim newId As Integer = 0
 
-            Using conn As SqlConnection = _connFactory.CreateConnection()
-                Using cmd As New SqlCommand("INSERT INTO tbl_RfidCards (UserID, CardPublicID, CardLabel, CreatedByUserID, CreatedAtUTC, IsActive) VALUES (@u, @c, @l, @ib, SYSUTCDATETIME(), 1); SELECT SCOPE_IDENTITY();", conn)
+            Dim conn As SqlConnection = If(transaction IsNot Nothing, transaction.Connection, _connFactory.CreateConnection())
+            Try
+                Using cmd As New SqlCommand("INSERT INTO tbl_RfidCards (UserID, CardPublicID, CardLabel, CreatedByUserID, CreatedAtUTC, IsActive) VALUES (@u, @c, @l, @ib, SYSUTCDATETIME(), 1); SELECT SCOPE_IDENTITY();", conn, transaction)
                     cmd.Parameters.AddWithValue("@u", userId)
                     cmd.Parameters.AddWithValue("@c", cleanId)
                     cmd.Parameters.AddWithValue("@l", If(cardLabel IsNot Nothing, CType(cardLabel, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ib", issuedBy)
                     newId = Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
-            End Using
+            Finally
+                If transaction Is Nothing Then conn.Dispose()
+            End Try
 
             If _auditService IsNot Nothing Then
-                _auditService.LogEvent("RFID_ISSUED", "RfidCard", newId.ToString(), cleanId, Nothing, Nothing, True, Nothing)
+                ' Masked like every other card-credential log site (AGENTS.md non-negotiable 5):
+                ' the raw card number lives in tbl_RfidCards and nowhere else.
+                _auditService.LogEvent("RFID_ISSUED", "RfidCard", newId.ToString(), If(cleanId.Length > 4, "****" & Right(cleanId, 4), cleanId), Nothing, Nothing, True, Nothing, transaction)
             End If
             Return newId
         End Function

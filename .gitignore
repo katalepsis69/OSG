@@ -1,7 +1,99 @@
-bin/
-obj/
-*.user
-*.suo
-.vs/
-bta_osg_db.xml
+# ==============================================================================
+# BTA OSG Document Tracking & Monitoring System - .gitignore
+# Excludes all build artifacts, user configs, temporary data, installers,
+# AI/IDE metadata, and files not needed to build or run the system.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Build outputs, compilation artifacts, and binaries
+# ------------------------------------------------------------------------------
+[Bb]in/
+[Oo]bj/
 dist/
+TestResults/
+*.dmp
+*.crashdump
+
+# ------------------------------------------------------------------------------
+# User-specific developer & IDE files (Visual Studio, VS Code, JetBrains)
+# ------------------------------------------------------------------------------
+.vs/
+.vscode/
+.idea/
+*.user
+*.userosv
+*.suo
+*.sln.docstates
+*.userprefs
+*.pidb
+*.booproj
+
+# ------------------------------------------------------------------------------
+# External installers & third-party setup packages (not needed to run system)
+# ------------------------------------------------------------------------------
+install 1st/
+*.msi
+*.exe.config.deploy
+
+# ------------------------------------------------------------------------------
+# AI assistant metadata, prompt scratchpads, and audit notes
+# ------------------------------------------------------------------------------
+.zcode/
+.zcodeignore
+anti-slop/
+diagram.html
+doc_text.txt
+docs/superpowers/plans/
+docs/superpowers/specs/
+
+# ------------------------------------------------------------------------------
+# Local database files, backups, and XML fallback stores
+# ------------------------------------------------------------------------------
+bta_osg_db.xml
+*.mdf
+*.ldf
+*.ndf
+*.bak
+
+# ------------------------------------------------------------------------------
+# Local configuration, runtime tokens, and machine-specific secrets
+# (Always keep example/template files like appsettings.json and config.example.php)
+# ------------------------------------------------------------------------------
+appsettings.local.json
+**/appsettings.local.json
+Resources/appsettings.local.json
+*.local.json
+*.local
+
+# ------------------------------------------------------------------------------
+# Portal runtime, local secrets, and tunnel launchers
+# (Secrets/launchers must be generated per workstation from example templates)
+# ------------------------------------------------------------------------------
+portal/config/config.php
+portal/config/secrets.local
+portal/start-portal.bat
+portal/start-tunnel.bat
+portal/runtime/
+portal/cloudflared.exe
+
+# ------------------------------------------------------------------------------
+# Temporary files, logs, and OS caches
+# ------------------------------------------------------------------------------
+*.log
+*.tmp
+*.temp
+*.swp
+*~
+*.orig
+*.rej
+
+# Windows thumbnail & desktop caches
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*

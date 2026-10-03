@@ -22,8 +22,9 @@ Namespace BTA_OSG
             Me.DocID = docId
             Me.StaffName = user
             Me.StaffUserId = staffUserId
+            AppAssets.ApplyFormIcon(Me)
 
-            Me.Text = "Transfer Physical Landmark Storage Location"
+            Me.Text = "Transfer Landmark Storage Location"
             Me.Size = New Size(500, 320)
             Me.MinimumSize = New Size(470, 300)
             Me.StartPosition = FormStartPosition.CenterParent
@@ -111,7 +112,7 @@ Namespace BTA_OSG
         Private Sub OnSave(sender As Object, e As EventArgs)
             Dim toLoc = txtToLoc.Text.Trim()
             If String.IsNullOrWhiteSpace(toLoc) Then
-                MessageBox.Show("Please enter the new physical landmark storage location.", "Validation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                MessageBox.Show("Please enter the new landmark storage location.", "Validation Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 txtToLoc.Focus()
                 Return
             End If
@@ -121,7 +122,7 @@ Namespace BTA_OSG
                 Program.Coordinator.MoveStorage(DocID, txtFromLoc.Text.Trim(), toLoc, txtReason.Text.Trim(), StaffName, currentUserId)
             Else
                 EmbeddedDB.AddMovementLog(DocID, txtFromLoc.Text.Trim(), toLoc, StaffName, txtReason.Text.Trim())
-                EmbeddedDB.LogAudit(StaffName, $"Transferred Doc #{DocID} physical location from {txtFromLoc.Text.Trim()} to {toLoc}")
+                EmbeddedDB.LogAudit(StaffName, $"Transferred Doc #{DocID} storage location from {txtFromLoc.Text.Trim()} to {toLoc}")
             End If
             Me.DialogResult = DialogResult.OK
             Me.Close()

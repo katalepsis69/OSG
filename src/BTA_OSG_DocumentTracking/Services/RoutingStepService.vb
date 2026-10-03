@@ -207,10 +207,20 @@ Namespace BTA_OSG
 
             ' Derive current active station by status code or ID
             Select Case doc.StatusID
-                Case 1 ' RECEIVED / LOGGED
+                Case 1 ' RECEIVED / LOGGED / ROUTED / IN_PROGRESS (desk stage)
                     currentStepNumber = 2
                 Case 2 ' FOR_REVIEW
-                    currentStepNumber = 3
+                    ' The status alone cannot tell desk work from SG review: registration
+                    ' auto-routes a new document to its section desk already as FOR_REVIEW,
+                    ' so the assigned desk decides the station. Only the SG's own desk
+                    ' (resubmit, route to SG) moves the station to the executive step.
+                    If doc.AssignedSection IsNot Nothing AndAlso
+                       (doc.AssignedSection.Equals("Secretary-General", StringComparison.OrdinalIgnoreCase) OrElse
+                        doc.AssignedSection.Equals("Office of the Secretary-General", StringComparison.OrdinalIgnoreCase)) Then
+                        currentStepNumber = 3
+                    Else
+                        currentStepNumber = 2
+                    End If
                 Case 3 ' FOR_REVISION
                     currentStepNumber = 2
                 Case 6 ' APPROVED

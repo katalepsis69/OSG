@@ -477,6 +477,12 @@ Namespace BTA_OSG
 
             pnlScroll.Controls.Add(pnlOverviewTable)
             tabOverview.Controls.Add(pnlScroll)
+
+            ' This tab is rebuilt from scratch on every refresh, after the constructor's
+            ' EnableDeep pass, so the recreated panels would be the only unbuffered ones in
+            ' the window: maximize/restore tears, ghosts, and leaves border debris here and
+            ' nowhere else. Re-buffer the fresh subtree every rebuild.
+            UiBuffering.EnableDeep(pnlScroll)
         End Sub
 
         Private Sub SetupPreviewTab()

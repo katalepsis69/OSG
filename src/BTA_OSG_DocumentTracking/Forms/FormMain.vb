@@ -494,6 +494,7 @@ Namespace BTA_OSG
 
         Private Sub SetupSidebar()
             pnlSidebar = New Panel With {
+                .Name = "pnlSidebar",
                 .Dock = DockStyle.Left,
                 .Width = 246,
                 .BackColor = CivicCalmTheme.ColorSurface,
@@ -595,7 +596,51 @@ Namespace BTA_OSG
                 pnlNavStack.Controls.Add(btn)
             Next
 
+            Dim pnlSidebarFooter As New Panel With {
+                .Name = "pnlSidebarFooter",
+                .Dock = DockStyle.Bottom,
+                .Height = 50,
+                .Padding = New Padding(0, 6, 0, 0),
+                .BackColor = CivicCalmTheme.ColorSurface
+            }
+
+            btnCheckUpdate = New Button With {
+                .Name = "btnNav_WhatsNew",
+                .Text = "  What's New",
+                .Dock = DockStyle.Fill,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontBody,
+                .TextAlign = ContentAlignment.MiddleLeft,
+                .Cursor = Cursors.Hand,
+                .UseMnemonic = False,
+                .ForeColor = CivicCalmTheme.ColorInkMuted,
+                .BackColor = CivicCalmTheme.ColorSurface,
+                .Image = AppAssets.GetIcon("sparkle", 18, CivicCalmTheme.ColorInkMuted),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 0, 0)
+            }
+            btnCheckUpdate.FlatAppearance.BorderSize = 1
+            btnCheckUpdate.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnCheckUpdate.FlatAppearance.MouseOverBackColor = CivicCalmTheme.ColorWell
+            AddHandler btnCheckUpdate.Click, Async Sub()
+                btnCheckUpdate.Enabled = False
+                Dim origText = btnCheckUpdate.Text
+                btnCheckUpdate.Text = "  Checking..."
+                Try
+                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
+                        btnCheckUpdate.Text = origText
+                        btnCheckUpdate.Enabled = True
+                    End Sub)
+                Finally
+                    btnCheckUpdate.Text = origText
+                    btnCheckUpdate.Enabled = True
+                End Try
+            End Sub
+            pnlSidebarFooter.Controls.Add(btnCheckUpdate)
+
             pnlSidebar.Controls.Add(pnlNavStack)
+            pnlSidebar.Controls.Add(pnlSidebarFooter)
             pnlSidebar.Controls.Add(pnlBrand)
             pnlNavStack.BringToFront()
             Me.Controls.Add(pnlSidebar)
@@ -773,37 +818,7 @@ Namespace BTA_OSG
             btnScanRFID.FlatAppearance.BorderSize = 0
             AddHandler btnScanRFID.Click, Sub() ShowRFIDLoginDialog()
 
-            btnCheckUpdate = New Button With {
-                .Text = " &What's New",
-                .Size = New Size(130, 36),
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontBody,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 14, 0, 0),
-                .Image = AppAssets.GetIcon("sparkle", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnCheckUpdate.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
-            AddHandler btnCheckUpdate.Click, Async Sub()
-                btnCheckUpdate.Enabled = False
-                btnCheckUpdate.Text = " Checking..."
-                Try
-                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
-                        btnCheckUpdate.Text = " &What's New"
-                        btnCheckUpdate.Enabled = True
-                    End Sub)
-                Finally
-                    btnCheckUpdate.Text = " &What's New"
-                    btnCheckUpdate.Enabled = True
-                End Try
-            End Sub
-
-            pnlAuthActions.Controls.AddRange(New Control() {btnLogout, btnScanRFID, btnCheckUpdate})
+            pnlAuthActions.Controls.AddRange(New Control() {btnLogout, btnScanRFID})
 
             tblHeader.Controls.Add(pnlHeaderBrand, 0, 0)
             tblHeader.Controls.Add(pnlAuthActions, 1, 0)

@@ -11,9 +11,9 @@
     <OptionCompare>Binary</OptionCompare>
     <OptionInfer>On</OptionInfer>
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
-    <Version>2.1.2</Version>
-    <AssemblyVersion>2.1.2.0</AssemblyVersion>
-    <FileVersion>2.1.2.0</FileVersion>
+    <Version>2.1.3</Version>
+    <AssemblyVersion>2.1.3.0</AssemblyVersion>
+    <FileVersion>2.1.3.0</FileVersion>
     <Company>Bangsamoro Transition Authority</Company>
     <Product>BTA OSG Document Tracking &amp; Monitoring System</Product>
     <Description>Parliamentary Document Status Tracking and Monitoring System</Description>

@@ -17,13 +17,6 @@ Namespace BTA_OSG
         Private cmbAction As ComboBox
         Private txtRemarks As TextBox
 
-        ' The seeded status codes an operator can route a document into (db/scripts 007/008).
-        ' Seed-stable vocabulary, so the list is a constant rather than a live lookup that
-        ' would differ between the connected and offline paths.
-        Private Shared ReadOnly RoutingStatusCodes As String() = {
-            "ROUTED", "FOR_REVIEW", "FOR_REVISION", "APPROVED", "RELEASED", "FILED",
-            "IN_PROGRESS", "COMPLETED", "ARCHIVED"
-        }
         Private btnSave As Button
         Private btnCancel As Button
 
@@ -69,7 +62,7 @@ Namespace BTA_OSG
             ' code, and the connected path then regressed the document to RECEIVED. The
             ' dropdown carries the seeded status codes only; ROUTED is the neutral default.
             cmbAction = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .TabIndex = 3, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .FlatStyle = FlatStyle.Flat}
-            cmbAction.Items.AddRange(RoutingStatusCodes)
+            cmbAction.Items.AddRange(DocumentStatus.RouteTargetStatusCodes)
             cmbAction.SelectedIndex = 0
             txtRemarks = New TextBox With {.Dock = DockStyle.Fill, .Multiline = True, .Text = "", .TabIndex = 4, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 

@@ -235,8 +235,6 @@ Namespace BTA_OSG
             For Each stp In steps
                 If stp.StepNumber < currentStepNumber Then
                     stp.StepStatus = "COMPLETED"
-                    stp.CompletedAtUTC = doc.RegisteredAtUTC.AddHours(stp.StepNumber * 2)
-                    stp.CompletedBy = stp.ResponsibleOffice
                 ElseIf stp.StepNumber = currentStepNumber Then
                     stp.StepStatus = "CURRENT"
                     If doc.StatusID = 3 Then
@@ -247,16 +245,15 @@ Namespace BTA_OSG
                 End If
             Next
 
-            ' Correlate actual timestamps from routing logs where available
+            ' The only log-to-step binding that is true by construction is registration itself
+            ' (the first log, lowest RoutingID, is always the REGISTERED entry). Freeform route
+            ' hops do not line up with pipeline stages, so other completed steps keep an empty
+            ' completion stamp instead of a guessed one; the transit logs grid carries the real
+            ' chronology, and the routing slip prints blank rather than an invented date.
             If routingLogs IsNot Nothing AndAlso routingLogs.Count > 0 Then
-                Dim logIndex As Integer = 0
-                For Each stp In steps
-                    If stp.StepStatus = "COMPLETED" AndAlso logIndex < routingLogs.Count Then
-                        stp.CompletedAtUTC = routingLogs(logIndex).RoutedAtUTC
-                        stp.Remarks = routingLogs(logIndex).RoutingRemarks
-                        logIndex += 1
-                    End If
-                Next
+                steps(0).CompletedAtUTC = routingLogs(0).RoutedAtUTC
+                steps(0).Remarks = routingLogs(0).RoutingRemarks
+                steps(0).CompletedBy = routingLogs(0).FromOffice
             End If
         End Sub
 

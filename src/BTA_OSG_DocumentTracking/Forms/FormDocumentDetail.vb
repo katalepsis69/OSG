@@ -62,13 +62,16 @@ Namespace BTA_OSG
         ' tab do not reload the page.
         Private previewNavigatedUrl As String = Nothing
 
-        ' This dialog deliberately does NOT use UiBuffering.WsExComposited, unlike the main
-        ' window. Compositing renders the whole child tree through one redirection surface, and
-        ' the embedded WebView2 preview paints its own Chromium surface into that same window:
-        ' while the preview is on screen the header and ribbon siblings re-present on every web
-        ' frame, which reads as blinking. Panel-level double buffering (EnableDeep below) stays
-        ' on, so ordinary repaint flicker is still covered. The cost is that maximize and
-        ' restore can ghost the relaid-out action buttons, which this dialog rarely sees.
+        ' Compositing is toggled per tab instead of being permanently off: on by default so
+        ' minimize/maximize/restore repaint as one atomic frame (a non-composited child tree
+        ' ghosts the relaid-out header and action buttons), off only while the preview tab
+        ' hosts WebView2. A composited tree re-presents through one surface, and the embedded
+        ' Chromium control paints into that same window, so header and ribbon siblings would
+        ' re-present on every web frame and read as blinking. The Selected handler flips it.
+        Protected Overrides Sub OnHandleCreated(e As EventArgs)
+            MyBase.OnHandleCreated(e)
+            UiBuffering.SetComposited(Me, True)
+        End Sub
         Public Sub New(id As Integer, parentForm As FormMain)
             DocID = id
             MainFrm = parentForm
@@ -91,7 +94,15 @@ Namespace BTA_OSG
             SetupPunchlistBanner()
             SetupTabControl()
             AddHandler tabDetail.Selected, Sub(s As Object, e As TabControlEventArgs)
-                                               If e.TabPage Is tabPreview Then LoadPreviewTab()
+                                               If e.TabPage Is tabPreview Then
+                                                   ' The tab selection alone decides the style: compositing off
+                                                   ' here so WebView2 frames cannot blink the siblings, back on
+                                                   ' everywhere else for ghost-free minimize/maximize/restore.
+                                                   UiBuffering.SetComposited(Me, False)
+                                                   LoadPreviewTab()
+                                               Else
+                                                   UiBuffering.SetComposited(Me, True)
+                                               End If
                                            End Sub
 
             Me.Controls.Add(tabDetail)
@@ -163,17 +174,27 @@ Namespace BTA_OSG
 
             Dim dvDir As New DataView(EmbeddedDB.DataSet.Tables("Directives"))
             dvDir.RowFilter = "DocumentID = " & DocID
+            ' Same chronological guarantee as the transit logs tab: mirror fills and offline
+            ' replay can land rows out of sequence, and the stamp sorts as text.
+            dvDir.Sort = "Timestamp ASC, DirectiveID ASC"
+            dvDir.RowFilter = "DocumentID = " & DocID
             dgvDirectives.DataSource = dvDir
             DataGridStyler.FormatDirectiveColumns(dgvDirectives)
             ShowGridState(dgvDirectives, lblDirectivesWatermark, "No SG directives have been issued for this document.")
 
             Dim dvRoute As New DataView(EmbeddedDB.DataSet.Tables("RoutingLogs"))
             dvRoute.RowFilter = "DocumentID = " & DocID
+            ' The tab promises a chronological trail, but DataTable row order is fill order
+            ' (mirror merges and offline replay can both land out of sequence). The stamp is
+            ' written as "yyyy-MM-dd HH:mm:ss", so a string sort is a chronological sort.
+            dvRoute.Sort = "Timestamp ASC, RoutingID ASC"
             dgvRouting.DataSource = dvRoute
             DataGridStyler.FormatRoutingColumns(dgvRouting)
             ShowGridState(dgvRouting, lblRoutingWatermark, "No transmittal logs yet. Route the document to begin its custody trail.")
 
             Dim dvMove As New DataView(EmbeddedDB.DataSet.Tables("Movements"))
+            dvMove.RowFilter = "DocumentID = " & DocID
+            dvMove.Sort = "Timestamp ASC, MovementID ASC"
             dvMove.RowFilter = "DocumentID = " & DocID
             dgvMovements.DataSource = dvMove
             DataGridStyler.FormatMovementColumns(dgvMovements)

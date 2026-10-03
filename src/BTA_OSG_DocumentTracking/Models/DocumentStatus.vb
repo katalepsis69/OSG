@@ -9,6 +9,15 @@ Namespace BTA_OSG
         Public Property SortOrder As Integer
         Public Property IsActive As Boolean
 
+        ' The seeded status codes an operator can route a document into (db/scripts 007/008).
+        ' Single source of truth: the route dialog offers exactly this list, and the offline
+        ' routing path moves CurrentStatus for exactly this set. Deliberately a constant, not
+        ' a live lookup, so the connected and offline paths can never disagree.
+        Public Shared ReadOnly RouteTargetStatusCodes As String() = {
+            "ROUTED", "FOR_REVIEW", "FOR_REVISION", "APPROVED", "RELEASED", "FILED",
+            "IN_PROGRESS", "COMPLETED", "ARCHIVED"
+        }
+
         Public Shared Function IsValidStatus(code As String) As Boolean
             If String.IsNullOrWhiteSpace(code) Then Return False
             Dim c = code.Trim().ToUpperInvariant()

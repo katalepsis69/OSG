@@ -103,7 +103,47 @@ Namespace BTA_OSG
             End Try
         End Function
 
-        Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form) As Task
+        Public Class ReleaseHistoryEntry
+        Public Property TagName As String = ""
+        Public Property Body As String = ""
+    End Class
+
+    ''' <summary>
+    ''' Past releases, newest first. The GitHub releases list is the changelog's single
+    ''' source of truth; the dialog's local curated history is only the offline fallback
+    ''' and the pre-2.1.0 era that predates publishing releases.
+    ''' </summary>
+    Public Async Function GetRecentReleasesAsync() As Task(Of List(Of ReleaseHistoryEntry))
+        Dim entries As New List(Of ReleaseHistoryEntry)()
+        Try
+            Http.DefaultRequestHeaders.UserAgent.Clear()
+            Http.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
+
+            Dim response = Await Http.GetAsync($"https://api.github.com/repos/{GitHubRepo}/releases").ConfigureAwait(False)
+            If Not response.IsSuccessStatusCode Then Return entries
+
+            Dim json = Await response.Content.ReadAsStringAsync().ConfigureAwait(False)
+            Using doc = JsonDocument.Parse(json)
+                For Each rel In doc.RootElement.EnumerateArray()
+                    Dim tag = ""
+                    If rel.TryGetProperty("tag_name", Nothing) Then tag = rel.GetProperty("tag_name").GetString()
+                    If String.IsNullOrWhiteSpace(tag) Then Continue For
+
+                    Dim body = ""
+                    If rel.TryGetProperty("body", Nothing) AndAlso rel.GetProperty("body").ValueKind = JsonValueKind.String Then
+                        body = rel.GetProperty("body").GetString()
+                    End If
+                    entries.Add(New ReleaseHistoryEntry With {.TagName = tag, .Body = If(body, "")})
+                Next
+            End Using
+        Catch ex As Exception
+            ' Offline or rate-limited: an empty list simply tells the dialog to fall back
+            ' to its local curated history, which covers every version including 2.1.4.
+        End Try
+        Return entries
+    End Function
+
+    Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form) As Task
             Try
                 If String.IsNullOrWhiteSpace(downloadUrl) Then
                     Throw New InvalidOperationException("Download URL is empty.")

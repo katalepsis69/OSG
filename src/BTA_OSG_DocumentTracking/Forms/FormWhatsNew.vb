@@ -2,7 +2,9 @@ Option Explicit On
 Option Strict On
 
 Imports System
+Imports System.Collections.Generic
 Imports System.Drawing
+Imports System.Linq
 Imports System.Reflection
 Imports System.Windows.Forms
 
@@ -13,6 +15,12 @@ Namespace BTA_OSG
     ''' </summary>
     Public Class FormWhatsNew
         Inherits Form
+
+        Private Class LocalHistoryEntry
+            Public Property VersionText As String = ""
+            Public Property HeaderText As String = ""
+            Public Property Bullets As New List(Of String)()
+        End Class
 
         Private lblHeaderTitle As Label
         Private lblHeaderSubtitle As Label
@@ -38,7 +46,7 @@ Namespace BTA_OSG
             _alreadyChecked = alreadyChecked
 
             InitializeComponent()
-            PopulateChangelog(_remoteNotes)
+            PopulateChangelog(_remoteNotes, Nothing)
         End Sub
 
         Private Sub InitializeComponent()
@@ -197,6 +205,7 @@ Namespace BTA_OSG
 
         Protected Overrides Async Sub OnShown(e As EventArgs)
             MyBase.OnShown(e)
+
             If Not _alreadyChecked AndAlso String.IsNullOrEmpty(_latestVersion) Then
                 Dim info = Await AppUpdateService.CheckUpdateInfoAsync()
                 If Me.IsDisposed Then Return
@@ -220,14 +229,19 @@ Namespace BTA_OSG
                         lblStatusBadge.BackColor = CivicCalmTheme.ColorPrimarySoft
                         lblStatusBadge.ForeColor = CivicCalmTheme.ColorPrimary
                     End If
-
-                    PopulateChangelog(_remoteNotes)
                 Else
                     lblStatusBadge.Text = $"System Ready ({verStr})"
                     lblStatusBadge.BackColor = CivicCalmTheme.ColorPrimarySoft
                     lblStatusBadge.ForeColor = CivicCalmTheme.ColorPrimary
                 End If
             End If
+
+            ' Past releases come from the GitHub list whenever the network allows; the local
+            ' curated history is the offline fallback, so every version stays visible either
+            ' way (2.1.4 once vanished exactly between those two sources).
+            Dim pastReleases = Await AppUpdateService.GetRecentReleasesAsync()
+            If Me.IsDisposed Then Return
+            PopulateChangelog(_remoteNotes, pastReleases)
         End Sub
 
         Private Sub ShowUpdateNowButton()
@@ -261,62 +275,151 @@ Namespace BTA_OSG
             flpFooter.Controls.Add(btnUpdateNow)
         End Sub
 
-        Private Sub PopulateChangelog(remoteNotes As String)
+        ''' <summary>
+        ''' The offline fallback changelog: every version that ever shipped, so the dialog is
+        ''' never empty without network. Online, the GitHub releases list is the source of
+        ''' truth and these entries are used where they exist (they are more detailed) and
+        ''' for versions that predate publishing releases to GitHub.
+        ''' </summary>
+        Private Shared Function GetLocalHistory() As List(Of LocalHistoryEntry)
+            Dim history As New List(Of LocalHistoryEntry)()
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "2.1.4",
+                .HeaderText = "Version 2.1.4 - October 2026",
+                .Bullets = New List(Of String) From {
+                    "Details Window Stability: Fixed flickering, ghosting, and black leftovers when resizing or maximizing, especially on the Document Overview tab.",
+                    "Truthful Roadmap: The step-by-step custody roadmap now shows where a document really is; freshly registered documents start at their assigned desk.",
+                    "Real Timestamps Only: The roadmap and routing slip no longer invent completion dates; dates appear as actions truly happen.",
+                    "Offline Routing Integrity: Routing a document offline now updates its status together with the custody log, matching the connected flow."
+                }
+            })
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "2.1.3",
+                .HeaderText = "Version 2.1.3 - October 2026",
+                .Bullets = New List(Of String) From {
+                    "Sidebar Navigation: Relocated What's New button to the bottom of the left navigation pane for easy access.",
+                    "Header Streamlining: Cleaned up the top banner to keep focus on badge scanning and user logout.",
+                    "Clean Dialog Header: Removed circular badge graphic for a clean, distraction-free update window."
+                }
+            })
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "2.1.2",
+                .HeaderText = "Version 2.1.2 - October 2026",
+                .Bullets = New List(Of String) From {
+                    "Sharp Desktop Icons: Integrated 23 clean vector icons that stay sharp on all monitor display scalings.",
+                    "Theme Contrast Tinting: Icons adapt automatically to match screen theme colors for high readability.",
+                    "Scanned Attachments Folder: Station option to centralize PDF document scans into a shared drive folder.",
+                    "Performance Tuning: Reduced workstation memory usage and improved application startup speed."
+                }
+            })
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "2.1.0",
+                .HeaderText = "Version 2.1.0 - October 2026",
+                .Bullets = New List(Of String) From {
+                    "What's New & Release Changelogs: Integrated release history and update notification window.",
+                    "1-Click System Updates: Self-service update checker querying GitHub Releases with automated in-place restart.",
+                    "Embedded Assembly Metadata: Official Bangsamoro Transition Authority metadata headers to prevent heuristic antivirus flagging.",
+                    "Automated Stream Unblocking: Updated binaries automatically strip Windows Mark-of-the-Web zone identifiers.",
+                    "Audit Trail Hash Chain: Cryptographic SHA-256 seal chains for tamper-evident document action logging.",
+                    "Multi-Workstation Sync: Background peer heartbeat discovery and non-blocking SQL Server mirror merges."
+                }
+            })
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "2.0.0",
+                .HeaderText = "Version 2.0.0 - September 2026",
+                .Bullets = New List(Of String) From {
+                    "External Intake Web Portal: Citizen and ministry intake portal with OTP verification and tracking.",
+                    "Routing Slip Print Engine: Standard Bangsamoro parliamentary document routing slip print service.",
+                    "Executive Action Directives: Secretary-General revision loops and status routing.",
+                    "Controlled Storage Tracking: Cabinet, shelf, and box physical archive movement tracking.",
+                    "High-DPI Civic Calm Theme: Modern, accessible, high-contrast WinForms visual design."
+                }
+            })
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "1.5.0",
+                .HeaderText = "Version 1.5.0 - August 2026",
+                .Bullets = New List(Of String) From {
+                    "RFID Dual-Factor Security: Contactless smart card authentication with terminal auto-lockout defense.",
+                    "Offline Resilient Outbox: Continuous background sync to SQL Server with seamless offline cache fallback.",
+                    "Role-Based Access Control: Granular permissions for Records Officers, Legal Counsel, and Office of the SG."
+                }
+            })
+
+            history.Add(New LocalHistoryEntry With {
+                .VersionText = "1.0.0",
+                .HeaderText = "Version 1.0.0 - July 2026",
+                .Bullets = New List(Of String) From {
+                    "Document Tracking Engine: Central database tracking for communications, bills, vouchers, and travel orders.",
+                    "Sequential Tracking Numbers: Automated document tracking code generator (COMM, LEG, FIN, TO).",
+                    "OSG Desk Routing: Digital document routing and status transitions between division desks."
+                }
+            })
+
+            Return history
+        End Function
+
+        Private Shared Function NormalizeVersion(tagOrVersion As String) As String
+            Dim normalized = If(tagOrVersion, "").Trim().TrimStart("v"c, "V"c)
+            Dim parsed As Version = Nothing
+            If Version.TryParse(normalized, parsed) Then
+                Return parsed.ToString(3)
+            End If
+            Return normalized
+        End Function
+
+        Private Sub PopulateChangelog(remoteNotes As String, pastReleases As List(Of ReleaseHistoryEntry))
             rtbChangelog.Clear()
 
             ' If remote release notes are available from GitHub, show them at top
             If Not String.IsNullOrWhiteSpace(remoteNotes) Then
                 AppendHeader($"Latest Release Notes ({_latestVersion})")
-                AppendBody(remoteNotes.Trim())
+                AppendMarkdownBody(remoteNotes.Trim())
                 AppendSeparator()
             End If
 
-            ' Built-in Version History Log
-            AppendHeader("Version 2.1.3 - October 2026")
-            AppendBullet("Sidebar Navigation: Relocated What's New button to the bottom of the left navigation pane for easy access.")
-            AppendBullet("Header Streamlining: Cleaned up the top banner to keep focus on badge scanning and user logout.")
-            AppendBullet("Clean Dialog Header: Removed circular badge graphic for a clean, distraction-free update window.")
+            ' Past GitHub releases, newest first. The releases list is the single changelog
+            ' source, so a release can never vanish between "latest" and the local list again
+            ' (2.1.4 was skipped exactly that way). Where a curated local entry exists it is
+            ' preferred; otherwise the release body renders as-is.
+            Dim shownVersions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+            If pastReleases IsNot Nothing Then
+                For Each rel In pastReleases
+                    Dim versionKey = NormalizeVersion(rel.TagName)
+                    If versionKey = NormalizeVersion(_latestVersion) AndAlso Not String.IsNullOrWhiteSpace(remoteNotes) Then
+                        shownVersions.Add(versionKey)
+                        Continue For
+                    End If
 
-            AppendSeparator()
+                    AppendHeader(rel.TagName)
+                    Dim localEntry = GetLocalHistory().FirstOrDefault(Function(h) NormalizeVersion(h.VersionText) = versionKey)
+                    If localEntry IsNot Nothing Then
+                        For Each b In localEntry.Bullets
+                            AppendBullet(b)
+                        Next
+                    Else
+                        AppendMarkdownBody(rel.Body.Trim())
+                    End If
+                    AppendSeparator()
+                    shownVersions.Add(versionKey)
+                Next
+            End If
 
-            AppendHeader("Version 2.1.2 - October 2026")
-            AppendBullet("Sharp Desktop Icons: Integrated 23 clean vector icons that stay sharp on all monitor display scalings.")
-            AppendBullet("Theme Contrast Tinting: Icons adapt automatically to match screen theme colors for high readability.")
-            AppendBullet("Scanned Attachments Folder: Station option to centralize PDF document scans into a shared drive folder.")
-            AppendBullet("Performance Tuning: Reduced workstation memory usage and improved application startup speed.")
-
-            AppendSeparator()
-
-            AppendHeader("Version 2.1.0 - October 2026")
-            AppendBullet("What's New & Release Changelogs: Integrated release history and update notification window.")
-            AppendBullet("1-Click System Updates: Self-service update checker querying GitHub Releases with automated in-place restart.")
-            AppendBullet("Embedded Assembly Metadata: Official Bangsamoro Transition Authority metadata headers to prevent heuristic antivirus flagging.")
-            AppendBullet("Automated Stream Unblocking: Updated binaries automatically strip Windows Mark-of-the-Web zone identifiers.")
-            AppendBullet("Audit Trail Hash Chain: Cryptographic SHA-256 seal chains for tamper-evident document action logging.")
-            AppendBullet("Multi-Workstation Sync: Background peer heartbeat discovery and non-blocking SQL Server mirror merges.")
-
-            AppendSeparator()
-
-            AppendHeader("Version 2.0.0 - September 2026")
-            AppendBullet("External Intake Web Portal: Citizen and ministry intake portal with OTP verification and tracking.")
-            AppendBullet("Routing Slip Print Engine: Standard Bangsamoro parliamentary document routing slip print service.")
-            AppendBullet("Executive Action Directives: Secretary-General revision loops and status routing.")
-            AppendBullet("Controlled Storage Tracking: Cabinet, shelf, and box physical archive movement tracking.")
-            AppendBullet("High-DPI Civic Calm Theme: Modern, accessible, high-contrast WinForms visual design.")
-
-            AppendSeparator()
-
-            AppendHeader("Version 1.5.0 - August 2026")
-            AppendBullet("RFID Dual-Factor Security: Contactless smart card authentication with terminal auto-lockout defense.")
-            AppendBullet("Offline Resilient Outbox: Continuous background sync to SQL Server with seamless offline cache fallback.")
-            AppendBullet("Role-Based Access Control: Granular permissions for Records Officers, Legal Counsel, and Office of the SG.")
-
-            AppendSeparator()
-
-            AppendHeader("Version 1.0.0 - July 2026")
-            AppendBullet("Document Tracking Engine: Central database tracking for communications, bills, vouchers, and travel orders.")
-            AppendBullet("Sequential Tracking Numbers: Automated document tracking code generator (COMM, LEG, FIN, TO).")
-            AppendBullet("OSG Desk Routing: Digital document routing and status transitions between division desks.")
+            ' Local curated history: fills versions the API does not cover, and is the whole
+            ' list when offline.
+            For Each entry In GetLocalHistory()
+                If shownVersions.Contains(NormalizeVersion(entry.VersionText)) Then Continue For
+                AppendHeader(entry.HeaderText)
+                For Each b In entry.Bullets
+                    AppendBullet(b)
+                Next
+                AppendSeparator()
+            Next
 
             rtbChangelog.SelectionStart = 0
             rtbChangelog.ScrollToCaret()
@@ -334,9 +437,37 @@ Namespace BTA_OSG
             rtbChangelog.AppendText("  •  " & text & vbCrLf)
         End Sub
 
+        ''' <summary>
+        ''' GitHub release bodies arrive as markdown. Render the shape this project emits
+        ''' (a heading, blank lines, dash bullets, bold prefixes) as styled text and drop
+        ''' the markup, so "###" never reaches the eye. The body's own heading is dropped
+        ''' because the section header above it already names the version.
+        ''' </summary>
+        Private Sub AppendMarkdownBody(text As String)
+            If String.IsNullOrWhiteSpace(text) Then Return
+
+            For Each rawLine In text.Replace(vbCr, "").Split(New Char() {ControlChars.Lf})
+                Dim line = rawLine.Trim()
+                If line.Length = 0 Then Continue For
+                If line.StartsWith("#"c) Then Continue For
+
+                If line.StartsWith("- ") OrElse line.StartsWith("* ") Then
+                    AppendBullet(StripMarkdownEmphasis(line.Substring(2).Trim()))
+                Else
+                    AppendBody(StripMarkdownEmphasis(line))
+                End If
+            Next
+        End Sub
+
+        Private Shared Function StripMarkdownEmphasis(text As String) As String
+            Return text.Replace("**", "").Replace("__", "")
+        End Function
+
         Private Sub AppendBody(text As String)
             rtbChangelog.SelectionFont = CivicCalmTheme.FontBody
-            rtbChangelog.SelectionColor = CivicCalmTheme.ColorInkMuted
+            ' Body prose is primary content, so it reads in full ink; the muted tone is
+            ' reserved for the header microcopy (contrast verified: both pass WCAG AA).
+            rtbChangelog.SelectionColor = CivicCalmTheme.ColorInk
             rtbChangelog.AppendText(text & vbCrLf)
         End Sub
 

@@ -522,11 +522,42 @@ Namespace BTA_OSG
                 End If
                 Console.WriteLine("[PASS] 14. Audit hash chain seals entries and detects an altered one.")
 
-                ' Test 15: Clean exit
-                Console.WriteLine("[PASS] 15. Clean exit verified.")
+                ' Test 15: same-version republish detection. publish-release.ps1 stamps every
+                ' build with a UTC timestamp (InformationalVersion build metadata) and appends
+                ' the same stamp to the release body; an installed copy must treat a release
+                ' whose stamp is newer as an update even though the version did not change.
+                Dim stampedBody = "### What's New in v2.1.6" & vbCrLf & vbCrLf & "- Fixed a thing" & vbCrLf & vbCrLf & "<!-- build:2026-10-03T14:22:11Z -->"
+                Dim releaseStamp = AppUpdateService.ParseBuildStamp(stampedBody)
+                If releaseStamp <> New DateTime(2026, 10, 3, 14, 22, 11, DateTimeKind.Utc) Then
+                    Console.WriteLine("[FAIL] 15. Release build stamp was not parsed from the release notes.")
+                    Return 1
+                End If
+                If AppUpdateService.ParseBuildStamp("notes without a stamp") <> DateTime.MinValue Then
+                    Console.WriteLine("[FAIL] 15. An unstamped release body must not yield a stamp.")
+                    Return 1
+                End If
+                ' The SDK appends the source revision to InformationalVersion; the real installed
+                ' build reads "2.1.6+<stamp>.<sha>" and the stamp must still come out clean.
+                If AppUpdateService.ParseInformationalStamp("2.1.6+2026-10-03T14:22:11Z.d196c725") <> releaseStamp Then
+                    Console.WriteLine("[FAIL] 15. The installed build's stamp was not parsed from InformationalVersion.")
+                    Return 1
+                End If
+                Dim olderStamp = releaseStamp.AddMinutes(-1)
+                If Not AppUpdateService.IsRepublishNewer(releaseStamp, olderStamp) Then
+                    Console.WriteLine("[FAIL] 15. A newer same-version release was not treated as an update.")
+                    Return 1
+                End If
+                If AppUpdateService.IsRepublishNewer(olderStamp, releaseStamp) OrElse AppUpdateService.IsRepublishNewer(DateTime.MinValue, olderStamp) Then
+                    Console.WriteLine("[FAIL] 15. An older or unstamped release must not be treated as an update.")
+                    Return 1
+                End If
+                Console.WriteLine("[PASS] 15. Same-version republish detection verified (stamp parsing and direction).")
+
+                ' Test 16: Clean exit
+                Console.WriteLine("[PASS] 16. Clean exit verified.")
 
                 Console.WriteLine("=========================================================")
-                Console.WriteLine("ALL 15 SELF-CHECK TESTS PASSED SUCCESSFULLY!")
+                Console.WriteLine("ALL 16 SELF-CHECK TESTS PASSED SUCCESSFULLY!")
                 Console.WriteLine("=========================================================")
                 Return 0
             Catch ex As Exception

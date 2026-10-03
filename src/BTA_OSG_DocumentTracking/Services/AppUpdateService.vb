@@ -3,6 +3,7 @@ Option Strict On
 
 Imports System
 Imports System.Diagnostics
+Imports System.Globalization
 Imports System.IO
 Imports System.Net.Http
 Imports System.Net.Http.Headers
@@ -19,6 +20,7 @@ Namespace BTA_OSG
         Public Property DownloadUrl As String = ""
         Public Property ReleaseNotes As String = ""
         Public Property ErrorMessage As String = ""
+        Public Property PublishedAt As DateTime = DateTime.MinValue
     End Class
 
     ''' <summary>
@@ -66,6 +68,10 @@ Namespace BTA_OSG
 
                     info.LatestVersion = tagName
 
+                    If root.TryGetProperty("published_at", Nothing) Then
+                        info.PublishedAt = ParseUtcStamp(root.GetProperty("published_at").GetString())
+                    End If
+
                     If root.TryGetProperty("body", Nothing) Then
                         info.ReleaseNotes = root.GetProperty("body").GetString()
                     End If
@@ -78,6 +84,13 @@ Namespace BTA_OSG
                     If Not Version.TryParse(cleanTag, latestVer) Then
                         Version.TryParse(cleanTag & ".0", latestVer)
                     End If
+
+                    ' Same-version republish detection. Every publish stamps the build with a UTC
+                    ' timestamp (InformationalVersion "2.1.6+<stamp>") and appends the same stamp
+                    ' to the release body. A release whose stamp is newer than this build's own
+                    ' stamp is a republish under the same version, and the update must be offered.
+                    Dim localBuildStamp = GetLocalBuildStamp()
+                    Dim releaseBuildStamp = ParseBuildStamp(info.ReleaseNotes)
 
                     ' Locate executable asset in release
                     Dim downloadUrl As String = ""
@@ -93,7 +106,13 @@ Namespace BTA_OSG
                     info.DownloadUrl = downloadUrl
 
                     info.Success = True
-                    info.HasUpdate = (latestVer IsNot Nothing AndAlso latestVer > currentVer AndAlso Not String.IsNullOrEmpty(downloadUrl))
+                    Dim versionDelta = (latestVer IsNot Nothing AndAlso latestVer > currentVer)
+                    Dim sameVersion = (latestVer IsNot Nothing AndAlso
+                                       latestVer.Major = currentVer.Major AndAlso
+                                       latestVer.Minor = currentVer.Minor AndAlso
+                                       latestVer.Build = currentVer.Build)
+                    Dim republish = (sameVersion AndAlso IsRepublishNewer(releaseBuildStamp, localBuildStamp))
+                    info.HasUpdate = (versionDelta OrElse republish) AndAlso Not String.IsNullOrEmpty(downloadUrl)
                     Return info
                 End Using
             Catch ex As Exception
@@ -106,6 +125,7 @@ Namespace BTA_OSG
         Public Class ReleaseHistoryEntry
         Public Property TagName As String = ""
         Public Property Body As String = ""
+        Public Property PublishedAt As DateTime = DateTime.MinValue
     End Class
 
     ''' <summary>
@@ -133,7 +153,11 @@ Namespace BTA_OSG
                     If rel.TryGetProperty("body", Nothing) AndAlso rel.GetProperty("body").ValueKind = JsonValueKind.String Then
                         body = rel.GetProperty("body").GetString()
                     End If
-                    entries.Add(New ReleaseHistoryEntry With {.TagName = tag, .Body = If(body, "")})
+                    Dim pubAt As DateTime = DateTime.MinValue
+                    If rel.TryGetProperty("published_at", Nothing) Then
+                        pubAt = ParseUtcStamp(rel.GetProperty("published_at").GetString())
+                    End If
+                    entries.Add(New ReleaseHistoryEntry With {.TagName = tag, .Body = If(body, ""), .PublishedAt = pubAt})
                 Next
             End Using
         Catch ex As Exception
@@ -141,6 +165,79 @@ Namespace BTA_OSG
             ' to its local curated history, which covers every version including 2.1.4.
         End Try
         Return entries
+    End Function
+
+    ''' <summary>
+    ''' True when a same-version release stamped releaseStamp must still be treated as an
+    ''' update over an installed build carrying localStamp (the release is a republish).
+    ''' Either stamp missing keeps the plain version comparison.
+    ''' </summary>
+    Friend Function IsRepublishNewer(releaseStamp As DateTime, localStamp As DateTime) As Boolean
+        Return releaseStamp <> DateTime.MinValue AndAlso localStamp <> DateTime.MinValue AndAlso releaseStamp > localStamp
+    End Function
+
+    ''' <summary>
+    ''' Parse a timestamp string ("2026-10-03T14:22:11Z" or GitHub's ISO form) as UTC,
+    ''' or MinValue when absent or unparsable.
+    ''' </summary>
+    Friend Function ParseUtcStamp(text As String) As DateTime
+        Dim stamp As DateTime
+        If DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, stamp) Then Return stamp
+        Return DateTime.MinValue
+    End Function
+
+    ''' <summary>
+    ''' The stamp inside an InformationalVersion string, the part after '+' up to the SDK's
+    ''' "." source-revision suffix ("2.1.6+2026-10-03T14:22:11Z.d196c72"). MinValue when the
+    ''' build carries no stamp.
+    ''' </summary>
+    Friend Function ParseInformationalStamp(infoVer As String) As DateTime
+        If String.IsNullOrEmpty(infoVer) Then Return DateTime.MinValue
+        Dim plus = infoVer.IndexOf("+"c)
+        If plus < 0 Then Return DateTime.MinValue
+
+        Dim suffix = infoVer.Substring(plus + 1)
+        Dim dot = suffix.IndexOf("."c)
+        If dot >= 0 Then suffix = suffix.Substring(0, dot)
+        Return ParseUtcStamp(suffix)
+    End Function
+
+    ''' <summary>
+    ''' The stamp of the running build: InformationalVersion build metadata when present
+    ''' ("2.1.6+2026-10-03T14:22:11Z"), else the exe file's write time so copies installed
+    ''' before stamping existed can still detect a republish.
+    ''' </summary>
+    Friend Function GetLocalBuildStamp() As DateTime
+        Dim attr = Assembly.GetExecutingAssembly().GetCustomAttribute(Of AssemblyInformationalVersionAttribute)()
+        Dim stamp = ParseInformationalStamp(If(attr IsNot Nothing, attr.InformationalVersion, ""))
+        If stamp <> DateTime.MinValue Then Return stamp
+
+        Try
+            Dim exePath = Environment.ProcessPath
+            If Not String.IsNullOrEmpty(exePath) AndAlso File.Exists(exePath) Then
+                Return File.GetLastWriteTimeUtc(exePath)
+            End If
+        Catch
+            ' Best-effort fallback; without a stamp the same-version republish check is skipped.
+        End Try
+        Return DateTime.MinValue
+    End Function
+
+    ''' <summary>
+    ''' The build stamp publish-release.ps1 writes into the release body as an HTML comment,
+    ''' or MinValue for releases that predate stamping.
+    ''' </summary>
+    Friend Function ParseBuildStamp(body As String) As DateTime
+        Const marker As String = "<!-- build:"
+        If String.IsNullOrEmpty(body) Then Return DateTime.MinValue
+
+        Dim start = body.IndexOf(marker, StringComparison.Ordinal)
+        If start < 0 Then Return DateTime.MinValue
+
+        Dim finish = body.IndexOf("-->", start + marker.Length, StringComparison.Ordinal)
+        If finish < 0 Then Return DateTime.MinValue
+
+        Return ParseUtcStamp(body.Substring(start + marker.Length, finish - start - marker.Length).Trim())
     End Function
 
     Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form) As Task
@@ -201,7 +298,7 @@ Namespace BTA_OSG
         Public Async Function CheckAndApplyUpdateAsync(ownerForm As Form, manualCheck As Boolean, Optional onChecked As Action = Nothing) As Task
             Dim info = Await CheckUpdateInfoAsync().ConfigureAwait(True)
             If onChecked IsNot Nothing Then onChecked()
-            Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes, alreadyChecked:=True)
+            Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes, info.PublishedAt, alreadyChecked:=True)
                 dlg.ShowDialog(ownerForm)
             End Using
         End Function

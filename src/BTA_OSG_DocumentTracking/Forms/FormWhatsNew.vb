@@ -4,6 +4,7 @@ Option Strict On
 Imports System
 Imports System.Collections.Generic
 Imports System.Drawing
+Imports System.Globalization
 Imports System.Linq
 Imports System.Reflection
 Imports System.Windows.Forms
@@ -36,13 +37,15 @@ Namespace BTA_OSG
         Private _latestVersion As String = ""
         Private _downloadUrl As String = ""
         Private _remoteNotes As String = ""
+        Private _latestPublishedAt As DateTime = DateTime.MinValue
         Private _alreadyChecked As Boolean = False
 
-        Public Sub New(Optional hasUpdate As Boolean = False, Optional latestVersion As String = "", Optional downloadUrl As String = "", Optional releaseNotes As String = "", Optional alreadyChecked As Boolean = False)
+        Public Sub New(Optional hasUpdate As Boolean = False, Optional latestVersion As String = "", Optional downloadUrl As String = "", Optional releaseNotes As String = "", Optional latestPublishedAt As DateTime = Nothing, Optional alreadyChecked As Boolean = False)
             _hasUpdate = hasUpdate
             _latestVersion = latestVersion
             _downloadUrl = downloadUrl
             _remoteNotes = releaseNotes
+            _latestPublishedAt = latestPublishedAt
             _alreadyChecked = alreadyChecked
 
             InitializeComponent()
@@ -217,6 +220,7 @@ Namespace BTA_OSG
                     _latestVersion = info.LatestVersion
                     _downloadUrl = info.DownloadUrl
                     _remoteNotes = info.ReleaseNotes
+                    _latestPublishedAt = info.PublishedAt
                     _hasUpdate = info.HasUpdate
 
                     If _hasUpdate Then
@@ -373,12 +377,21 @@ Namespace BTA_OSG
             Return normalized
         End Function
 
+        ''' <summary>
+        ''' A release heading with the day it shipped: "v2.1.5 - October 3, 2026".
+        ''' Releases whose date is unknown keep the bare name.
+        ''' </summary>
+        Private Shared Function FormatReleaseHeading(name As String, releasedAt As DateTime) As String
+            If releasedAt = DateTime.MinValue Then Return name
+            Return name & " - " & releasedAt.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture)
+        End Function
+
         Private Sub PopulateChangelog(remoteNotes As String, pastReleases As List(Of ReleaseHistoryEntry))
             rtbChangelog.Clear()
 
             ' If remote release notes are available from GitHub, show them at top
             If Not String.IsNullOrWhiteSpace(remoteNotes) Then
-                AppendHeader($"Latest Release Notes ({_latestVersion})")
+                AppendHeader(FormatReleaseHeading($"Latest Release Notes ({_latestVersion})", _latestPublishedAt))
                 AppendMarkdownBody(remoteNotes.Trim())
                 AppendSeparator()
             End If
@@ -396,13 +409,16 @@ Namespace BTA_OSG
                         Continue For
                     End If
 
-                    AppendHeader(rel.TagName)
                     Dim localEntry = GetLocalHistory().FirstOrDefault(Function(h) NormalizeVersion(h.VersionText) = versionKey)
                     If localEntry IsNot Nothing Then
+                        ' Curated entries carry their own "Version x - Month Year" heading, the
+                        ' look this window had before the GitHub rework.
+                        AppendHeader(localEntry.HeaderText)
                         For Each b In localEntry.Bullets
                             AppendBullet(b)
                         Next
                     Else
+                        AppendHeader(FormatReleaseHeading(rel.TagName, rel.PublishedAt))
                         AppendMarkdownBody(rel.Body.Trim())
                     End If
                     AppendSeparator()
@@ -450,6 +466,9 @@ Namespace BTA_OSG
                 Dim line = rawLine.Trim()
                 If line.Length = 0 Then Continue For
                 If line.StartsWith("#"c) Then Continue For
+                ' The release body carries an invisible build stamp for the updater; it is
+                ' machinery, not changelog text.
+                If line.StartsWith("<!--", StringComparison.Ordinal) Then Continue For
 
                 If line.StartsWith("- ") OrElse line.StartsWith("* ") Then
                     AppendBullet(StripMarkdownEmphasis(line.Substring(2).Trim()))

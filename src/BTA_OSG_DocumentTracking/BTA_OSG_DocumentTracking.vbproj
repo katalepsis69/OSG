@@ -14,6 +14,7 @@
     <Version>2.1.6</Version>
     <AssemblyVersion>2.1.6.0</AssemblyVersion>
     <FileVersion>2.1.6.0</FileVersion>
+    <InformationalVersion>2.1.6+build</InformationalVersion>
     <Company>Bangsamoro Transition Authority</Company>
     <Product>BTA OSG Document Tracking &amp; Monitoring System</Product>
     <Description>Parliamentary Document Status Tracking and Monitoring System</Description>

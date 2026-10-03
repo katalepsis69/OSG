@@ -54,6 +54,7 @@ DESIGN.md
 GEMINI.md
 docker-compose.portal.yml
 *.bat
+*.ps1
 tests/
 
 # ------------------------------------------------------------------------------

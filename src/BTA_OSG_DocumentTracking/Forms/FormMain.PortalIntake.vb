@@ -44,54 +44,74 @@ Namespace BTA_OSG
 
             btnOpenPortal = New Button With {
                 .Name = "btnOpenOSGPortal",
-                .Text = "&Open OSGPortal",
-                .Size = New Size(150, 34),
+                .Text = " &Open OSGPortal",
+                .Size = New Size(155, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 8, 0)
+                .Margin = New Padding(0, 6, 8, 0),
+                .Image = AppAssets.GetIcon("globe", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnOpenPortal.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnOpenPortal.Click, AddressOf OnOpenPortalClicked
 
             btnStartTunnel = New Button With {
                 .Name = "btnStartCloudflareTunnel",
-                .Text = "&Cloudflare Tunnel",
-                .Size = New Size(165, 34),
+                .Text = " &Cloudflare Tunnel",
+                .Size = New Size(170, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 8, 0)
+                .Margin = New Padding(0, 6, 8, 0),
+                .Image = AppAssets.GetIcon("cloud", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnStartTunnel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnStartTunnel.Click, AddressOf OnStartTunnelClicked
 
             btnPortalRefresh = New Button With {
-                .Text = "&Refresh Queue",
-                .Size = New Size(130, 34),
+                .Text = " &Refresh Queue",
+                .Size = New Size(145, 34),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 8, 0)
+                .Margin = New Padding(0, 6, 8, 0),
+                .Image = AppAssets.GetIcon("arrow-clockwise", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnPortalRefresh.FlatAppearance.BorderSize = 0
             AddHandler btnPortalRefresh.Click, Sub() RefreshPortalQueue()
 
             btnPortalImportSelected = New Button With {
-                .Text = "&Import Selected Submission",
-                .Size = New Size(210, 34),
+                .Text = " &Import Selected Submission",
+                .Size = New Size(225, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 16, 0)
+                .Margin = New Padding(0, 6, 16, 0),
+                .Image = AppAssets.GetIcon("plus", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnPortalImportSelected.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnPortalImportSelected.Click, AddressOf OnImportPortalSubmission
@@ -408,7 +428,7 @@ Namespace BTA_OSG
 
                     If ans = DialogResult.Yes Then
                         PortalServerManager.StopTunnel()
-                        If btnStartTunnel IsNot Nothing Then btnStartTunnel.Text = "&Cloudflare Tunnel"
+                        If btnStartTunnel IsNot Nothing Then btnStartTunnel.Text = "  &Cloudflare Tunnel"
                         If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "Cloudflare: Stopped"
                     End If
                     Return
@@ -416,7 +436,7 @@ Namespace BTA_OSG
 
                 If btnStartTunnel IsNot Nothing Then
                     btnStartTunnel.Enabled = False
-                    btnStartTunnel.Text = "Connecting..."
+                    btnStartTunnel.Text = "  Connecting..."
                 End If
                 If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = "Cloudflare: Launching headless tunnel..."
 
@@ -429,7 +449,7 @@ Namespace BTA_OSG
                     End Try
 
                     If btnStartTunnel IsNot Nothing Then
-                        btnStartTunnel.Text = "Tunnel Online (Copy Link)"
+                        btnStartTunnel.Text = "  Tunnel Online (Copy Link)"
                     End If
                     If lblPortalStatus IsNot Nothing Then
                         lblPortalStatus.Text = $"Cloudflare: {tunnelUrl}"
@@ -445,14 +465,14 @@ Namespace BTA_OSG
                         MessageBoxIcon.Information)
                 Else
                     If btnStartTunnel IsNot Nothing Then
-                        btnStartTunnel.Text = "&Cloudflare Tunnel"
+                        btnStartTunnel.Text = "  &Cloudflare Tunnel"
                     End If
                     MessageBox.Show("Could not start Cloudflare Tunnel or retrieve public link. Verify portal\cloudflared.exe exists.", "Cloudflare Tunnel", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 End If
             Catch ex As Exception
                 MessageBox.Show("Error starting Cloudflare Tunnel: " & ex.Message, "Cloudflare Tunnel", MessageBoxButtons.OK, MessageBoxIcon.Error)
                 If btnStartTunnel IsNot Nothing Then
-                    btnStartTunnel.Text = "&Cloudflare Tunnel"
+                    btnStartTunnel.Text = "  &Cloudflare Tunnel"
                 End If
             Finally
                 If btnStartTunnel IsNot Nothing Then btnStartTunnel.Enabled = True

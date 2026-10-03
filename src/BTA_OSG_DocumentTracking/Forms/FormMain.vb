@@ -59,6 +59,7 @@ Namespace BTA_OSG
         ' Sidebar Navigation Items
         Private navButtons As New List(Of Button)()
         Private navNames As New List(Of String)()
+        Private navIconNames As New List(Of String)()
         Private activeNavIndex As Integer = 0
         Private activeViewRetry As Action = Nothing
         Private sidebarCollapsed As Boolean = False
@@ -556,10 +557,12 @@ Namespace BTA_OSG
             tipNav = New ToolTip()
 
             Dim navItems As New List(Of String) From {"Dashboard", "Data Analytics", "Document Registry", "SG Directives", "Search & Storage", "User & RFID Admin", "Audit Trail", "Portal Intake"}
+            Dim navIcons As New List(Of String) From {"squares-four", "chart-bar", "file-text", "arrows-split", "magnifying-glass", "user-gear", "shield-check", "globe"}
 
             For i As Integer = 0 To navItems.Count - 1
                 Dim idx As Integer = i
                 navNames.Add(navItems(i))
+                navIconNames.Add(navIcons(i))
                 Dim btn As New Button With {
                     .Name = "btnNav_" & navItems(i).Replace(" "c, "_"c),
                     .Text = "  " & navItems(i),
@@ -571,7 +574,11 @@ Namespace BTA_OSG
                     .Cursor = Cursors.Hand,
                     .UseMnemonic = False,
                     .ForeColor = CivicCalmTheme.ColorInkMuted,
-                    .BackColor = CivicCalmTheme.ColorSurface
+                    .BackColor = CivicCalmTheme.ColorSurface,
+                    .Image = AppAssets.GetIcon(navIcons(i), 18, CivicCalmTheme.ColorInkMuted),
+                    .ImageAlign = ContentAlignment.MiddleLeft,
+                    .TextImageRelation = TextImageRelation.ImageBeforeText,
+                    .Padding = New Padding(8, 0, 0, 0)
                 }
                 btn.FlatAppearance.BorderSize = 1
                 btn.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
@@ -615,11 +622,17 @@ Namespace BTA_OSG
                     navButtons(i).ForeColor = CivicCalmTheme.ColorPrimary
                     navButtons(i).Font = CivicCalmTheme.FontFieldLabel
                     navButtons(i).FlatAppearance.BorderColor = CivicCalmTheme.ColorPrimary
+                    If i < navIconNames.Count Then
+                        navButtons(i).Image = AppAssets.GetIcon(navIconNames(i), 18, CivicCalmTheme.ColorPrimary)
+                    End If
                 Else
                     navButtons(i).BackColor = CivicCalmTheme.ColorSurface
                     navButtons(i).ForeColor = CivicCalmTheme.ColorInkMuted
                     navButtons(i).Font = CivicCalmTheme.FontBody
                     navButtons(i).FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+                    If i < navIconNames.Count Then
+                        navButtons(i).Image = AppAssets.GetIcon(navIconNames(i), 18, CivicCalmTheme.ColorInkMuted)
+                    End If
                 End If
             Next
 
@@ -725,52 +738,67 @@ Namespace BTA_OSG
             }
 
             btnLogout = New Button With {
-                .Text = "&Logout",
-                .Size = New Size(90, 36),
+                .Text = " &Logout",
+                .Size = New Size(105, 36),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 14, 0, 0)
+                .Margin = New Padding(8, 14, 0, 0),
+                .Image = AppAssets.GetIcon("sign-out", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnLogout.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnLogout.Click, Sub() AuthenticateUser("")
 
             btnScanRFID = New Button With {
-                .Text = "&Tap RFID Smart Card",
-                .Size = New Size(180, 36),
+                .Text = " &Tap RFID Smart Card",
+                .Size = New Size(205, 36),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 14, 0, 0)
+                .Margin = New Padding(0, 14, 0, 0),
+                .Image = AppAssets.GetIcon("identification-card", 18, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
             }
             btnScanRFID.FlatAppearance.BorderSize = 0
             AddHandler btnScanRFID.Click, Sub() ShowRFIDLoginDialog()
 
             btnCheckUpdate = New Button With {
-                .Text = "&What's New",
-                .Size = New Size(115, 36),
+                .Text = " &What's New",
+                .Size = New Size(130, 36),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 14, 0, 0)
+                .Margin = New Padding(8, 14, 0, 0),
+                .Image = AppAssets.GetIcon("sparkle", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnCheckUpdate.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnCheckUpdate.Click, Async Sub()
                 btnCheckUpdate.Enabled = False
-                btnCheckUpdate.Text = "Checking..."
+                btnCheckUpdate.Text = " Checking..."
                 Try
                     Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
-                        btnCheckUpdate.Text = "&What's New"
+                        btnCheckUpdate.Text = " &What's New"
                         btnCheckUpdate.Enabled = True
                     End Sub)
                 Finally
-                    btnCheckUpdate.Text = "&What's New"
+                    btnCheckUpdate.Text = " &What's New"
                     btnCheckUpdate.Enabled = True
                 End Try
             End Sub

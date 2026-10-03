@@ -49,6 +49,7 @@ Namespace BTA_OSG
         Private pnlAdvanced As Panel
         Private txtServer As TextBox
         Private txtPort As TextBox
+        Private txtScansFolder As TextBox
         Private chkPortal As CheckBox
         Private chkAnalytics As CheckBox
         Private btnClose As Button
@@ -196,14 +197,19 @@ Namespace BTA_OSG
                 .Padding = New Padding(0, 10, 0, 0)
             }
             btnConnect = New Button With {
-                .Text = "&Connect",
+                .Text = " &Connect",
                 .Size = New Size(150, 34),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .TabIndex = 1
+                .TabIndex = 1,
+                .Image = AppAssets.GetIcon("check", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnConnect.FlatAppearance.BorderSize = 0
             AddHandler btnConnect.Click, AddressOf OnConnect
@@ -211,7 +217,7 @@ Namespace BTA_OSG
             ' Hidden until a probe fails against this machine's own SQL Server: on a
             ' seat the button never appears, so nobody is asked to administer a server.
             btnPrepare = New Button With {
-                .Text = "Set &up this server",
+                .Text = " Set &up this server",
                 .Size = New Size(180, 34),
                 .Visible = False,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -220,7 +226,12 @@ Namespace BTA_OSG
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
                 .Margin = New Padding(10, 0, 0, 0),
-                .TabIndex = 2
+                .TabIndex = 2,
+                .Image = AppAssets.GetIcon("gear", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnPrepare.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnPrepare.Click, AddressOf OnPrepareServer
@@ -284,14 +295,19 @@ Namespace BTA_OSG
                 .Padding = New Padding(0, 12, 0, 6)
             }
             btnClose = New Button With {
-                .Text = "&Close",
+                .Text = " &Close",
                 .Size = New Size(100, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .TabIndex = 30
+                .TabIndex = 30,
+                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnClose.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnClose.Click, Sub()
@@ -408,6 +424,15 @@ Namespace BTA_OSG
             pnlFeatures.Controls.Add(chkAnalytics)
             tbl.Controls.Add(pnlFeatures, 0, r)
             tbl.SetColumnSpan(pnlFeatures, 4)
+            r += 1
+
+            ' Where this PC's Google Drive keeps office scans: an attached scan is copied
+            ' here so Drive for Desktop uploads it and every synced desk previews the same
+            ' path. Empty keeps attachments as plain picked paths.
+            txtScansFolder = NewInput("", 16)
+            tbl.Controls.Add(FieldLabel("Scans folder (Google Drive):", CivicCalmTheme.FontFieldLabel, CivicCalmTheme.ColorInk), 0, r)
+            tbl.Controls.Add(txtScansFolder, 1, r)
+            tbl.SetColumnSpan(txtScansFolder, 3)
 
             pnlAdvanced.Controls.Add(tbl)
         End Sub
@@ -416,6 +441,7 @@ Namespace BTA_OSG
             Dim s = AppSettings.Instance
             _startedPortal = s.PortalSettings.PortalEnabled
             _startedAnalytics = s.AnalyticsEnabled
+            txtScansFolder.Text = s.PdfLinkSettings.ScansFolder
 
             ' The saved address is offered whether or not the station is currently using it:
             ' switching to demo mode keeps the connection string, and making an operator retype
@@ -698,6 +724,7 @@ Namespace BTA_OSG
             s.DatabaseSettings.ConnectionString = BuildConnectionString(server, If(port.HasValue, port.Value.ToString(), Nothing), user, pass)
             s.PortalSettings.PortalEnabled = chkPortal.Checked
             s.AnalyticsEnabled = chkAnalytics.Checked
+            s.PdfLinkSettings.ScansFolder = txtScansFolder.Text.Trim()
             If chkPortal.Checked Then
                 s.PortalSettings.BaseUrl = LocalPortalBaseUrl
                 ' An empty (or the published demo default) key would leave the intake API
@@ -750,6 +777,7 @@ Namespace BTA_OSG
             s.DatabaseSettings.UseSqlServer = False
             s.PortalSettings.PortalEnabled = True
             s.PortalSettings.BaseUrl = LocalPortalBaseUrl
+            s.PdfLinkSettings.ScansFolder = txtScansFolder.Text.Trim()
             If String.IsNullOrWhiteSpace(s.PortalSettings.BridgeKey) OrElse String.Equals(s.PortalSettings.BridgeKey, PublishedDemoBridgeKey, StringComparison.OrdinalIgnoreCase) Then
                 s.PortalSettings.BridgeKey = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
             End If

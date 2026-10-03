@@ -91,7 +91,7 @@ Namespace BTA_OSG
             txtGDrive = New TextBox With {.Height = 28, .Text = "", .TabIndex = 11, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             btnAttachScan = New Button With {
-                .Text = "&Attach / Scan Document",
+                .Text = " &Attach / Scan Document",
                 .Size = New Size(340, 32),
                 .TabIndex = 12,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -99,7 +99,12 @@ Namespace BTA_OSG
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 2, 0, 6)
+                .Margin = New Padding(0, 2, 0, 6),
+                .Image = AppAssets.GetIcon("folder-open", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnAttachScan.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnAttachScan.Click, AddressOf OnAttachScanDocument
@@ -107,7 +112,7 @@ Namespace BTA_OSG
             cmbAssignedStaff = New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Height = 28, .TabIndex = 13, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
 
             btnRegister = New Button With {
-                .Text = "&Register OSG Document",
+                .Text = " &Register OSG Document",
                 .Height = 42,
                 .TabIndex = 14,
                 .BackColor = CivicCalmTheme.ColorPrimary,
@@ -115,7 +120,12 @@ Namespace BTA_OSG
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 12, 0, 12)
+                .Margin = New Padding(0, 12, 0, 12),
+                .Image = AppAssets.GetIcon("plus", 18, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
             }
             btnRegister.FlatAppearance.BorderSize = 0
             AddHandler btnRegister.Click, AddressOf OnRegisterDocument
@@ -215,28 +225,38 @@ Namespace BTA_OSG
                 .Padding = New Padding(0, 0, 0, 8)
             }
             btnViewRegistryDetail = New Button With {
-                .Text = "&View Details && History",
+                .Text = " &View Details && History",
                 .Size = New Size(220, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 0, 8, 0)
+                .Margin = New Padding(0, 0, 8, 0),
+                .Image = AppAssets.GetIcon("eye", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnViewRegistryDetail.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnViewRegistryDetail.Click, Sub() OpenSelectedDocumentDetail(dgvRegistry)
             flwToolbar.Controls.Add(btnViewRegistryDetail)
 
             Dim btnPrintRegistrySlip As New Button With {
-                .Text = "&Print Routing Slip",
+                .Text = " &Print Routing Slip",
                 .Size = New Size(180, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 0, 0, 0)
+                .Margin = New Padding(0, 0, 0, 0),
+                .Image = AppAssets.GetIcon("printer", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnPrintRegistrySlip.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnPrintRegistrySlip.Click, Sub() PrintSelectedDocumentRoutingSlip(dgvRegistry)
@@ -361,8 +381,20 @@ Namespace BTA_OSG
                 ' the system then refuses to open.
                 ofd.Filter = "PDF Files (*.pdf)|*.pdf"
                 If ofd.ShowDialog(Me) = DialogResult.OK Then
-                    txtGDrive.Text = ofd.FileName
-                    lblStatusMessage.Text = "Attachment selected: " & System.IO.Path.GetFileName(ofd.FileName)
+                    ' Staging copies the scan into the office's Drive sync folder so Google
+                    ' Drive uploads it in the background and every desk previews the same
+                    ' stored path. With no folder configured the picked path is stored as is.
+                    Dim staged As String = ""
+                    Dim stageErr As String = ""
+                    If AppStartup.PdfService.StageScan(ofd.FileName, staged, stageErr) Then
+                        txtGDrive.Text = staged
+                        lblStatusMessage.Text = If(staged <> ofd.FileName,
+                            "Scan filed into the Drive scans folder; Google Drive will upload it in the background.",
+                            "Attachment selected: " & System.IO.Path.GetFileName(staged))
+                    Else
+                        txtGDrive.Text = ofd.FileName
+                        lblStatusMessage.Text = "Scan not staged (" & stageErr & "). Storing the picked file as is."
+                    End If
                 End If
             End Using
         End Sub

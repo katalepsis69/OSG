@@ -82,118 +82,163 @@ Namespace BTA_OSG
             }
 
             btnClose = New Button With {
-                .Text = "&Close",
-                .Size = New Size(80, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
-            }
-            btnClose.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
-            AddHandler btnClose.Click, Sub() Me.Close()
-
-            btnLaunchPdf = New Button With {
-                .Text = "&Open Link",
+                .Text = " &Close",
                 .Size = New Size(95, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
+            }
+            btnClose.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            AddHandler btnClose.Click, Sub() Me.Close()
+
+            btnLaunchPdf = New Button With {
+                .Text = " &Open Link",
+                .Size = New Size(115, 34),
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .Cursor = Cursors.Hand,
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("folder-open", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnLaunchPdf.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnLaunchPdf.Click, AddressOf OnLaunchPDF
 
             btnMove = New Button With {
-                .Text = "&Transfer Storage",
-                .Size = New Size(130, 34),
+                .Text = " &Transfer Storage",
+                .Size = New Size(150, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("archive", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnMove.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnMove.Click, AddressOf OnMoveStorage
 
             btnRoute = New Button With {
-                .Text = "&Route",
-                .Size = New Size(80, 34),
+                .Text = " &Route",
+                .Size = New Size(95, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("arrows-split", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnRoute.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnRoute.Click, AddressOf OnRouteDocument
 
             btnRelease = New Button With {
-                .Text = "Re&lease Doc",
-                .Size = New Size(115, 34),
+                .Text = " Re&lease Doc",
+                .Size = New Size(130, 34),
                 .BackColor = CivicCalmTheme.ColorAccentSG,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("sparkle", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnRelease.FlatAppearance.BorderSize = 0
             AddHandler btnRelease.Click, AddressOf OnRelease
 
             btnApprove = New Button With {
-                .Text = "&Approve Doc",
-                .Size = New Size(115, 34),
+                .Text = " &Approve Doc",
+                .Size = New Size(130, 34),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("check", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnApprove.FlatAppearance.BorderSize = 0
             AddHandler btnApprove.Click, AddressOf OnApprove
 
             btnResubmit = New Button With {
-                .Text = "Re&submit",
-                .Size = New Size(100, 34),
+                .Text = " Re&submit",
+                .Size = New Size(115, 34),
                 .BackColor = CivicCalmTheme.ColorInfo,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("arrow-clockwise", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnResubmit.FlatAppearance.BorderSize = 0
             AddHandler btnResubmit.Click, AddressOf OnResubmit
 
             btnRequestRevision = New Button With {
-                .Text = "Request Re&vision",
-                .Size = New Size(135, 34),
+                .Text = " Request Re&vision",
+                .Size = New Size(155, 34),
                 .BackColor = CivicCalmTheme.ColorDanger,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("x", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnRequestRevision.FlatAppearance.BorderSize = 0
             AddHandler btnRequestRevision.Click, AddressOf OnRequestRevision
 
             btnRoutingSlip = New Button With {
-                .Text = "&Print Routing Slip",
-                .Size = New Size(145, 34),
+                .Text = " &Print Routing Slip",
+                .Size = New Size(165, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(4, 2, 0, 2)
+                .Margin = New Padding(4, 2, 0, 2),
+                .Image = AppAssets.GetIcon("printer", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnRoutingSlip.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnRoutingSlip.Click, AddressOf OnPrintRoutingSlip

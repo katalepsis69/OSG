@@ -67,39 +67,54 @@ Namespace BTA_OSG
                                                End Sub
 
             btnAuditFilter = New Button With {
-                .Text = "&Filter",
-                .Size = New Size(85, 32),
+                .Text = " &Filter",
+                .Size = New Size(100, 32),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0)
+                .Margin = New Padding(0, 4, 8, 0),
+                .Image = AppAssets.GetIcon("magnifying-glass", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnAuditFilter.FlatAppearance.BorderSize = 0
 
             btnAuditReset = New Button With {
-                .Text = "&Reset",
-                .Size = New Size(85, 32),
+                .Text = " &Reset",
+                .Size = New Size(100, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 0, 0)
+                .Margin = New Padding(0, 4, 8, 0),
+                .Image = AppAssets.GetIcon("arrow-clockwise", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnAuditReset.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
 
             ' Inline tamper-evidence: the same recomputation /verify-audit performs.
             btnAuditVerify = New Button With {
-                .Text = "&Verify Chain",
-                .Size = New Size(110, 32),
+                .Text = " &Verify Chain",
+                .Size = New Size(130, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 0, 0)
+                .Margin = New Padding(0, 4, 0, 0),
+                .Image = AppAssets.GetIcon("shield-check", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnAuditVerify.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
 

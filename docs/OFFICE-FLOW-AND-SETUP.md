@@ -116,9 +116,9 @@ One-time setup, by whoever owns the office Google account:
 
 Putting a soft copy on a document:
 
-1. Register the document in Document Registry as usual.
-2. Paste the Drive link into Digital Soft Copy Reference. The program accepts only secure links to drive.google.com or docs.google.com and refuses anything else when saving.
-3. Attach Scan instead picks a PDF from that PC. A link like that only opens on computers that can see the same file, so offices with several PCs should stick to Drive links.
+1. In Station Setup (Server address and other settings), set Scans folder (Google Drive) to the folder where this PC's Google Drive keeps office scans, for example G:\My Drive\OSG Scans. Do this on every desk that attaches scans, and point Google Drive for Desktop on each of those PCs at the same folder letter.
+2. Register the document in Document Registry as usual. For the soft copy, press Attach Scan and pick the scanned PDF. The program files a copy into the scans folder under its own SCAN- name, Google Drive uploads it in the background, and the document stores that filed copy's path. Preview then works on every desk whose Google Drive syncs the same folder, no waiting on the upload.
+3. A drive.google.com link can be pasted instead of using Attach Scan. With no Scans folder set, Attach Scan stores the picked file's own path, which only opens on computers that can see that same file. The folder setting is what makes the flow work across desks.
 
 Who may open one: tick Allow Soft Copy Document Access when enrolling a staff member, under Staff Operational Privileges. Everyone else sees the document's details, but Preview refuses and Launch PDF tells them access is denied.
 

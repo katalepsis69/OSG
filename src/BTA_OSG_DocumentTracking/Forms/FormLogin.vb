@@ -153,27 +153,37 @@ Namespace BTA_OSG
                 .Margin = New Padding(0, 8, 0, 0)
             }
             btnSignIn = New Button With {
-                .Text = "&Sign in",
-                .Size = New Size(110, 32),
+                .Text = " &Sign in",
+                .Size = New Size(115, 32),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .TabIndex = 1
+                .TabIndex = 1,
+                .Image = AppAssets.GetIcon("identification-card", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnSignIn.FlatAppearance.BorderSize = 0
             AddHandler btnSignIn.Click, Sub() OnSignIn()
 
             btnCancel = New Button With {
-                .Text = "&Cancel",
+                .Text = " &Cancel",
                 .Size = New Size(100, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .TabIndex = 2
+                .TabIndex = 2,
+                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnCancel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnCancel.Click, Sub()

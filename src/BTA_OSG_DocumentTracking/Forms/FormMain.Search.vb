@@ -67,50 +67,70 @@ Namespace BTA_OSG
                                              End Sub
 
             btnSearch = New Button With {
-                .Text = "&Search",
-                .Size = New Size(85, 32),
+                .Text = " &Search",
+                .Size = New Size(100, 32),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0)
+                .Margin = New Padding(0, 4, 8, 0),
+                .Image = AppAssets.GetIcon("magnifying-glass", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnSearch.FlatAppearance.BorderSize = 0
 
             btnClearSearch = New Button With {
-                .Text = "&Clear Filters",
-                .Size = New Size(95, 32),
+                .Text = " &Clear Filters",
+                .Size = New Size(115, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0)
+                .Margin = New Padding(0, 4, 8, 0),
+                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnClearSearch.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
 
             btnViewSearchDetail = New Button With {
-                .Text = "&View Details",
-                .Size = New Size(110, 32),
+                .Text = " &View Details",
+                .Size = New Size(125, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0)
+                .Margin = New Padding(0, 4, 8, 0),
+                .Image = AppAssets.GetIcon("eye", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnViewSearchDetail.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
 
             btnOpenPDF = New Button With {
-                .Text = "&Launch PDF",
-                .Size = New Size(110, 32),
+                .Text = " &Launch PDF",
+                .Size = New Size(125, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 0, 0)
+                .Margin = New Padding(0, 4, 0, 0),
+                .Image = AppAssets.GetIcon("folder-open", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnOpenPDF.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
 

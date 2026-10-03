@@ -5,6 +5,7 @@ Imports System
 Imports System.Collections.Generic
 Imports System.Drawing
 Imports System.IO
+Imports System.Reflection
 Imports System.Windows.Forms
 
 Namespace BTA_OSG
@@ -150,6 +151,111 @@ Namespace BTA_OSG
                 .Margin = New Padding(0, 0, 10, 0)
             }
             Return box
+        End Function
+
+        Private Shared ReadOnly _iconCache As New Dictionary(Of String, Image)()
+        Private Shared ReadOnly _masterIcons As New Dictionary(Of String, Image)()
+
+        ''' <summary>
+        ''' Retrieves a crisp, high-DPI Phosphor icon, dynamically downsampled with bicubic
+        ''' interpolation and optionally tinted to a semantic theme color.
+        ''' </summary>
+        Public Shared Function GetIcon(iconName As String, Optional sizePx As Integer = 16, Optional tintColor As Color = Nothing) As Image
+            If String.IsNullOrWhiteSpace(iconName) Then Return Nothing
+            SyncLock _syncLock
+                If sizePx <= 0 Then sizePx = 16
+                Dim cleanName = iconName.Trim().ToLowerInvariant()
+                If cleanName.EndsWith(".png", StringComparison.OrdinalIgnoreCase) Then
+                    cleanName = cleanName.Substring(0, cleanName.Length - 4)
+                End If
+
+                Dim colorKey = If(tintColor.IsEmpty OrElse tintColor = Color.Transparent, 0, tintColor.ToArgb())
+                Dim cacheKey = $"{cleanName}_{sizePx}_{colorKey}"
+
+                If _iconCache.ContainsKey(cacheKey) Then
+                    Return _iconCache(cacheKey)
+                End If
+
+                ' 1. Load or retrieve 256x256 master black-and-alpha bitmap
+                Dim masterImg As Image = Nothing
+                If _masterIcons.ContainsKey(cleanName) Then
+                    masterImg = _masterIcons(cleanName)
+                Else
+                    Dim asm = Assembly.GetExecutingAssembly()
+                    Dim resNames = New String() {
+                        $"icons.{cleanName}.png",
+                        $"Resources.icons.{cleanName}.png",
+                        $"{cleanName}.png"
+                    }
+                    For Each resName In resNames
+                        Using stream = asm.GetManifestResourceStream(resName)
+                            If stream IsNot Nothing Then
+                                Using tempImg = Image.FromStream(stream)
+                                    masterImg = New Bitmap(tempImg)
+                                    _masterIcons(cleanName) = masterImg
+                                    Exit For
+                                End Using
+                            End If
+                        End Using
+                    Next
+
+                    If masterImg Is Nothing Then
+                        Dim baseDir = AppDomain.CurrentDomain.BaseDirectory
+                        Dim candidatePaths = New String() {
+                            Path.Combine(baseDir, "Resources", "icons", $"{cleanName}.png"),
+                            Path.Combine(baseDir, "icons", $"{cleanName}.png")
+                        }
+                        For Each p In candidatePaths
+                            If File.Exists(p) Then
+                                Try
+                                    Using fs As New FileStream(p, FileMode.Open, FileAccess.Read, FileShare.Read)
+                                        Using tempImg = Image.FromStream(fs)
+                                            masterImg = New Bitmap(tempImg)
+                                            _masterIcons(cleanName) = masterImg
+                                            Exit For
+                                        End Using
+                                    End Using
+                                Catch
+                                End Try
+                            End If
+                        Next
+                    End If
+                End If
+
+                If masterImg Is Nothing Then Return Nothing
+
+                ' 2. Downsample to target size with high-quality bicubic filtering
+                Dim resultBmp As New Bitmap(sizePx, sizePx, Imaging.PixelFormat.Format32bppArgb)
+                Using g As Graphics = Graphics.FromImage(resultBmp)
+                    g.SmoothingMode = Drawing2D.SmoothingMode.HighQuality
+                    g.InterpolationMode = Drawing2D.InterpolationMode.HighQualityBicubic
+                    g.PixelOffsetMode = Drawing2D.PixelOffsetMode.HighQuality
+                    g.CompositingQuality = Drawing2D.CompositingQuality.HighQuality
+
+                    Dim destRect As New Rectangle(0, 0, sizePx, sizePx)
+
+                    If Not tintColor.IsEmpty AndAlso tintColor <> Color.Transparent Then
+                        Using ia As New Imaging.ImageAttributes()
+                            Dim cm As New Imaging.ColorMatrix()
+                            cm.Matrix00 = 0.0F
+                            cm.Matrix11 = 0.0F
+                            cm.Matrix22 = 0.0F
+                            cm.Matrix30 = tintColor.R / 255.0F
+                            cm.Matrix31 = tintColor.G / 255.0F
+                            cm.Matrix32 = tintColor.B / 255.0F
+                            cm.Matrix33 = tintColor.A / 255.0F
+                            cm.Matrix44 = 1.0F
+                            ia.SetColorMatrix(cm)
+                            g.DrawImage(masterImg, destRect, 0, 0, masterImg.Width, masterImg.Height, GraphicsUnit.Pixel, ia)
+                        End Using
+                    Else
+                        g.DrawImage(masterImg, destRect)
+                    End If
+                End Using
+
+                _iconCache(cacheKey) = resultBmp
+                Return resultBmp
+            End SyncLock
         End Function
     End Class
 

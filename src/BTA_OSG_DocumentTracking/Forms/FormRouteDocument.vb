@@ -80,14 +80,19 @@ Namespace BTA_OSG
             }
 
             btnCancel = New Button With {
-                .Text = "&Cancel",
+                .Text = " &Cancel",
                 .Size = New Size(95, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 6, 0, 0)
+                .Margin = New Padding(8, 6, 0, 0),
+                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnCancel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnCancel.Click, Sub()
@@ -96,14 +101,19 @@ Namespace BTA_OSG
                                         End Sub
 
             btnSave = New Button With {
-                .Text = "&Route Document",
-                .Size = New Size(150, 34),
+                .Text = " &Route Document",
+                .Size = New Size(155, 34),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 0, 0)
+                .Margin = New Padding(0, 6, 0, 0),
+                .Image = AppAssets.GetIcon("arrows-split", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnSave.FlatAppearance.BorderSize = 0
             AddHandler btnSave.Click, AddressOf OnSave

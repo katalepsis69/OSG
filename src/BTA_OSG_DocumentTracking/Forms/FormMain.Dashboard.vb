@@ -107,13 +107,18 @@ Namespace BTA_OSG
             AddHandler cmbDashCategory.SelectedIndexChanged, Sub() RefreshActiveTabGrid()
 
             btnDashResetFilters = New Button With {
-                .Text = "&Reset Filters",
-                .Size = New Size(95, 28),
+                .Text = " &Reset Filters",
+                .Size = New Size(110, 28),
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
-                .Margin = New Padding(16, 1, 0, 0)
+                .Margin = New Padding(16, 1, 0, 0),
+                .Image = AppAssets.GetIcon("arrow-clockwise", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(4, 0, 4, 0)
             }
             btnDashResetFilters.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnDashResetFilters.Click, Sub()
@@ -122,13 +127,18 @@ Namespace BTA_OSG
                                                   End Sub
 
             Dim btnPrintDashSlip As New Button With {
-                .Text = "&Print Slip",
-                .Size = New Size(95, 28),
+                .Text = " &Print Slip",
+                .Size = New Size(105, 28),
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
-                .Margin = New Padding(8, 1, 0, 0)
+                .Margin = New Padding(8, 1, 0, 0),
+                .Image = AppAssets.GetIcon("printer", 14, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(4, 0, 4, 0)
             }
             btnPrintDashSlip.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnPrintDashSlip.Click, Sub() PrintSelectedDocumentRoutingSlip(dgvDashRecent)

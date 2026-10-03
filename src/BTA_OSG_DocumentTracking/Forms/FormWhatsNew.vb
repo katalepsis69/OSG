@@ -238,23 +238,28 @@ Namespace BTA_OSG
             If btnUpdateNow IsNot Nothing OrElse String.IsNullOrEmpty(_downloadUrl) Then Return
 
             btnUpdateNow = New Button With {
-                .Text = "&Update && Restart Now",
-                .Size = New Size(185, 34),
+                .Text = " &Update && Restart Now",
+                .Size = New Size(205, 34),
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(6, 0, 0, 0)
+                .Margin = New Padding(6, 0, 0, 0),
+                .Image = AppAssets.GetIcon("arrow-clockwise", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
             }
             btnUpdateNow.FlatAppearance.BorderSize = 0
             AddHandler btnUpdateNow.Click, Async Sub()
                 btnUpdateNow.Enabled = False
-                btnUpdateNow.Text = "Downloading..."
+                btnUpdateNow.Text = " Downloading..."
                 Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me)
                 If Not Me.IsDisposed Then
                     btnUpdateNow.Enabled = True
-                    btnUpdateNow.Text = "&Update && Restart Now"
+                    btnUpdateNow.Text = " &Update && Restart Now"
                 End If
             End Sub
             flpFooter.Controls.Add(btnUpdateNow)

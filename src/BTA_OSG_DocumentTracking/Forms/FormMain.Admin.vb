@@ -122,7 +122,7 @@ Namespace BTA_OSG
             }
 
             btnAddUser = New Button With {
-                .Text = "&Save User && RFID Smart Card",
+                .Text = " &Save User && RFID Smart Card",
                 .Size = New Size(320, 42),
                 .TabIndex = 8,
                 .BackColor = CivicCalmTheme.ColorPrimary,
@@ -130,7 +130,12 @@ Namespace BTA_OSG
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 14, 0, 0)
+                .Margin = New Padding(0, 14, 0, 0),
+                .Image = AppAssets.GetIcon("floppy-disk", 18, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
             }
             btnAddUser.FlatAppearance.BorderSize = 0
             AddHandler btnAddUser.Click, AddressOf OnAddUser
@@ -139,7 +144,7 @@ Namespace BTA_OSG
             ' threshold stays locked in tbl_Users across restarts, so without this the
             ' remedy is hand-editing SQL on the server.
             btnUnlockUser = New Button With {
-                .Text = "&Unlock Selected Account",
+                .Text = " &Unlock Selected Account",
                 .Size = New Size(320, 38),
                 .TabIndex = 9,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -147,7 +152,12 @@ Namespace BTA_OSG
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 8, 0, 0)
+                .Margin = New Padding(0, 8, 0, 0),
+                .Image = AppAssets.GetIcon("lock-key", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
             }
             btnUnlockUser.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnUnlockUser.Click, AddressOf OnUnlockSelectedUser
@@ -170,7 +180,7 @@ Namespace BTA_OSG
             pnlFormFlow.Controls.Add(btnUnlockUser)
 
             Dim btnSetupWizard As New Button With {
-                .Text = "Reconfigure &Station Setup...",
+                .Text = " Reconfigure &Station Setup...",
                 .Size = New Size(CInt(Dpi(320.0F)), CInt(Dpi(38.0F))),
                 .TabIndex = 9,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -178,7 +188,12 @@ Namespace BTA_OSG
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
                 .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 12, 0, 0)
+                .Margin = New Padding(0, 12, 0, 0),
+                .Image = AppAssets.GetIcon("gear", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
             }
             btnSetupWizard.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnSetupWizard.Click, Async Sub()

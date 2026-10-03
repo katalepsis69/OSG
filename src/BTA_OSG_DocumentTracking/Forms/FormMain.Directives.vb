@@ -49,13 +49,18 @@ Namespace BTA_OSG
             txtDirNotes = New TextBox With {.Dock = DockStyle.Fill, .Text = "", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             btnApplyDirective = New Button With {
-                .Text = "&Log Action Directive",
+                .Text = " &Log Action Directive",
                 .Dock = DockStyle.Fill,
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand
+                .Cursor = Cursors.Hand,
+                .Image = AppAssets.GetIcon("sparkle", 16, Color.White),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(6, 0, 6, 0)
             }
             btnApplyDirective.FlatAppearance.BorderSize = 0
             AddHandler btnApplyDirective.Click, AddressOf OnApplyDirective

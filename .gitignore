@@ -43,8 +43,7 @@ install 1st/
 anti-slop/
 diagram.html
 doc_text.txt
-docs/superpowers/plans/
-docs/superpowers/specs/
+docs/
 .agents/
 .claude/
 .gemini/

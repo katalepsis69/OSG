@@ -74,16 +74,12 @@ Namespace BTA_OSG
             }
             pnlHeader.Controls.Add(pnlBorderBottom)
 
-            Dim picLogo = AppAssets.CreateLogoPictureBox(48)
-            picLogo.Location = New Point(20, 16)
-            pnlHeader.Controls.Add(picLogo)
-
             lblHeaderTitle = New Label With {
                 .Text = "What's New in BTA OSG",
                 .Font = CivicCalmTheme.FontFormTitle,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .AutoSize = True,
-                .Location = New Point(78, 16)
+                .Location = New Point(20, 16)
             }
             pnlHeader.Controls.Add(lblHeaderTitle)
 
@@ -95,7 +91,7 @@ Namespace BTA_OSG
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .ForeColor = CivicCalmTheme.ColorInkMuted,
                 .AutoSize = True,
-                .Location = New Point(78, 42)
+                .Location = New Point(20, 42)
             }
             pnlHeader.Controls.Add(lblHeaderSubtitle)
 
@@ -276,6 +272,21 @@ Namespace BTA_OSG
             End If
 
             ' Built-in Version History Log
+            AppendHeader("Version 2.1.3 - October 2026")
+            AppendBullet("Sidebar Navigation: Relocated What's New button to the bottom of the left navigation pane for easy access.")
+            AppendBullet("Header Streamlining: Cleaned up the top banner to keep focus on badge scanning and user logout.")
+            AppendBullet("Clean Dialog Header: Removed circular badge graphic for a clean, distraction-free update window.")
+
+            AppendSeparator()
+
+            AppendHeader("Version 2.1.2 - October 2026")
+            AppendBullet("Sharp Desktop Icons: Integrated 23 clean vector icons that stay sharp on all monitor display scalings.")
+            AppendBullet("Theme Contrast Tinting: Icons adapt automatically to match screen theme colors for high readability.")
+            AppendBullet("Scanned Attachments Folder: Station option to centralize PDF document scans into a shared drive folder.")
+            AppendBullet("Performance Tuning: Reduced workstation memory usage and improved application startup speed.")
+
+            AppendSeparator()
+
             AppendHeader("Version 2.1.0 - October 2026")
             AppendBullet("What's New & Release Changelogs: Integrated release history and update notification window.")
             AppendBullet("1-Click System Updates: Self-service update checker querying GitHub Releases with automated in-place restart.")
@@ -299,6 +310,13 @@ Namespace BTA_OSG
             AppendBullet("RFID Dual-Factor Security: Contactless smart card authentication with terminal auto-lockout defense.")
             AppendBullet("Offline Resilient Outbox: Continuous background sync to SQL Server with seamless offline cache fallback.")
             AppendBullet("Role-Based Access Control: Granular permissions for Records Officers, Legal Counsel, and Office of the SG.")
+
+            AppendSeparator()
+
+            AppendHeader("Version 1.0.0 - July 2026")
+            AppendBullet("Document Tracking Engine: Central database tracking for communications, bills, vouchers, and travel orders.")
+            AppendBullet("Sequential Tracking Numbers: Automated document tracking code generator (COMM, LEG, FIN, TO).")
+            AppendBullet("OSG Desk Routing: Digital document routing and status transitions between division desks.")
 
             rtbChangelog.SelectionStart = 0
             rtbChangelog.ScrollToCaret()

@@ -503,27 +503,15 @@ Namespace BTA_OSG
 
             pnlBrand = New Panel With {
                 .Dock = DockStyle.Top,
-                .Height = 88,
+                .Height = 76,
                 .BackColor = CivicCalmTheme.ColorSurface,
-                .Margin = New Padding(0, 0, 0, 8)
+                .Margin = New Padding(0, 0, 0, 8),
+                .Padding = New Padding(2, 4, 2, 4)
             }
-            Dim tblBrandLayout As New TableLayoutPanel With {
-                .Dock = DockStyle.Fill,
-                .ColumnCount = 2,
-                .RowCount = 1,
-                .BackColor = CivicCalmTheme.ColorSurface
-            }
-            tblBrandLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 74.0F))
-            tblBrandLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-            tblBrandLayout.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
-
-            Dim picSidebarLogo = AppAssets.CreateLogoPictureBox(64)
-            picSidebarLogo.Anchor = AnchorStyles.Left
-            picSidebarLogo.Margin = New Padding(0, 0, 10, 0)
 
             Dim pnlBrandText As New Panel With {
                 .Dock = DockStyle.Fill,
-                .Padding = New Padding(0, 10, 0, 0),
+                .Padding = New Padding(0, 2, 0, 0),
                 .BackColor = CivicCalmTheme.ColorSurface
             }
             Dim lblBrand As New Label With {
@@ -543,9 +531,7 @@ Namespace BTA_OSG
                 .TextAlign = ContentAlignment.MiddleLeft
             }
             pnlBrandText.Controls.AddRange(New Control() {lblBrandSub, lblBrand})
-            tblBrandLayout.Controls.Add(picSidebarLogo, 0, 0)
-            tblBrandLayout.Controls.Add(pnlBrandText, 1, 0)
-            pnlBrand.Controls.Add(tblBrandLayout)
+            pnlBrand.Controls.Add(pnlBrandText)
 
             Dim pnlNavStack As New FlowLayoutPanel With {
                 .Dock = DockStyle.Fill,

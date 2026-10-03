@@ -177,16 +177,24 @@ Namespace BTA_OSG
     End Function
 
     ''' <summary>
-    ''' Version as the office reads it: "2.2" for a two-part release, "2.1.6" while
-    ''' three-part builds are still in the field. Trailing zero parts are dropped.
+    ''' Version as the office reads it: always two parts, so a 2.1.6.0 build reads "2.1"
+    ''' while a two-part release reads "2.2" — one scheme everywhere versions are shown.
     ''' </summary>
     Friend Function FormatVersion(v As Version) As String
         If v Is Nothing Then Return ""
-        Dim build = Math.Max(v.Build, 0)
-        Dim revision = Math.Max(v.Revision, 0)
-        If revision > 0 Then Return v.Major & "." & v.Minor & "." & build & "." & revision
-        If build > 0 Then Return v.Major & "." & v.Minor & "." & build
         Return v.Major & "." & v.Minor
+    End Function
+
+    ''' <summary>
+    ''' Release tag as the office reads it: "v2.1.5" and "v2.1.6" both read "v2.1".
+    ''' Unparsable tags pass through untouched.
+    ''' </summary>
+    Friend Function FormatTagLabel(tagName As String) As String
+        Dim parsed As Version = Nothing
+        If Version.TryParse(If(tagName, "").Trim().TrimStart("v"c, "V"c), parsed) Then
+            Return "v" & FormatVersion(parsed)
+        End If
+        Return If(tagName, "")
     End Function
 
     ''' <summary>

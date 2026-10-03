@@ -559,8 +559,12 @@ Namespace BTA_OSG
                     Console.WriteLine("[FAIL] 15. Version part-count normalization failed.")
                     Return 1
                 End If
-                If AppUpdateService.FormatVersion(New Version(2, 2, 0, 0)) <> "2.2" OrElse AppUpdateService.FormatVersion(New Version(2, 1, 6, 0)) <> "2.1.6" Then
+                If AppUpdateService.FormatVersion(New Version(2, 2, 0, 0)) <> "2.2" OrElse AppUpdateService.FormatVersion(New Version(2, 1, 6, 0)) <> "2.1" Then
                     Console.WriteLine("[FAIL] 15. Version display formatting failed.")
+                    Return 1
+                End If
+                If AppUpdateService.FormatTagLabel("v2.1.5") <> "v2.1" OrElse AppUpdateService.FormatTagLabel("v2.2") <> "v2.2" Then
+                    Console.WriteLine("[FAIL] 15. Release tag labels were not reduced to two parts.")
                     Return 1
                 End If
                 Console.WriteLine("[PASS] 15. Same-version republish detection and two-part version handling verified.")

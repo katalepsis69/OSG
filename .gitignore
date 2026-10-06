@@ -10,6 +10,7 @@
 [Bb]in/
 [Oo]bj/
 dist/
+dist-previous/
 TestResults/
 *.dmp
 *.crashdump

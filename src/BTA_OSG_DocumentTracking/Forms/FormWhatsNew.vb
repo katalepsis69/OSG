@@ -32,6 +32,7 @@ Namespace BTA_OSG
         Private pnlHeader As Panel
         Private pnlFooter As Panel
         Private flpFooter As FlowLayoutPanel
+        Private prgDownload As ProgressBar
 
         Private _hasUpdate As Boolean = False
         Private _latestVersion As String = ""
@@ -267,6 +268,19 @@ Namespace BTA_OSG
         Private Sub ShowUpdateNowButton()
             If btnUpdateNow IsNot Nothing OrElse String.IsNullOrEmpty(_downloadUrl) Then Return
 
+            ' A thin progress strip under the changelog: without it the download is one
+            ' invisible operation and the window reads as frozen until the app exits.
+            Dim hostPanel = TryCast(rtbChangelog.Parent, Panel)
+            If hostPanel IsNot Nothing Then
+                prgDownload = New ProgressBar With {
+                    .Dock = DockStyle.Bottom,
+                    .Height = 6,
+                    .Visible = False
+                }
+                hostPanel.Controls.Add(prgDownload)
+                rtbChangelog.BringToFront()
+            End If
+
             btnUpdateNow = New Button With {
                 .Text = " &Update && Restart Now",
                 .Size = New Size(205, 34),
@@ -285,9 +299,22 @@ Namespace BTA_OSG
             btnUpdateNow.FlatAppearance.BorderSize = 0
             AddHandler btnUpdateNow.Click, Async Sub()
                 btnUpdateNow.Enabled = False
-                btnUpdateNow.Text = " Downloading..."
-                Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me)
+                If prgDownload IsNot Nothing Then prgDownload.Visible = True
+                Dim reporter As New Progress(Of DownloadProgressInfo)(Sub(p)
+                                                                          If Me.IsDisposed OrElse prgDownload Is Nothing Then Return
+                                                                          If p.Percent >= 0 Then
+                                                                              prgDownload.Style = ProgressBarStyle.Blocks
+                                                                              prgDownload.Value = Math.Min(100, p.Percent)
+                                                                          Else
+                                                                              prgDownload.Style = ProgressBarStyle.Marquee
+                                                                          End If
+                                                                          If Not String.IsNullOrEmpty(p.Label) Then btnUpdateNow.Text = " " & p.Label
+                                                                      End Sub)
+                Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me, reporter)
+                ' Success exits the process from the service; this restore is the failure path
+                ' (the service has already shown the error dialog by here).
                 If Not Me.IsDisposed Then
+                    If prgDownload IsNot Nothing Then prgDownload.Visible = False
                     btnUpdateNow.Enabled = True
                     btnUpdateNow.Text = " &Update && Restart Now"
                 End If

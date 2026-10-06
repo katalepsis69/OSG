@@ -23,14 +23,24 @@ Namespace BTA_OSG
         Public Property PublishedAt As DateTime = DateTime.MinValue
     End Class
 
+    ''' <summary>Download progress for the updater: Percent is -1 while the size is unknown,
+    ''' and Label is a ready-to-show line for the update button.</summary>
+    Public Class DownloadProgressInfo
+        Public Property Percent As Integer = -1
+        Public Property Label As String = ""
+    End Class
+
     ''' <summary>
     ''' Minimal 1-click self-updater using native .NET stdlib and GitHub Releases.
     ''' </summary>
     Public Module AppUpdateService
         Private Const GitHubRepo As String = "katalepsis69/OSG"
-        ' The office LAN is often offline with firewalls that drop rather than refuse; without
-        ' a budget the manual check spins for the 100s HttpClient default.
+        ' API calls fail fast on an offline LAN (10s budget); the exe download streams for
+        ' minutes, so it gets its own client with no overall timeout and reports progress
+        ' instead. One shared client would mean either a hung metadata check or an update
+        ' that can never finish.
         Private ReadOnly Http As New HttpClient() With {.Timeout = TimeSpan.FromSeconds(10)}
+        Private ReadOnly DownloadHttp As New HttpClient() With {.Timeout = System.Threading.Timeout.InfiniteTimeSpan}
 
         Public Async Function CheckUpdateInfoAsync() As Task(Of UpdateInfo)
             Dim info As New UpdateInfo()
@@ -273,7 +283,7 @@ Namespace BTA_OSG
         Return ParseUtcStamp(body.Substring(start + marker.Length, finish - start - marker.Length).Trim())
     End Function
 
-    Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form) As Task
+        Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form, Optional progress As IProgress(Of DownloadProgressInfo) = Nothing) As Task
             Try
                 If String.IsNullOrWhiteSpace(downloadUrl) Then
                     Throw New InvalidOperationException("Download URL is empty.")
@@ -283,11 +293,45 @@ Namespace BTA_OSG
                 Directory.CreateDirectory(tempDir)
                 Dim tempExe = Path.Combine(tempDir, "BTA_OSG_DocumentTracking.exe")
 
-                Http.DefaultRequestHeaders.UserAgent.Clear()
-                Http.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
-
-                Dim exeBytes = Await Http.GetByteArrayAsync(downloadUrl).ConfigureAwait(True)
-                File.WriteAllBytes(tempExe, exeBytes)
+                ' Stream straight to disk with real progress. The old code buffered the whole
+                ' exe in one invisible call, so the window sat frozen on "Downloading..."
+                ' for the entire transfer and looked hung.
+                DownloadHttp.DefaultRequestHeaders.UserAgent.Clear()
+                DownloadHttp.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
+                Using response = Await DownloadHttp.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(False)
+                    response.EnsureSuccessStatusCode()
+                    Dim total As Long = If(response.Content.Headers.ContentLength.HasValue, response.Content.Headers.ContentLength.Value, -1)
+                    Using source = Await response.Content.ReadAsStreamAsync().ConfigureAwait(False)
+                        Using target As New FileStream(tempExe, FileMode.Create, FileAccess.Write)
+                            Dim buffer(81919) As Byte
+                            Dim written As Long = 0
+                            Dim lastMark As Long = -1
+                            While True
+                                Dim read = Await source.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(False)
+                                If read = 0 Then Exit While
+                                target.Write(buffer, 0, read)
+                                written += read
+                                If progress IsNot Nothing Then
+                                    If total > 0 Then
+                                        Dim percent = CInt(written * 100 \ total)
+                                        If percent <> lastMark Then
+                                            lastMark = percent
+                                            progress.Report(New DownloadProgressInfo With {
+                                                .Percent = percent,
+                                                .Label = String.Format("Downloading {0:0.0} of {1:0.0} MB ({2}%)", written / 1048576.0, total / 1048576.0, percent)})
+                                        End If
+                                    ElseIf written \ 4194304L <> lastMark Then
+                                        ' Server sent no length: report every ~4 MB, marquee bar.
+                                        lastMark = written \ 4194304L
+                                        progress.Report(New DownloadProgressInfo With {
+                                            .Percent = -1,
+                                            .Label = String.Format("Downloading {0:0.0} MB", written / 1048576.0)})
+                                    End If
+                                End If
+                            End While
+                        End Using
+                    End Using
+                End Using
 
                 Dim currentExe = Environment.ProcessPath
                 If String.IsNullOrEmpty(currentExe) Then

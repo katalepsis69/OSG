@@ -129,7 +129,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Insert pending submission
             $subStmt = $pdo->prepare(
                 'INSERT INTO pending_submissions (id, full_name, email, phone, gender, document_title, category, status, created_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, "pending", NOW())'
+                 VALUES (?, ?, ?, ?, ?, ?, ?, \'pending\', NOW())'
             );
             $subStmt->execute([
                 $submissionId,

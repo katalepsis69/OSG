@@ -391,9 +391,20 @@ Namespace BTA_OSG
                         lblStatusMessage.Text = If(staged <> ofd.FileName,
                             "Scan filed into the Drive scans folder; Google Drive will upload it in the background.",
                             "Attachment selected: " & System.IO.Path.GetFileName(staged))
+                        ' The staging decision is an audit fact: the trail must answer where a
+                        ' copy of an official scan was placed, not only what the document row
+                        ' finally stored.
+                        EmbeddedDB.LogAudit(If(CurrentUser IsNot Nothing, CurrentUser("FullName").ToString(), "SYSTEM"),
+                            If(staged <> ofd.FileName,
+                               "Scan staged into the scans folder: " & System.IO.Path.GetFileName(staged),
+                               "Scan picked without staging (no scans folder configured): " & System.IO.Path.GetFileName(staged)),
+                            actionType:="SCAN_STAGED")
                     Else
                         txtGDrive.Text = ofd.FileName
                         lblStatusMessage.Text = "Scan not staged (" & stageErr & "). Storing the picked file as is."
+                        EmbeddedDB.LogAudit(If(CurrentUser IsNot Nothing, CurrentUser("FullName").ToString(), "SYSTEM"),
+                            "Scan staging failed (" & stageErr & "): stored the picked file instead. " & System.IO.Path.GetFileName(ofd.FileName),
+                            actionType:="SCAN_STAGE_FAILED")
                     End If
                 End If
             End Using
@@ -454,6 +465,22 @@ Namespace BTA_OSG
         Private Sub OnRegisterDocument(sender As Object, e As EventArgs)
             epValidation.Clear()
             If Not ValidateRegistrationInputs() Then Return
+            ' Double-submit guard: a queued second click of a double-click re-validates fine
+            ' and would file the same document twice on the office's primary intake action.
+            If _registerInFlight Then Return
+            _registerInFlight = True
+            btnRegister.Enabled = False
+            Try
+                RegisterDocumentCore()
+            Finally
+                _registerInFlight = False
+                btnRegister.Enabled = True
+            End Try
+        End Sub
+
+        Private _registerInFlight As Boolean = False
+
+        Private Sub RegisterDocumentCore()
 
             Dim docType = If(cmbDocType.SelectedItem IsNot Nothing, cmbDocType.SelectedItem.ToString(), "Regular Communication")
             Dim flowDir = If(cmbFlowDirection.SelectedItem IsNot Nothing, cmbFlowDirection.SelectedItem.ToString().ToUpperInvariant(), "INCOMING")

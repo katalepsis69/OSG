@@ -153,14 +153,27 @@ Namespace BTA_OSG
                 Dim targetPath = Path.Combine(baseDir, "Resources", "appsettings.local.json")
                 Try
                     Directory.CreateDirectory(Path.GetDirectoryName(targetPath))
-                    File.WriteAllText(targetPath, json)
+                    WriteAtomic(targetPath, json)
                 Catch ex As Exception
                     Dim appDataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BTA_OSG_DocumentTracking")
                     Directory.CreateDirectory(appDataDir)
-                    File.WriteAllText(Path.Combine(appDataDir, "appsettings.json"), json)
+                    WriteAtomic(Path.Combine(appDataDir, "appsettings.json"), json)
                 End Try
                 _instance = settings
             End SyncLock
+        End Sub
+
+        ' Write-then-rename: a crash or power cut mid-write must not truncate the file the
+        ' station loads on next start, or the saved server, portal switch, and scans folder
+        ' silently vanish and the seat presents the connect dialog again.
+        Private Shared Sub WriteAtomic(targetPath As String, json As String)
+            Dim tmpPath = targetPath & ".tmp"
+            File.WriteAllText(tmpPath, json)
+            If File.Exists(targetPath) Then
+                File.Replace(tmpPath, targetPath, Nothing)
+            Else
+                File.Move(tmpPath, targetPath)
+            End If
         End Sub
     End Class
 End Namespace

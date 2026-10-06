@@ -1,9 +1,16 @@
 <?php
 // BTA OSG External Intake Portal: Database Connection Helper
 
+// OTP and counter timestamps are stored as UTC strings and strtotime compares assume UTC regardless of the host php.ini.
+date_default_timezone_set('UTC');
+
 $configPath = __DIR__ . '/../config/config.php';
 if (!file_exists($configPath)) {
-    $configPath = __DIR__ . '/../config/config.example.php';
+    error_log('config.php missing');
+    if (PHP_SAPI !== 'cli') {
+        http_response_code(500);
+    }
+    exit('Server configuration error');
 }
 require_once $configPath;
 

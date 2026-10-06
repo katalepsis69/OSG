@@ -46,7 +46,9 @@ Namespace BTA_OSG
         Public Function GetAll() As List(Of User)
             Dim list As New List(Of User)()
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT UserID, Username, FullName, Office, Email, IsActive, CanRoute, CanMove, CanSoftCopy, IsLocked, FailedTapCount FROM tbl_Users"
+                ' ORDER BY makes replay attribution (ResolveReplayUserId matches by name)
+                ' deterministic when two staff share a full name.
+                Dim sql = "SELECT UserID, Username, FullName, Office, Email, IsActive, CanRoute, CanMove, CanSoftCopy, IsLocked, FailedTapCount FROM tbl_Users ORDER BY UserID"
                 Using cmd = New SqlCommand(sql, conn)
                     Using reader = cmd.ExecuteReader()
                         While reader.Read()
@@ -190,16 +192,9 @@ Namespace BTA_OSG
             Return permissions
         End Function
 
-        Public Sub IncrementFailedTaps(userId As Integer)
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Users SET FailedTapCount = ISNULL(FailedTapCount, 0) + 1, LastFailedTapUTC = SYSUTCDATETIME() WHERE UserID = @id"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@id", userId)
-                    cmd.ExecuteNonQuery()
-                End Using
-            End Using
-        End Sub
-
+        ' AuthenticationService (the unwired future auth path) locks an account whose tap
+        ' counter is already past the threshold; the live mirror path refuses locked
+        ' accounts without locking them.
         Public Sub LockUser(userId As Integer)
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "UPDATE tbl_Users SET IsLocked = 1 WHERE UserID = @id"

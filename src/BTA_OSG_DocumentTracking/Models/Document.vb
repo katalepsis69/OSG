@@ -31,5 +31,6 @@ Namespace BTA_OSG
         Public Property RevisionPunchlist As String
         Public Property LastActionTaken As String
         Public Property ExternalControlNumber As String
+        Public Property RequesterGender As String
     End Class
 End Namespace

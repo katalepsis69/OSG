@@ -117,8 +117,8 @@ try {
     // 2. Housekeeping: Expire unverified submissions older than 24 hours
     $pruneSub = $pdo->prepare(
         'UPDATE pending_submissions
-         SET status = "expired"
-         WHERE status = "pending" AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)'
+         SET status = \'expired\'
+         WHERE status = \'pending\' AND created_at < DATE_SUB(NOW(), INTERVAL 24 HOUR)'
     );
     $pruneSub->execute();
     $expiredCount = $pruneSub->rowCount();

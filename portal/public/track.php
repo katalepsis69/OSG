@@ -29,14 +29,14 @@ if ($searchedCn !== '') {
 
         // Normalize format: uppercase, trimmed, and auto-hyphenate if hyphens were omitted
         $rawClean = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $searchedCn));
-        if (preg_match('/^(COMM|LEG|FIN|TO)(\d{4})(\d{4})([A-Z0-9]{4})$/', $rawClean, $m)) {
+        if (preg_match('/^(COMM|LEG|FIN|TO)(\d{4})(\d{4,})([A-Z0-9]{4})$/', $rawClean, $m)) {
             $normalizedCn = $m[1] . '-' . $m[2] . '-' . $m[3] . '-' . $m[4];
         } else {
             $normalizedCn = strtoupper(trim($searchedCn));
         }
 
         // Control number pattern: e.g. COMM-2026-0001-K9X2
-        if (!preg_match('/^[A-Z]{2,4}-\d{4}-\d{4}-[A-Z0-9]{4}$/', $normalizedCn)) {
+        if (!preg_match('/^[A-Z]{2,4}-\d{4}-\d{4,}-[A-Z0-9]{4}$/', $normalizedCn)) {
             $errorMessage = 'Invalid control number format. Format must match: PREFIX-YYYY-0000-XXXX (e.g. COMM-2026-0001-K9X2).';
         } else {
             try {
@@ -430,7 +430,7 @@ function format_pst_time(string $utcTimeStr): string {
                 parts.push(rest.slice(4, 8));
             }
             if (rest.length > 8) {
-                parts.push(rest.slice(8, 12));
+                parts.push(rest.slice(8));
             }
 
             return parts.join('-');

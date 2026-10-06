@@ -295,7 +295,7 @@ Namespace BTA_OSG
                 .Padding = New Padding(0, 12, 0, 6)
             }
             btnClose = New Button With {
-                .Text = " &Close",
+                .Text = " C&lose",
                 .Size = New Size(100, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,

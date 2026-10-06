@@ -79,6 +79,14 @@ Namespace BTA_OSG
                 Dim parsedDt As DateTime
                 If DateTime.TryParse(fields.Deadline, parsedDt) Then targetDt = parsedDt
 
+                ' The cache row's DateReceived is when the document actually arrived; without
+                ' carrying it, replay stamps the sync moment and offline registrations are
+                ' measured from the wrong day in analytics and on the printed slip.
+                Dim receivedDt As DateTime? = Nothing
+                If Not String.IsNullOrWhiteSpace(fields.DateReceived) AndAlso DateTime.TryParse(fields.DateReceived, parsedDt) Then
+                    receivedDt = parsedDt
+                End If
+
                 Dim doc As Document = Nothing
                 ' One connection, one transaction: the sequence reservation, the document row,
                 ' the workflow update, the assignment, the routing log, and the storage
@@ -87,7 +95,7 @@ Namespace BTA_OSG
                 Using conn = AppStartup.ConnectionFactory.CreateConnection()
                     Using tx = conn.BeginTransaction()
                         Try
-                            doc = AppStartup.DocService.RegisterDocumentWithWorkflow(fields.Title, TypeCodeFor(fields.DocType), fields.FlowDirection, fields.Origin, fields.Destination, targetDt, fields.GDriveUrl, fields.LastAction, fields.RegisteredByUserId, transaction:=tx, externalControlNumber:=fields.ExternalControlNumber, preferredDocCode:=fields.PreferredDocCode)
+                            doc = AppStartup.DocService.RegisterDocumentWithWorkflow(fields.Title, TypeCodeFor(fields.DocType), fields.FlowDirection, fields.Origin, fields.Destination, targetDt, fields.GDriveUrl, fields.LastAction, fields.RegisteredByUserId, transaction:=tx, receivedDate:=receivedDt, externalControlNumber:=fields.ExternalControlNumber, preferredDocCode:=fields.PreferredDocCode)
                             If doc Is Nothing Then Return Nothing
 
                             ' The desktop registers INTO a workflow: status, desk, and owner are part of the
@@ -288,11 +296,35 @@ Namespace BTA_OSG
                             .FlowDirection = row("FlowDirection").ToString(),
                             .AssignedSection = row("AssignedSection").ToString(),
                             .Deadline = row("TargetDeadlineUTC").ToString(),
+                            .DateReceived = If(row.Table.Columns.Contains("DateReceived"), row("DateReceived").ToString(), ""),
                             .LastAction = row("LastActionTaken").ToString(),
                             .ExternalControlNumber = If(row.Table.Columns.Contains("ExternalControlNumber"), row("ExternalControlNumber").ToString(), ""),
                             .PreferredDocCode = row("DocCode").ToString()
                         }
                     End SyncLock
+
+                    ' A duplicate offline registration (the same portal submission imported on
+                    ' two seats, or a retry after a half-written row) must resolve to the
+                    ' existing server document instead of dying forever on the filtered
+                    ' unique index and stranding its child rows in the outbox.
+                    If fields.ExternalControlNumber.Length > 0 AndAlso AppStartup.DocumentRepo IsNot Nothing Then
+                        Dim existingByEcn = AppStartup.DocumentRepo.GetByExternalControlNumber(fields.ExternalControlNumber)
+                        If existingByEcn IsNot Nothing Then
+                            SyncLock EmbeddedDB.SyncRoot
+                                RemapOfflineChildRecords(oldLocalId, existingByEcn.DocumentID)
+                                row("PendingSync") = False
+                                If isNewCol Then row("IsNewOfflineRecord") = False
+                                Try
+                                    dtDocs.Rows.Remove(row)
+                                Catch ex2 As Exception
+                                    System.Diagnostics.Trace.WriteLine("Replay: could not remove merged offline row " & oldLocalId.ToString() & ": " & ex2.Message)
+                                End Try
+                            End SyncLock
+                            EmbeddedDB.Save()
+                            uploadedCount += 1
+                            Continue For
+                        End If
+                    End If
 
                     ' Registration attributes the row to a real user (RegisteredByUserID is
                     ' a NOT NULL FK); without a resolvable one the row stays queued rather
@@ -313,7 +345,10 @@ Namespace BTA_OSG
                             uploadedCount += 1
                             Try
                                 dtDocs.Rows.Remove(row)
-                            Catch
+                            Catch removeEx As Exception
+                                ' The SQL row is committed; a failed local removal only leaves a
+                                ' ghost duplicate until the next snapshot pull reconciles it.
+                                System.Diagnostics.Trace.WriteLine("Replay: could not remove replayed row " & oldLocalId.ToString() & ": " & removeEx.Message)
                             End Try
                         End SyncLock
                         ' The sync flags live in the cache file, so a crash between the SQL
@@ -370,6 +405,7 @@ Namespace BTA_OSG
                     Dim lastAction As String
                     Dim destOffice As String
                     Dim originOffice As String
+                    Dim assignedStaff As String = ""
                     Dim modifiedBy As Integer?
                     Dim rowVersion As Byte() = Nothing
                     SyncLock EmbeddedDB.SyncRoot
@@ -378,6 +414,9 @@ Namespace BTA_OSG
                         lastAction = row("LastActionTaken").ToString()
                         destOffice = row("DestinationOffice").ToString()
                         originOffice = row("OriginatingOffice").ToString()
+                        If dtDocs.Columns.Contains("AssignedStaff") AndAlso Not IsDBNull(row("AssignedStaff")) Then
+                            assignedStaff = row("AssignedStaff").ToString()
+                        End If
                         modifiedBy = ReplayUserId(row, "ModifiedByUserID")
                         If Not modifiedBy.HasValue OrElse modifiedBy.Value = 1 Then modifiedBy = ReplayUserId(row, "CreatedByUserID")
                         If dtDocs.Columns.Contains("RowVersion") AndAlso Not IsDBNull(row("RowVersion")) Then
@@ -411,6 +450,29 @@ Namespace BTA_OSG
                         Program.ReportOperatorWarning("Sync conflict on " & conflictCode & ": the server had a newer update, so this seat's offline edit was discarded.")
                     Else
                         uploadedCount += 1
+                        ' The cache row's AssignedStaff is the desk the offline directive chose.
+                        ' Without this, the assignment exists only in the XML cache and silently
+                        ' reverts on the next snapshot pull (the mirror derives the column from
+                        ' tbl_DocumentAssignments). The mirror keeps the latest row per document,
+                        ' so re-recording an unchanged assignment is harmless.
+                        If assignedStaff.Trim().Length > 0 AndAlso AppStartup.DocumentRepo IsNot Nothing Then
+                            Dim assigneeId = ResolveUserId(assignedStaff)
+                            If assigneeId.HasValue Then
+                                Try
+                                    AppStartup.DocumentRepo.AddAssignment(New DocumentAssignment With {
+                                        .DocumentID = docId,
+                                        .AssignedUserID = assigneeId.Value,
+                                        .AssignedByUserID = If(modifiedBy.HasValue, modifiedBy.Value, 0),
+                                        .AssignedAtUTC = DateTime.UtcNow,
+                                        .Remarks = "Replayed offline assignment"
+                                    })
+                                Catch assignEx As Exception
+                                    ' The state replay succeeded; a failed assignment row must not
+                                    ' flip the document back to pending and replay the status twice.
+                                    System.Diagnostics.Trace.WriteLine("Replay assignment insert failed for doc " & docId.ToString() & ": " & assignEx.Message)
+                                End Try
+                            End If
+                        End If
                     End If
                 Catch ex As Exception
                     System.Diagnostics.Trace.WriteLine("Failed to replay offline document state update to SQL: " & ex.Message)
@@ -480,9 +542,12 @@ Namespace BTA_OSG
         ''' The connected half of user enrolment: upsert into tbl_Users, issue the badge,
         ''' and assign the role, all in one transaction so a mid-way failure cannot leave
         ''' a user with no card or no role. Shared by RegisterUser and ReplayPendingUsers.
+        ''' claimGuard (first-administrator claim only) refuses a second SYSADMIN inside the
+        ''' transaction, because the claim flow's UI-level check cannot stop two seats that
+        ''' claim within the same window or replay the same claim from two caches.
         ''' Returns False so the caller keeps the row pending instead of losing it.
         ''' </summary>
-        Private Function EnsureUserInSql(fullName As String, role As String, office As String, cardUid As String, canRoute As Boolean, canMove As Boolean, canSoftCopy As Boolean, enrolledByUserId As Integer) As Boolean
+        Private Function EnsureUserInSql(fullName As String, role As String, office As String, cardUid As String, canRoute As Boolean, canMove As Boolean, canSoftCopy As Boolean, enrolledByUserId As Integer, Optional claimGuard As Boolean = False) As Boolean
             Dim cleanUid = If(cardUid, "").Trim().ToUpperInvariant()
             Try
                 Using conn = AppStartup.ConnectionFactory.CreateConnection()
@@ -499,6 +564,10 @@ Namespace BTA_OSG
                                 AppStartup.UserRepo.Update(existing, enrolledByUserId, tx)
                                 AppStartup.UserRepo.AssignRole(existing.UserID, RoleCodeFor(role), enrolledByUserId, tx)
                             Else
+                                If claimGuard AndAlso RoleCodeFor(role) = RbacPolicy.ROLE_SYSADMIN AndAlso
+                                   AppStartup.UserRepo.HasAnyUserWithRole(RbacPolicy.ROLE_SYSADMIN) Then
+                                    Throw New GuardRefusedException("An administrator has already been claimed on this server.")
+                                End If
                                 Dim newUser As New User With {
                                     .Username = SanitizeUsername(fullName),
                                     .FullName = fullName,
@@ -528,10 +597,37 @@ Namespace BTA_OSG
                         End Try
                     End Using
                 End Using
+            Catch refusal As GuardRefusedException
+                ' A refused claim is a decision, not a dead host: the caller (the claim
+                ' dialog) must show it, and the row must not be cached for a replay that
+                ' would be refused by the same guard anyway.
+                Throw
             Catch ex As Exception
                 System.Diagnostics.Trace.WriteLine("SQL Server user enrolment error: " & ex.Message)
                 Return False
             End Try
+        End Function
+
+        ''' <summary>
+        ''' A child row may only replay once its parent document is server truth. When the
+        ''' parent is still an offline-created row (PendingSync and IsNewOfflineRecord), its
+        ''' DocumentID is a LOCAL autoincrement id: GetById would match whichever server
+        ''' document happens to hold that number and attach the directive, routing log, or
+        ''' movement to a stranger. Children of mirrored documents (or rows already remapped
+        ''' by RemapOfflineChildRecords) carry real SQL ids and pass through.
+        ''' </summary>
+        Private Function ParentDocumentReady(docId As Integer) As Boolean
+            SyncLock EmbeddedDB.SyncRoot
+                Dim dtDocs = EmbeddedDB.DataSet.Tables("Documents")
+                If dtDocs IsNot Nothing Then
+                    Dim rows = dtDocs.Select(String.Format("DocumentID = {0}", docId))
+                    If rows.Length > 0 AndAlso dtDocs.Columns.Contains("PendingSync") AndAlso CBool(rows(0)("PendingSync")) _
+                       AndAlso dtDocs.Columns.Contains("IsNewOfflineRecord") AndAlso Not IsDBNull(rows(0)("IsNewOfflineRecord")) AndAlso CBool(rows(0)("IsNewOfflineRecord")) Then
+                        Return False
+                    End If
+                End If
+            End SyncLock
+            Return AppStartup.DocumentRepo.GetById(docId) IsNot Nothing
         End Function
 
         Private Function ReplayPendingDirectives() As Integer
@@ -560,7 +656,7 @@ Namespace BTA_OSG
                     ' The parent document must already exist in SQL: inserting against the
                     ' local id would attach the directive to whatever document holds that id
                     ' on the server. Rows stay queued until their document replays.
-                    If AppStartup.DocumentRepo.GetById(docId) Is Nothing Then Continue For
+                    If Not ParentDocumentReady(docId) Then Continue For
                     If Not issuedBy.HasValue Then
                         WarnReplayOnce("directives", "an offline directive could not be attributed to a known user")
                         Continue For
@@ -589,10 +685,23 @@ Namespace BTA_OSG
                         .IsActive = True,
                         .Remarks = notes
                     }
-                    AppStartup.DirectiveRepo.Insert(directive)
-                    If AppStartup.AuditService IsNot Nothing Then
-                        AppStartup.AuditService.LogEvent("DIRECTIVE_ADDED", "Directive", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
-                    End If
+                    ' Insert and audit are one fact, same as the connected IssueDirective: an
+                    ' audit failure after a bare commit would leave the row pending and the
+                    ' next tick would file the directive a second time.
+                    Using conn = AppStartup.ConnectionFactory.CreateConnection()
+                        Using tx = conn.BeginTransaction()
+                            Try
+                                AppStartup.DirectiveRepo.Insert(directive, tx)
+                                If AppStartup.AuditService IsNot Nothing Then
+                                    AppStartup.AuditService.LogEvent("DIRECTIVE_ADDED", "Directive", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, tx)
+                                End If
+                                tx.Commit()
+                            Catch
+                                tx.Rollback()
+                                Throw
+                            End Try
+                        End Using
+                    End Using
                     SyncLock EmbeddedDB.SyncRoot
                         row("PendingSync") = False
                     End SyncLock
@@ -632,7 +741,7 @@ Namespace BTA_OSG
                             remarks = row("Remarks").ToString()
                             routedBy = ReplayUserId(row, "RoutedByUserID")
                         End SyncLock
-                        If AppStartup.DocumentRepo.GetById(docId) Is Nothing Then Continue For
+                        If Not ParentDocumentReady(docId) Then Continue For
                         If Not routedBy.HasValue Then
                             WarnReplayOnce("routing", "an offline routing log could not be attributed to a known user")
                             Continue For
@@ -690,7 +799,7 @@ Namespace BTA_OSG
                             toLoc = row("ToLocation").ToString()
                             movedBy = ReplayUserId(row, "MovedByUserID")
                         End SyncLock
-                        If AppStartup.DocumentRepo.GetById(docId) Is Nothing Then Continue For
+                        If Not ParentDocumentReady(docId) Then Continue For
                         If Not movedBy.HasValue Then
                             WarnReplayOnce("movements", "an offline storage movement could not be attributed to a known user")
                             Continue For
@@ -731,6 +840,8 @@ Namespace BTA_OSG
                     Dim originalType As String
                     Dim actor As String
                     Dim auditId As String
+                    Dim eventAt As DateTime? = Nothing
+                    Dim parsedAt As DateTime
                     SyncLock EmbeddedDB.SyncRoot
                         actionDesc = row("ActionDescription").ToString()
                         userId = ReplayUserId(row, "UserID")
@@ -739,6 +850,12 @@ Namespace BTA_OSG
                         originalType = If(row.Table.Columns.Contains("ActionType") AndAlso Not IsDBNull(row("ActionType")), row("ActionType").ToString(), "")
                         actor = If(row.Table.Columns.Contains("UserName") AndAlso Not IsDBNull(row("UserName")), row("UserName").ToString(), "SYSTEM")
                         auditId = row("AuditID").ToString()
+                        ' The cache Timestamp is the wall-clock moment the action happened
+                        ' (LogAudit writes local time); replaying DateTime.UtcNow would show
+                        ' the sync batch hour in the forensic timeline instead.
+                        If row.Table.Columns.Contains("Timestamp") AndAlso DateTime.TryParse(row("Timestamp").ToString(), parsedAt) Then
+                            eventAt = DateTime.SpecifyKind(parsedAt, DateTimeKind.Local).ToUniversalTime()
+                        End If
                     End SyncLock
                     AppStartup.AuditRepo.Insert(New AuditEntry With {
                         .UserID = userId,
@@ -749,7 +866,7 @@ Namespace BTA_OSG
                         .NewValuesJson = actionDesc,
                         .Success = True,
                         .MachineName = Environment.MachineName,
-                        .EventAtUTC = DateTime.UtcNow
+                        .EventAtUTC = If(eventAt.HasValue, eventAt.Value, DateTime.UtcNow)
                     })
                     SyncLock EmbeddedDB.SyncRoot
                         row("PendingSync") = False
@@ -806,6 +923,9 @@ Namespace BTA_OSG
             Public Property FlowDirection As String
             Public Property AssignedSection As String
             Public Property Deadline As String
+            ' When the document actually arrived, carried from the cache row so a replayed
+            ' offline registration keeps its original received time instead of the sync time.
+            Public Property DateReceived As String
             Public Property LastAction As String
             Public Property RegisteredByUserId As Integer
             Public Property ExternalControlNumber As String
@@ -832,12 +952,24 @@ Namespace BTA_OSG
         ''' Staff full name to SQL user id, for the assignment row. The staff combo carries
         ''' names, and tbl_Users is small, so one read beats a new indexed lookup.
         ''' </summary>
-        Private Shared Function ResolveUserId(fullName As String) As Integer?
+        Friend Shared Function ResolveUserId(fullName As String) As Integer?
             If String.IsNullOrWhiteSpace(fullName) OrElse AppStartup.UserRepo Is Nothing Then Return Nothing
             For Each u As User In AppStartup.UserRepo.GetAll()
                 If String.Equals(u.FullName, fullName.Trim(), StringComparison.OrdinalIgnoreCase) Then Return u.UserID
             Next
             Return Nothing
+        End Function
+
+        ''' <summary>
+        ''' Status id to seeded code, for the terminal-state guard. Unknown ids return ""
+        ''' and the guard then stays open, exactly like the mirror's ISNULL fallback.
+        ''' </summary>
+        Friend Shared Function StatusCodeFor(statusId As Integer) As String
+            If AppStartup.ReferenceDataRepo Is Nothing Then Return ""
+            For Each s As DocumentStatus In AppStartup.ReferenceDataRepo.GetDocumentStatuses()
+                If s.StatusID = statusId Then Return s.StatusCode
+            Next
+            Return ""
         End Function
 
         Public Sub RouteDocument(docId As Integer, fromOffice As String, toOffice As String, action As String, remarks As String, routedByName As String, routedByUserId As Integer)
@@ -848,21 +980,30 @@ Namespace BTA_OSG
                                                   Using conn = AppStartup.ConnectionFactory.CreateConnection()
                                                       Using tx = conn.BeginTransaction()
                                                           Try
+                                                              Dim currentDoc = AppStartup.DocumentRepo.GetById(docId)
+                                                              If currentDoc Is Nothing Then Throw New InvalidOperationException("Document " & docId.ToString() & " no longer exists.")
                                                               Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(If(String.IsNullOrWhiteSpace(action), "ROUTED", action))
+
+                                                              ' A filed, released, archived, or completed document has left the
+                                                              ' active workflow: refuse the re-route instead of silently
+                                                              ' reopening it with nothing but a routine custody log.
+                                                              Dim currentCode = StatusCodeFor(currentDoc.StatusID)
+                                                              If DocumentStatus.IsTerminalStatus(currentCode) AndAlso
+                                                                 (status Is Nothing OrElse Not String.Equals(status.StatusCode, currentCode, StringComparison.OrdinalIgnoreCase)) Then
+                                                                  Throw New GuardRefusedException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer be routed.")
+                                                              End If
+
                                                               ' An action that is not a status code must not regress the
                                                               ' document: keep its current status, exactly as the offline
                                                               ' and replay paths do. Only the destination and custody log
                                                               ' record the transmittal.
-                                                              Dim statusId As Integer
-                                                              If status IsNot Nothing Then
-                                                                  statusId = status.StatusID
-                                                              Else
-                                                                  Dim currentDoc = AppStartup.DocumentRepo.GetById(docId)
-                                                                  If currentDoc Is Nothing Then Throw New InvalidOperationException("Document " & docId.ToString() & " no longer exists.")
-                                                                  statusId = currentDoc.StatusID
-                                                              End If
+                                                              Dim statusId As Integer = If(status IsNot Nothing, status.StatusID, currentDoc.StatusID)
 
-                                                              AppStartup.DocumentRepo.UpdateWorkflowState(docId, statusId, toOffice, Nothing, "Routed to " & toOffice & ": " & action, routedByUserId, destinationOffice:=toOffice, originOffice:=fromOffice, transaction:=tx)
+                                                              ' A destination office is not a desk: AssignedSection stays
+                                                              ' (COALESCE via Nothing), matching the offline path, so a
+                                                              ' document routed connected and one routed offline end up
+                                                              ' visible at the same desk after sync.
+                                                              AppStartup.DocumentRepo.UpdateWorkflowState(docId, statusId, Nothing, Nothing, "Routed to " & toOffice & ": " & action, routedByUserId, destinationOffice:=toOffice, originOffice:=fromOffice, transaction:=tx)
 
                                                               Dim log As New RoutingLog With {
                                                                   .DocumentID = docId,
@@ -906,7 +1047,7 @@ Namespace BTA_OSG
                         Exit For
                     End If
                 Next
-                If TryRunSql("ApplyDirective", Sub() AppStartup.DirectiveService.IssueDirective(docId, directiveTypeId, directiveText, notes, staffUserId)) Then
+                If TryRunSql("ApplyDirective", Sub() AppStartup.DirectiveService.IssueDirective(docId, directiveTypeId, directiveText, notes, staffUserId, assignedTo)) Then
                     PullAfterWrite("Directives", "Documents", "AuditTrail")
                     Return
                 End If
@@ -1016,10 +1157,10 @@ Namespace BTA_OSG
         ''' so every desk that syncs sees the badge. Offline, or after a failed SQL write: the
         ''' cache, as before. Returns True when the enrolment landed in the shared database.
         ''' </summary>
-        Public Function RegisterUser(fullName As String, role As String, office As String, cardUid As String, canRoute As Boolean, canMove As Boolean, canSoftCopy As Boolean, enrolledByName As String, enrolledByUserId As Integer) As Boolean
+        Public Function RegisterUser(fullName As String, role As String, office As String, cardUid As String, canRoute As Boolean, canMove As Boolean, canSoftCopy As Boolean, enrolledByName As String, enrolledByUserId As Integer, Optional claimGuard As Boolean = False) As Boolean
             Dim cleanUid = If(cardUid, "").Trim().ToUpperInvariant()
             If IsDatabaseConnected AndAlso AppStartup.UserRepo IsNot Nothing Then
-                If EnsureUserInSql(fullName, role, office, cleanUid, canRoute, canMove, canSoftCopy, enrolledByUserId) Then
+                If EnsureUserInSql(fullName, role, office, cleanUid, canRoute, canMove, canSoftCopy, enrolledByUserId, claimGuard) Then
                     PullAfterWrite("Users", "AuditTrail")
                     Return True
                 End If
@@ -1065,6 +1206,9 @@ Namespace BTA_OSG
         ''' <summary>
         ''' True when the connected action completed. False routes the caller to the cache
         ''' path, so a dead SQL host still lets the desk work instead of losing the action.
+        ''' A refused transition (the server-side from-status guard) is NOT a dead host:
+        ''' replaying it offline would write phantom custody rows for a move the server
+        ''' deliberately rejected, so GuardRefusedException is rethrown to the caller.
         ''' The fallback is ALSO reported to the operator surface: in a WinExe the trace log
         ''' is invisible, and a silent offline fallback looks identical to success.
         ''' </summary>
@@ -1072,6 +1216,8 @@ Namespace BTA_OSG
             Try
                 action()
                 Return True
+            Catch ex As GuardRefusedException
+                Throw
             Catch ex As Exception
                 System.Diagnostics.Trace.WriteLine("SQL Server " & label & " error (falling back to embedded cache): " & ex.Message)
                 Program.ReportOperatorWarning("SQL write fell back to offline cache (" & label & "): " & ex.Message)
@@ -1209,7 +1355,7 @@ Namespace BTA_OSG
                            "ISNULL(d.FlowDirection, 'INCOMING') AS FlowDirection, ISNULL(d.AssignedSection, '') AS AssignedSection, " &
                            "CONVERT(varchar(19), d.TargetDeadlineUTC, 120) AS TargetDeadlineUTC, " &
                            "ISNULL(d.RevisionPunchlist, '') AS RevisionPunchlist, ISNULL(d.LastActionTaken, '') AS LastActionTaken, " &
-                           "ISNULL(d.ExternalControlNumber, '') AS ExternalControlNumber, d.RowVersion " &
+                           "ISNULL(d.ExternalControlNumber, '') AS ExternalControlNumber, ISNULL(d.RequesterGender, '') AS RequesterGender, d.RowVersion " &
                            "FROM dbo.tbl_Documents d " &
                            "LEFT JOIN dbo.tbl_DocumentTypes dt ON dt.DocumentTypeID = d.DocumentTypeID " &
                            "LEFT JOIN dbo.tbl_DocumentStatuses st ON st.StatusID = d.StatusID " &

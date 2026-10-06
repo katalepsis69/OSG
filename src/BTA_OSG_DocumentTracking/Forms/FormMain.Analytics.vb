@@ -166,7 +166,7 @@ Namespace BTA_OSG
             lblAnalyticsStatTotal = CreateStatCard(pnlCards, 0, "TOTAL INGESTED (PERIOD)", "0", CivicCalmTheme.ColorPrimary)
             lblAnalyticsStatApproved = CreateStatCard(pnlCards, 1, "APPROVED / RELEASED", "0", CivicCalmTheme.ColorAccentSG)
             lblAnalyticsStatPending = CreateStatCard(pnlCards, 2, "ACTION REQD / REVISION", "0", CivicCalmTheme.ColorDanger)
-            lblAnalyticsStatVelocity = CreateStatCard(pnlCards, 3, "AVG PROCESSING VELOCITY", "0.0 Days", CivicCalmTheme.ColorInfo)
+            lblAnalyticsStatVelocity = CreateStatCard(pnlCards, 3, "AVG AGE OF DOCUMENTS", "0.0 Days", CivicCalmTheme.ColorInfo)
 
             ' 3. Lower Split Area: Tables (62%) and GAD Demographics (38%)
             Dim tblLower As New TableLayoutPanel With {
@@ -329,7 +329,7 @@ Namespace BTA_OSG
             lblGadFemaleCount = New Label With {
                 .Text = "• Female: 0 (0.0%)",
                 .Font = CivicCalmTheme.FontBody,
-                .ForeColor = ColorTranslator.FromHtml("#0284C7"),
+                .ForeColor = CivicCalmTheme.ColorStatusReviewFg,
                 .Dock = DockStyle.Top,
                 .Height = 24
             }
@@ -337,7 +337,7 @@ Namespace BTA_OSG
             lblGadMaleCount = New Label With {
                 .Text = "• Male: 0 (0.0%)",
                 .Font = CivicCalmTheme.FontBody,
-                .ForeColor = ColorTranslator.FromHtml("#0F2A4A"),
+                .ForeColor = CivicCalmTheme.ColorInk,
                 .Dock = DockStyle.Top,
                 .Height = 24
             }
@@ -390,7 +390,7 @@ Namespace BTA_OSG
             ElseIf cat.IndexOf("FIN", StringComparison.OrdinalIgnoreCase) >= 0 OrElse cat.IndexOf("Finance", StringComparison.OrdinalIgnoreCase) >= 0 Then
                 Return ColorTranslator.FromHtml("#8C6414") ' SG Gold / Amber
             ElseIf cat.IndexOf("TO", StringComparison.OrdinalIgnoreCase) >= 0 OrElse cat.IndexOf("Travel", StringComparison.OrdinalIgnoreCase) >= 0 Then
-                Return ColorTranslator.FromHtml("#0F2A4A") ' Navy
+                Return CivicCalmTheme.ColorInk ' Navy
             Else
                 Return ColorTranslator.FromHtml("#55606A") ' Slate
             End If
@@ -601,21 +601,21 @@ Namespace BTA_OSG
 
             Dim curX As Integer = 0
             If femaleWidth > 0 Then
-                Using bFemale As New SolidBrush(ColorTranslator.FromHtml("#0284C7"))
+                Using bFemale As New SolidBrush(CivicCalmTheme.ColorStatusReviewFg)
                     g.FillRectangle(bFemale, New Rectangle(curX, 0, femaleWidth, rect.Height))
                 End Using
                 curX += femaleWidth
             End If
 
             If maleWidth > 0 Then
-                Using bMale As New SolidBrush(ColorTranslator.FromHtml("#0F2A4A"))
+                Using bMale As New SolidBrush(CivicCalmTheme.ColorInk)
                     g.FillRectangle(bMale, New Rectangle(curX, 0, maleWidth, rect.Height))
                 End Using
                 curX += maleWidth
             End If
 
             If otherWidth > 0 Then
-                Using bOther As New SolidBrush(ColorTranslator.FromHtml("#94A3B8"))
+                Using bOther As New SolidBrush(CivicCalmTheme.ColorInkMuted)
                     g.FillRectangle(bOther, New Rectangle(curX, 0, otherWidth, rect.Height))
                 End Using
             End If
@@ -669,7 +669,7 @@ Namespace BTA_OSG
             Return thresholdDate
         End Function
 
-        Private Function CollectAnalytics(dtDocs As DataTable, thresholdDate As DateTime) As AnalyticsSummary
+        Friend Function CollectAnalytics(dtDocs As DataTable, thresholdDate As DateTime) As AnalyticsSummary
             Dim selSection = If(cmbAnalyticsSection.SelectedItem, "All Sections").ToString()
             Dim results As New AnalyticsSummary()
 
@@ -681,7 +681,11 @@ Namespace BTA_OSG
             Dim totalVelocityDays As Double = 0.0
             Dim velocityCount As Integer = 0
 
-            For Each row As DataRow In dtDocs.Rows
+            ' The row walk runs under the store lock: the replay worker mutates the same
+            ' Documents table on sync ticks, and an unlocked enumeration throws mid-loop.
+            ' In-memory only, so holding the lock costs nothing network-wise.
+            SyncLock EmbeddedDB.SyncRoot
+                For Each row As DataRow In dtDocs.Rows
                 Dim recDate = ParseRecordedDate(row("DateReceived").ToString())
 
                 If thresholdDate <> DateTime.MinValue AndAlso recDate < thresholdDate Then
@@ -702,8 +706,9 @@ Namespace BTA_OSG
                     results.TotalPending += 1
                 End If
 
-                ' Processing velocity (days between received and now) is capped at 90 so one
-                ' ancient mirrored row cannot dominate the average.
+                ' Document age (days between received and now) is capped at 90 so one ancient
+                ' mirrored row cannot dominate the average; the card is labeled "AVG AGE OF
+                ' DOCUMENTS" because that is exactly what this measures.
                 Dim elapsed = (DateTime.Now - recDate).TotalDays
                 If elapsed >= 0 Then
                     totalVelocityDays += Math.Min(elapsed, 90.0)
@@ -736,7 +741,8 @@ Namespace BTA_OSG
                 Else
                     results.OtherCount += 1
                 End If
-            Next
+                Next
+            End SyncLock
 
             results.AvgVelocityDays = If(velocityCount > 0, totalVelocityDays / velocityCount, 0.0)
             Return results
@@ -978,7 +984,7 @@ Namespace BTA_OSG
             Public Property Color As Color = CivicCalmTheme.ColorPrimary
         End Class
 
-        Private Class SectionDeskStats
+        Friend Class SectionDeskStats
             Public Property SectionName As String = ""
             Public Property TotalAssigned As Integer = 0
             Public Property InReview As Integer = 0
@@ -990,7 +996,7 @@ Namespace BTA_OSG
         ''' One pass over the Documents table: every tally the analytics cards, charts, and
         ''' the GAD panel render. Produced by CollectAnalytics, consumed by the render methods.
         ''' </summary>
-        Private Class AnalyticsSummary
+        Friend Class AnalyticsSummary
             Public ReadOnly MatchedRows As New List(Of DataRow)()
             Public Property TotalApproved As Integer = 0
             Public Property TotalPending As Integer = 0

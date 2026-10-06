@@ -55,6 +55,7 @@ Namespace BTA_OSG
         Private btnCheckUpdate As Button
         Private btnScanRFID As Button
         Private btnLogout As Button
+        Private btnRevokeCard As Button
 
         ' Sidebar Navigation Items
         Private navButtons As New List(Of Button)()
@@ -62,7 +63,6 @@ Namespace BTA_OSG
         Private navIconNames As New List(Of String)()
         Private activeNavIndex As Integer = 0
         Private activeViewRetry As Action = Nothing
-        Private sidebarCollapsed As Boolean = False
         Private tipNav As ToolTip
         Private pnlBrand As Panel
 
@@ -181,6 +181,12 @@ Namespace BTA_OSG
             ' to the sync timer tick, not to a 5s stall in front of the login dialog. The grid
             ' refresh runs here so the dashboard balances against the real client size.
             AddHandler Me.Shown, Async Sub()
+                                     ' A dropped settings layer (unreadable DPAPI blob, malformed JSON)
+                                     ' fail-opens to the shipped defaults: the operator must be told
+                                     ' or the seat can silently point at the wrong server.
+                                     If AppSettings.Instance.IgnoredConfigLayers.Count > 0 Then
+                                         ShowOperatorWarning("Warning: " & AppSettings.Instance.IgnoredConfigLayers(0) & ". Saved settings were ignored; check Station Setup.")
+                                     End If
                                      If Program.IsDatabaseConnected Then Await RunSqlSyncAsync()
                                      RefreshActiveTabGrid()
                                      If AppSettings.Instance.PortalSettings.PortalEnabled Then OnPortalPollTick()
@@ -890,28 +896,34 @@ Namespace BTA_OSG
                         End If
                     End If
                 Else
-                    ' A failed tap increments the SQL-side counter for the card's owner when
-                    ' the host is reachable, and locks the account at the configured threshold,
-                    ' so the 5-tap lockout is real and shared across workstations, not just the
-                    ' in-memory terminal lockout.
+                    ' A cache miss with a live SQL host means one of two things: a truly
+                    ' unknown card, or a badge the server knows but this seat's Users mirror
+                    ' predates. GetByCardPublicID only matches active badges, so a hit here is
+                    ' the stale-mirror case: the owner must not be punished for the seat's
+                    ' lag. Refresh the mirror and invite a second tap instead of counting a
+                    ' failed tap against the account.
+                    Dim staleMirrorResolved As Boolean = False
                     If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
                         Try
                             Dim knownUser = AppStartup.UserRepo.GetByCardPublicID(uid.Trim().ToUpperInvariant())
                             If knownUser IsNot Nothing Then
-                                AppStartup.UserRepo.IncrementFailedTaps(knownUser.UserID)
-                                If knownUser.FailedTapCount + 1 >= AppSettings.Instance.RfidSettings.LockoutThreshold AndAlso Not knownUser.IsLocked Then
-                                    AppStartup.UserRepo.LockUser(knownUser.UserID)
-                                End If
+                                If Program.Coordinator IsNot Nothing Then Program.Coordinator.RefreshFromServer("Users")
+                                EmbeddedDB.LogAudit("SYSTEM", "Badge recognized on the server; this seat's staff mirror was stale and has been refreshed [Card: " & maskedUid & "]", actionType:="MIRROR_REFRESH")
+                                lblStatusMessage.Text = "This badge is valid on the server; the seat's staff list was stale and has been refreshed. Tap the badge again."
+                                lblStatusMessage.ForeColor = CivicCalmTheme.ColorWarning
+                                staleMirrorResolved = True
                             End If
                         Catch
                         End Try
                     End If
-                    If EmbeddedDB.IsTerminalLockedOut() Then
-                        lblStatusMessage.Text = "Security Lockout: Terminal locked for 5 minutes due to 5 consecutive failed card reads."
-                        MessageBox.Show("Terminal has been temporarily locked out due to 5 consecutive failed RFID smart card badge reads. Please notify the System Administrator or wait 5 minutes.", "Security Lockout", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                    Else
-                        lblStatusMessage.Text = "Access Denied: Unrecognized RFID card [" & maskedUid & "]"
-                        MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & maskedUid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    If Not staleMirrorResolved Then
+                        If EmbeddedDB.IsTerminalLockedOut() Then
+                            lblStatusMessage.Text = "Security Lockout: Terminal locked for 5 minutes due to 5 consecutive failed card reads."
+                            MessageBox.Show("Terminal has been temporarily locked out due to 5 consecutive failed RFID smart card badge reads. Please notify the System Administrator or wait 5 minutes.", "Security Lockout", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                        Else
+                            lblStatusMessage.Text = "Access Denied: Unrecognized RFID card [" & maskedUid & "]"
+                            MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & maskedUid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                        End If
                     End If
                 End If
             End If
@@ -1103,16 +1115,21 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub RefreshDashboardGrid(visibleDocs As DataView)
+            ' The stat cards are office-wide numbers (the labels say so), while the grid below
+            ' honors the section and category filters. The row walk runs under the store lock:
+            ' the replay worker mutates these same rows on sync ticks.
             Dim allDocs = EmbeddedDB.DataSet.Tables("Documents")
             Dim forReviewCount As Integer = 0
             Dim forRevisionCount As Integer = 0
             Dim approvedReleasedCount As Integer = 0
-            For Each row As DataRow In allDocs.Rows
-                Dim st = row("CurrentStatus").ToString()
-                If st.IndexOf("REVIEW", StringComparison.OrdinalIgnoreCase) >= 0 Then forReviewCount += 1
-                If st.IndexOf("REVISION", StringComparison.OrdinalIgnoreCase) >= 0 Then forRevisionCount += 1
-                If st.Equals("APPROVED", StringComparison.OrdinalIgnoreCase) OrElse st.Equals("RELEASED", StringComparison.OrdinalIgnoreCase) Then approvedReleasedCount += 1
-            Next
+            SyncLock EmbeddedDB.SyncRoot
+                For Each row As DataRow In allDocs.Rows
+                    Dim st = row("CurrentStatus").ToString()
+                    If st.IndexOf("REVIEW", StringComparison.OrdinalIgnoreCase) >= 0 Then forReviewCount += 1
+                    If st.IndexOf("REVISION", StringComparison.OrdinalIgnoreCase) >= 0 Then forRevisionCount += 1
+                    If st.Equals("APPROVED", StringComparison.OrdinalIgnoreCase) OrElse st.Equals("RELEASED", StringComparison.OrdinalIgnoreCase) Then approvedReleasedCount += 1
+                Next
+            End SyncLock
 
             lblStatTotalDocs.Text = allDocs.Rows.Count.ToString()
             lblStatDirectives.Text = forReviewCount.ToString()
@@ -1216,7 +1233,10 @@ Namespace BTA_OSG
                 ClearActiveViewFilters()
                 Return True
             End If
-            If keyData = (Keys.Alt Or Keys.R) Then
+            If keyData = (Keys.Alt Or Keys.R) AndAlso activeViewRetry IsNot Nothing Then
+                ' Only claim Alt+R while a view actually has a retry to run: command keys
+                ' resolve before mnemonics, so an unconditional claim deadens every &R
+                ' control on every view (the Registry's own Register button among them).
                 TryRetryActiveView()
                 Return True
             End If

@@ -22,11 +22,9 @@ Namespace BTA_OSG
         Public Shared AuthService As AuthenticationService
         Public Shared DocService As DocumentService
         Public Shared DirectiveService As DirectiveService
-        Public Shared RoutingService As RoutingService  
+        Public Shared RoutingService As RoutingService
         Public Shared StorageService As StorageService
-        Public Shared SearchService As SearchService
         Public Shared PdfService As PdfLinkService
-        Public Shared UserService As UserService
         Public Shared CardService As RfidCardService
         Public Shared AuditService As AuditService
         Public Shared PortalBridgeClient As IPortalBridge
@@ -50,12 +48,10 @@ Namespace BTA_OSG
             PortalBridgeClient = New PortalBridge(Settings.PortalSettings, auditService:=AuditService)
             AuthService = New AuthenticationService(UserRepo, AuditRepo, Settings.RfidSettings)
             DocService = New DocumentService(DocumentRepo, SequenceRepo, ReferenceDataRepo, AuditService, PortalBridgeClient, RoutingRepo, StorageRepo)
-            DirectiveService = New DirectiveService(DirectiveRepo, DocumentRepo, ReferenceDataRepo, AuditService, PortalBridgeClient)
+            DirectiveService = New DirectiveService(DirectiveRepo, DocumentRepo, ReferenceDataRepo, AuditService, PortalBridgeClient, RoutingRepo)
             RoutingService = New RoutingService(RoutingRepo, DocumentRepo, ReferenceDataRepo, AuditService, PortalBridgeClient)
             StorageService = New StorageService(StorageRepo, DocumentRepo, AuditService)
-            SearchService = New SearchService(DocumentRepo)
             PdfService = New PdfLinkService(Settings.PdfLinkSettings, AuditService)
-            UserService = New UserService(UserRepo, AuditService)
             CardService = New RfidCardService(ConnectionFactory, AuditService)
         End Sub
     End Class

@@ -35,10 +35,12 @@ Namespace BTA_OSG
             pnlCards.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 25.0F))
             pnlCards.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
 
-            lblStatTotalDocs = CreateStatCard(pnlCards, 0, "TOTAL OSG DOCUMENTS", "0", CivicCalmTheme.ColorPrimary)
-            lblStatDirectives = CreateStatCard(pnlCards, 1, "PENDING REVIEW", "0", CivicCalmTheme.ColorInfo)
-            lblStatActiveRoute = CreateStatCard(pnlCards, 2, "ACTION REQD (REVISION)", "0", CivicCalmTheme.ColorDanger)
-            lblStatVaultStorage = CreateStatCard(pnlCards, 3, "APPROVED / RELEASED", "0", CivicCalmTheme.ColorAccentSG)
+            ' The four cards are office-wide counts; only the grid below follows the section
+            ' and category filters, so the labels state their scope.
+            lblStatTotalDocs = CreateStatCard(pnlCards, 0, "TOTAL OSG DOCUMENTS (ALL)", "0", CivicCalmTheme.ColorPrimary)
+            lblStatDirectives = CreateStatCard(pnlCards, 1, "PENDING REVIEW (ALL)", "0", CivicCalmTheme.ColorInfo)
+            lblStatActiveRoute = CreateStatCard(pnlCards, 2, "ACTION REQD (REVISION, ALL)", "0", CivicCalmTheme.ColorDanger)
+            lblStatVaultStorage = CreateStatCard(pnlCards, 3, "APPROVED / RELEASED (ALL)", "0", CivicCalmTheme.ColorAccentSG)
 
             Dim pnlGridCard As New Panel With {
                 .Dock = DockStyle.Fill,

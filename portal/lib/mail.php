@@ -4,9 +4,16 @@
 // Works reliably on cloud VPS tiers where outbound SMTP ports are blocked.
 // Zero third-party dependencies (native cURL only).
 
+// Included standalone as well: strtotime/date use UTC regardless of the host php.ini.
+date_default_timezone_set('UTC');
+
 $configPath = __DIR__ . '/../config/config.php';
 if (!file_exists($configPath)) {
-    $configPath = __DIR__ . '/../config/config.example.php';
+    error_log('config.php missing');
+    if (PHP_SAPI !== 'cli') {
+        http_response_code(500);
+    }
+    exit('Server configuration error');
 }
 require_once $configPath;
 

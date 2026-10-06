@@ -16,7 +16,7 @@ Namespace BTA_OSG
                 .ColumnCount = 2,
                 .RowCount = 2
             }
-            tblMain.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, 380.0F))
+            tblMain.ColumnStyles.Add(New ColumnStyle(SizeType.Absolute, Dpi(380.0F)))
             tblMain.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
             tblMain.RowStyles.Add(New RowStyle(SizeType.Percent, 58.0F))
             tblMain.RowStyles.Add(New RowStyle(SizeType.Percent, 42.0F))
@@ -102,7 +102,7 @@ Namespace BTA_OSG
             }
 
             chkCanMove = New CheckBox With {
-                .Text = "Allow &Storage Landmark Transfers",
+                .Text = "Allow Storage Landmark &Transfers",
                 .Font = CivicCalmTheme.FontBody,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .AutoSize = True,
@@ -122,7 +122,7 @@ Namespace BTA_OSG
             }
 
             btnAddUser = New Button With {
-                .Text = " &Save User && RFID Smart Card",
+                .Text = " Sa&ve User && RFID Smart Card",
                 .Size = New Size(320, 42),
                 .TabIndex = 8,
                 .BackColor = CivicCalmTheme.ColorPrimary,
@@ -162,10 +162,31 @@ Namespace BTA_OSG
             btnUnlockUser.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
             AddHandler btnUnlockUser.Click, AddressOf OnUnlockSelectedUser
 
+            ' Lost-badge recovery: revocation used to exist only as a service method with no
+            ' UI, so a badge reported lost stayed valid everywhere until someone edited SQL.
+            btnRevokeCard = New Button With {
+                .Text = " Revoke Selected &Badge",
+                .Size = New Size(320, 38),
+                .TabIndex = 10,
+                .BackColor = CivicCalmTheme.ColorWell,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = CivicCalmTheme.FontBody,
+                .Cursor = Cursors.Hand,
+                .Margin = New Padding(0, 8, 0, 0),
+                .Image = AppAssets.GetIcon("x", 16, CivicCalmTheme.ColorInk),
+                .ImageAlign = ContentAlignment.MiddleLeft,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .TextImageRelation = TextImageRelation.ImageBeforeText,
+                .Padding = New Padding(8, 0, 8, 0)
+            }
+            btnRevokeCard.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            AddHandler btnRevokeCard.Click, AddressOf OnRevokeSelectedCard
+
             pnlFormFlow.Controls.Add(lblHeader)
             pnlFormFlow.Controls.Add(New Label With {.Text = "&Full Name:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .AutoSize = True, .Margin = New Padding(0, 6, 0, 2)})
             pnlFormFlow.Controls.Add(txtNewUserName)
-            pnlFormFlow.Controls.Add(New Label With {.Text = "System &Role:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .AutoSize = True, .Margin = New Padding(0, 6, 0, 2)})
+            pnlFormFlow.Controls.Add(New Label With {.Text = "Syste&m Role:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .AutoSize = True, .Margin = New Padding(0, 6, 0, 2)})
             pnlFormFlow.Controls.Add(cmbNewUserRole)
             pnlFormFlow.Controls.Add(New Label With {.Text = "Assigned &Section Desk / Department:", .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .AutoSize = True, .Margin = New Padding(0, 6, 0, 2)})
             pnlFormFlow.Controls.Add(cmbNewUserSection)
@@ -178,11 +199,12 @@ Namespace BTA_OSG
             pnlFormFlow.Controls.Add(chkCanSoftCopy)
             pnlFormFlow.Controls.Add(btnAddUser)
             pnlFormFlow.Controls.Add(btnUnlockUser)
+            pnlFormFlow.Controls.Add(btnRevokeCard)
 
             Dim btnSetupWizard As New Button With {
-                .Text = " Reconfigure &Station Setup...",
+                .Text = " Reconfigure Station Set&up...",
                 .Size = New Size(CInt(Dpi(320.0F)), CInt(Dpi(38.0F))),
-                .TabIndex = 9,
+                .TabIndex = 11,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,
@@ -351,7 +373,10 @@ Namespace BTA_OSG
             End If
 
             Dim cleanName = txtNewUserName.Text.Trim()
-            Dim cleanUid = txtNewUserUID.Text.Trim()
+            ' The Admin box accepts pasted reader dumps, so it goes through the same
+            ' control-character sanitizer as the login and claim paths: a UID stored with a
+            ' trailing control character enrols fine but can never authenticate.
+            Dim cleanUid = EmbeddedDB.SanitizeCardUid(txtNewUserUID.Text)
 
             If String.IsNullOrWhiteSpace(cleanName) Then
                 epValidation.SetError(txtNewUserName, "Please enter Full Name.")
@@ -395,8 +420,10 @@ Namespace BTA_OSG
                 End If
                 Program.Coordinator.RegisterUser(cleanName, savedRole, savedOffice, cleanUid, chkCanRoute.Checked, chkCanMove.Checked, chkCanSoftCopy.Checked, enrolledBy, enrolledById)
             Else
-                EmbeddedDB.AddUser(cleanUid, cleanName, savedRole, savedOffice, chkCanRoute.Checked, chkCanMove.Checked, chkCanSoftCopy.Checked)
-                EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), String.Format("Registered/Updated User [{0}] Role: {1} (Desk: {2}) Privileges: [Route:{3}, Move:{4}, SoftCopy:{5}] RFID: {6}", cleanName, savedRole, savedOffice, chkCanRoute.Checked, chkCanMove.Checked, chkCanSoftCopy.Checked, maskedUid))
+                ' pendingSync:=True: the coordinator-less fallback must still replay, like
+                ' every other offline mutator.
+                EmbeddedDB.AddUser(cleanUid, cleanName, savedRole, savedOffice, chkCanRoute.Checked, chkCanMove.Checked, chkCanSoftCopy.Checked, pendingSync:=True)
+                EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), String.Format("Registered/Updated User [{0}] Role: {1} (Desk: {2}) Privileges: [Route:{3}, Move:{4}, SoftCopy:{5}] RFID: {6}", cleanName, savedRole, savedOffice, chkCanRoute.Checked, chkCanMove.Checked, chkCanSoftCopy.Checked, maskedUid), actionType:="USER_REGISTERED")
             End If
 
             lblStatusMessage.Text = String.Format("User Registered: {0} [{1} - {2}]", cleanName, savedRole, savedOffice)
@@ -438,6 +465,46 @@ Namespace BTA_OSG
             End Try
             EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), "Unlocked user account " & fullName & " and reset its failed-tap counter.", actionType:="USER_UNLOCKED")
             lblStatusMessage.Text = "Account unlocked: " & fullName
+            If Program.Coordinator IsNot Nothing Then Program.Coordinator.RefreshFromServer("Users")
+            RefreshActiveTabGrid()
+        End Sub
+
+        ''' <summary>
+        ''' Revokes every active badge of the account selected in the grid. The badge stops
+        ''' authenticating everywhere at the next Users pull, because the mirror projection
+        ''' only carries cards whose RevokedAtUTC is still NULL.
+        ''' </summary>
+        Private Sub OnRevokeSelectedCard(sender As Object, e As EventArgs)
+            If CurrentUser Is Nothing Then Return
+            If dgvUsers.CurrentRow Is Nothing OrElse dgvUsers.CurrentRow.DataBoundItem Is Nothing Then
+                lblStatusMessage.Text = "Select the account whose badge is lost in the grid first."
+                Return
+            End If
+            Dim row = DirectCast(dgvUsers.CurrentRow.DataBoundItem, DataRowView).Row
+            Dim userId As Integer = 0
+            If row.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(row("UserID")) Then userId = Convert.ToInt32(row("UserID"))
+            Dim fullName = If(row.Table.Columns.Contains("FullName"), row("FullName").ToString(), "")
+            If userId <= 0 Then
+                lblStatusMessage.Text = "This account has no server record; its badge only lives on this workstation's offline store."
+                Return
+            End If
+            If MessageBox.Show("Revoke every active badge of " & fullName & "? The badge stops working on all workstations at the next sync.", "Confirm Badge Revocation", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) <> DialogResult.Yes Then Return
+            If Not Program.IsDatabaseConnected OrElse AppStartup.CardService Is Nothing Then
+                lblStatusMessage.Text = "Badge revocation needs the office server connection."
+                Return
+            End If
+            Try
+                Dim revoked = AppStartup.CardService.RevokeActiveCardsForUser(userId, If(CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(CurrentUser("UserID")), Convert.ToInt32(CurrentUser("UserID")), 0), "Reported lost: revoked from User & RFID Admin")
+                If revoked = 0 Then
+                    lblStatusMessage.Text = "No active badge found for " & fullName & "."
+                    Return
+                End If
+                EmbeddedDB.LogAudit(CurrentUser("FullName").ToString(), "Revoked " & revoked.ToString() & " active badge(s) of " & fullName & ".", actionType:="RFID_REVOKED")
+                lblStatusMessage.Text = "Badge revoked: " & fullName & " (" & revoked.ToString() & " card(s))."
+            Catch ex As Exception
+                lblStatusMessage.Text = "Revocation failed: " & ex.Message
+                Return
+            End Try
             If Program.Coordinator IsNot Nothing Then Program.Coordinator.RefreshFromServer("Users")
             RefreshActiveTabGrid()
         End Sub

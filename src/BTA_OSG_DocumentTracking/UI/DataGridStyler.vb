@@ -364,8 +364,8 @@ Namespace BTA_OSG
                     Dim statusCell = row.Cells("SeatStatus")
                     statusCell.Value = If(stale, "Stale (offline?)", "Syncing")
                     If stale Then
-                        statusCell.Style.BackColor = Color.FromArgb(255, 243, 205)
-                        statusCell.Style.SelectionBackColor = Color.FromArgb(255, 243, 205)
+                        statusCell.Style.BackColor = CivicCalmTheme.ColorStatusReceivedBg
+                        statusCell.Style.SelectionBackColor = CivicCalmTheme.ColorStatusReceivedBg
                     Else
                         statusCell.Style.BackColor = Color.Empty
                         statusCell.Style.SelectionBackColor = Color.Empty

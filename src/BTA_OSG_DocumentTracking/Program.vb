@@ -297,8 +297,10 @@ Namespace BTA_OSG
                 ' documents it found (final seed policy: nothing seeded anywhere persists).
                 Dim documentsBefore As Integer = EmbeddedDB.DataSet.Tables("Documents").Rows.Count
 
-                ' Test 1: DB connection check
-                Dim dbConnected As Boolean = False
+                ' Test 1: the isolated offline harness actually engaged: SQL mode forced off
+                ' and the probe reporting offline. A regression that leaves UseSqlServer on
+                ' would point the harness at a real database, so this must fail loudly.
+                Dim dbReachable As Boolean = False
                 Try
                     Dim connStr = AppStartup.Settings.DatabaseSettings.ConnectionString
                     Dim builder As New Microsoft.Data.SqlClient.SqlConnectionStringBuilder(connStr) With {
@@ -306,12 +308,15 @@ Namespace BTA_OSG
                     }
                     Using conn As New Microsoft.Data.SqlClient.SqlConnection(builder.ConnectionString)
                         conn.Open()
-                        dbConnected = True
+                        dbReachable = True
                     End Using
-                    Console.WriteLine("[PASS] 1. Database connection verified (SQL Server).")
-                Catch ex As Exception
-                    Console.WriteLine("[PASS] 1. Database connection check handled (SQL Server host offline; isolated test harness engaged).")
+                Catch
                 End Try
+                If AppStartup.Settings.DatabaseSettings.UseSqlServer OrElse Program.IsDatabaseConnected OrElse dbReachable Then
+                    Console.WriteLine("[FAIL] 1. The self-check must run on the isolated offline harness (SQL mode forced off), not a live database.")
+                    Return 1
+                End If
+                Console.WriteLine("[PASS] 1. Isolated offline harness engaged (SQL mode forced off, probe offline).")
 
                 ' Test 2: Target OSG document categories & auto-routing
                 Dim sec1 = DocumentService.GetDefaultSectionForCategory("REG_COMM")
@@ -426,11 +431,14 @@ Namespace BTA_OSG
                 End If
                 Console.WriteLine("[PASS] 8. Full Sec Gen revision loop and status workflow verified.")
 
-                ' Test 9: Append-only audit record creation
+                ' Test 9: Append-only audit record creation. The count must advance by exactly
+                ' one with this run's marker: a "> 0" check is satisfied by rows from earlier
+                ' runs and would miss a silently broken LogAudit.
+                Dim auditBefore As Integer = EmbeddedDB.DataSet.Tables("AuditTrail").Rows.Count
                 EmbeddedDB.LogAudit("SYSTEM", "Self-check audit record verification.")
                 Dim auditRows = EmbeddedDB.DataSet.Tables("AuditTrail").Rows
-                If auditRows.Count = 0 Then
-                    Console.WriteLine("[FAIL] 9. Audit trail logging failed.")
+                If auditRows.Count <> auditBefore + 1 Then
+                    Console.WriteLine("[FAIL] 9. Audit trail logging failed (before " & auditBefore.ToString() & ", after " & auditRows.Count.ToString() & ").")
                     Return 1
                 End If
                 Console.WriteLine("[PASS] 9. Append-only audit record creation verified.")
@@ -456,27 +464,42 @@ Namespace BTA_OSG
                 End If
                 Console.WriteLine("[PASS] 10. Seed budget respected (cap 5) and the store handed back as found.")
 
-                ' Test 11: PDF URL validation
+                ' Test 11: PDF URL validation through the one validator the launch path uses.
                 Dim errMsg As String = ""
-                If Not AppStartup.PdfService.ValidateUrl("https://drive.google.com/file/d/sample-123/view", errMsg) Then
+                If Not EmbeddedDB.ValidateGDriveURL("https://drive.google.com/file/d/sample-123/view", errMsg) Then
                     Console.WriteLine("[FAIL] 11. Valid URL rejected: " & errMsg)
                     Return 1
                 End If
-                If AppStartup.PdfService.ValidateUrl("http://untrusted-site.com/doc.pdf", errMsg) Then
+                If EmbeddedDB.ValidateGDriveURL("http://untrusted-site.com/doc.pdf", errMsg) Then
                     Console.WriteLine("[FAIL] 11. Invalid URL accepted.")
                     Return 1
                 End If
                 Console.WriteLine("[PASS] 11. PDF URL security validation verified.")
 
-                ' Test 12: Physical storage landmark movement
+                ' Test 12: Physical storage landmark tracking: a real movement against the
+                ' scratch store, verified as a Movements row with the landmark it names.
                 Dim cabinet = "CAB-A"
                 Dim shelf = "S-1"
                 Dim box = "BOX-01"
                 Dim landmarkKey = String.Format("{0}|{1}|{2}", cabinet, shelf, box)
-                If landmarkKey <> "CAB-A|S-1|BOX-01" Then
-                    Console.WriteLine("[FAIL] 12. Storage landmark key format failed.")
+                EmbeddedDB.AddMovementLog(docId, landmarkKey, landmarkKey, "Self-Check Clerk", "Self-check storage landmark probe", isOffline:=False)
+                Dim movementFound As Boolean = False
+                For Each mvRow As System.Data.DataRow In EmbeddedDB.DataSet.Tables("Movements").Select("DocumentID = " & docId.ToString())
+                    If mvRow("ToLocation").ToString() = landmarkKey Then movementFound = True
+                Next
+                If Not movementFound Then
+                    Console.WriteLine("[FAIL] 12. Storage movement for landmark " & landmarkKey & " was not recorded.")
                     Return 1
                 End If
+                ' The cleanup pass already ran, so this probe row removes itself.
+                SyncLock EmbeddedDB.SyncRoot
+                    Dim mvTable = EmbeddedDB.DataSet.Tables("Movements")
+                    For i = mvTable.Rows.Count - 1 To 0 Step -1
+                        If mvTable.Rows(i)("ToLocation").ToString() = landmarkKey AndAlso mvTable.Rows(i)("MovedBy").ToString() = "Self-Check Clerk" Then
+                            mvTable.Rows(i).Delete()
+                        End If
+                    Next
+                End SyncLock
                 Console.WriteLine("[PASS] 12. Physical storage landmark tracking verified (" & landmarkKey & ").")
 
                 ' Test 13: the mirror never throws and never reports rows for an offline host.
@@ -576,8 +599,14 @@ Namespace BTA_OSG
                 End If
                 Console.WriteLine("[PASS] 15. Same-version republish detection and two-part version handling verified.")
 
-                ' Test 16: Clean exit
-                Console.WriteLine("[PASS] 16. Clean exit verified.")
+                ' Test 16: the flushed store re-opens with exactly the baseline rows: the
+                ' harness proves its persistence round-trips and leaves nothing behind.
+                EmbeddedDB.Initialize()
+                If EmbeddedDB.DataSet.Tables("Documents").Rows.Count <> documentsBefore Then
+                    Console.WriteLine("[FAIL] 16. Re-opened store holds " & EmbeddedDB.DataSet.Tables("Documents").Rows.Count.ToString() & " documents (baseline " & documentsBefore.ToString() & ").")
+                    Return 1
+                End If
+                Console.WriteLine("[PASS] 16. Clean exit verified (store flushed, reloaded, and handed back as found).")
 
                 Console.WriteLine("=========================================================")
                 Console.WriteLine("ALL 16 SELF-CHECK TESTS PASSED SUCCESSFULLY!")

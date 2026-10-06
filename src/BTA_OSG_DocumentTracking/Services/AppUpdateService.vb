@@ -28,7 +28,9 @@ Namespace BTA_OSG
     ''' </summary>
     Public Module AppUpdateService
         Private Const GitHubRepo As String = "katalepsis69/OSG"
-        Private ReadOnly Http As New HttpClient()
+        ' The office LAN is often offline with firewalls that drop rather than refuse; without
+        ' a budget the manual check spins for the 100s HttpClient default.
+        Private ReadOnly Http As New HttpClient() With {.Timeout = TimeSpan.FromSeconds(10)}
 
         Public Async Function CheckUpdateInfoAsync() As Task(Of UpdateInfo)
             Dim info As New UpdateInfo()
@@ -92,12 +94,13 @@ Namespace BTA_OSG
                     Dim localBuildStamp = GetLocalBuildStamp()
                     Dim releaseBuildStamp = ParseBuildStamp(info.ReleaseNotes)
 
-                    ' Locate executable asset in release
+                    ' Locate our executable asset in the release by name: the first .exe on a
+                    ' release must be the app, or a stranger's binary gets installed wholesale.
                     Dim downloadUrl As String = ""
                     If root.TryGetProperty("assets", Nothing) Then
                         For Each asset In root.GetProperty("assets").EnumerateArray()
                             Dim name = asset.GetProperty("name").GetString()
-                            If name IsNot Nothing AndAlso name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) Then
+                            If name IsNot Nothing AndAlso name.StartsWith("BTA_OSG", StringComparison.OrdinalIgnoreCase) AndAlso name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) Then
                                 downloadUrl = asset.GetProperty("browser_download_url").GetString()
                                 Exit For
                             End If
@@ -178,7 +181,7 @@ Namespace BTA_OSG
 
     ''' <summary>
     ''' Version as the office reads it: always two parts, so a 2.1.6.0 build reads "2.1"
-    ''' while a two-part release reads "2.2" — one scheme everywhere versions are shown.
+    ''' while a two-part release reads "2.2". One scheme everywhere versions are shown.
     ''' </summary>
     Friend Function FormatVersion(v As Version) As String
         If v Is Nothing Then Return ""
@@ -328,7 +331,7 @@ Namespace BTA_OSG
         Public Async Function CheckAndApplyUpdateAsync(ownerForm As Form, manualCheck As Boolean, Optional onChecked As Action = Nothing) As Task
             Dim info = Await CheckUpdateInfoAsync().ConfigureAwait(True)
             If onChecked IsNot Nothing Then onChecked()
-            Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes, info.PublishedAt, alreadyChecked:=True)
+            Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes, info.PublishedAt, alreadyChecked:=True, checkSucceeded:=info.Success)
                 dlg.ShowDialog(ownerForm)
             End Using
         End Function

@@ -12,6 +12,29 @@ Namespace BTA_OSG
             _auditRepo = auditRepo
         End Sub
 
+        ''' <summary>
+        ''' Minimal JSON string escaping for the audit snapshot fields. The trail stores
+        ''' small hand-built before/after bags, so the escaper stays smaller than a
+        ''' serializer dependency.
+        ''' </summary>
+        Public Shared Function JsonText(value As String) As String
+            If value Is Nothing Then Return ""
+            Dim sb As New System.Text.StringBuilder(value.Length + 8)
+            For Each ch In value
+                Select Case ch
+                    Case """"c : sb.Append("\""")
+                    Case "\"c : sb.Append("\\")
+                    Case Else
+                        If ch < " "c Then
+                            sb.Append(String.Format("\u{0:x4}", AscW(ch)))
+                        Else
+                            sb.Append(ch)
+                        End If
+                End Select
+            Next
+            Return sb.ToString()
+        End Function
+
         Public Sub LogEvent(actionType As String, entityType As String, entityId As String, documentCode As String, oldValues As String, newValues As String, success As Boolean, failureReason As String, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing)
             Dim entry As New AuditEntry With {
                 .EventAtUTC = DateTime.UtcNow,

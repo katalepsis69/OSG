@@ -37,10 +37,6 @@ Namespace BTA_OSG
             End Select
         End Function
 
-        Public Function RegisterDocument(title As String, typeCode As String, originOffice As String, destOffice As String, receivedDate As DateTime, googleDriveUrl As String, remarks As String, registeredByUserId As Integer) As Document
-            Return RegisterDocumentWithWorkflow(title, typeCode, "INCOMING", originOffice, destOffice, Nothing, googleDriveUrl, remarks, registeredByUserId, receivedDate)
-        End Function
-
         ''' <summary>
         ''' Creates the document row. When the caller supplies a transaction, the sequence
         ''' reservation, the insert, and the audit entry all join it, so a caller wrapping
@@ -106,7 +102,11 @@ Namespace BTA_OSG
 
         Private Sub LogCreated(doc As Document, registeredByUserId As Integer, transaction As Microsoft.Data.SqlClient.SqlTransaction)
             If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_CREATED", "Document", doc.DocumentID.ToString(), doc.DocCode, Nothing, Nothing, True, Nothing, transaction)
+                ' JSON snapshot per AGENTS.md Rule 4: the row records what was filed, not
+                ' just that a filing happened.
+                _auditService.LogEvent("DOCUMENT_CREATED", "Document", doc.DocumentID.ToString(), doc.DocCode, Nothing,
+                                       "{""Title"":""" & AuditService.JsonText(doc.Title) & """,""Type"":""" & AuditService.JsonText(doc.DocCode) & """,""Status"":""" & AuditService.JsonText(DesktopDataCoordinator.StatusCodeFor(doc.StatusID)) & """}",
+                                       True, Nothing, transaction)
             End If
         End Sub
 
@@ -117,35 +117,8 @@ Namespace BTA_OSG
             Return False
         End Function
 
-        Public Function RegisterDocument(doc As Document) As Integer
-            Dim newId As Integer = _docRepo.Insert(doc)
-            doc.DocumentID = newId
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_CREATED", "Document", doc.DocumentID.ToString(), doc.DocCode, Nothing, Nothing, True, Nothing)
-            End If
-            Return newId
-        End Function
-
-        Public Sub UpdateDocument(doc As Document, modifiedBy As Integer)
-            _docRepo.Update(doc, modifiedBy)
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_UPDATED", "Document", doc.DocumentID.ToString(), doc.DocCode, Nothing, Nothing, True, Nothing)
-            End If
-        End Sub
-
-        Public Sub SoftDeleteDocument(docId As Integer, deletedBy As Integer, reason As String)
-            _docRepo.SoftDelete(docId, deletedBy, reason)
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_DELETED", "Document", docId.ToString(), Nothing, Nothing, Nothing, True, reason)
-            End If
-        End Sub
-
         Public Function GetDocument(docId As Integer) As Document
             Return _docRepo.GetById(docId)
-        End Function
-
-        Public Function SearchDocuments(titleLike As String, typeId As Integer?, statusId As Integer?, originLike As String, destLike As String, storageId As Integer?, dateFrom As DateTime?, dateTo As DateTime?, pageSize As Integer, pageNumber As Integer) As List(Of Document)
-            Return _docRepo.GetByFilter(titleLike, typeId, statusId, originLike, destLike, storageId, dateFrom, dateTo, pageSize, pageNumber)
         End Function
 
         Public Shared Function MapToPublicStatus(statusCode As String) As String
@@ -210,7 +183,8 @@ Namespace BTA_OSG
                 .LastActionTaken = "Imported from Public Portal and routed to " & assignedSec,
                 .RegisteredByUserID = registeredByUserId,
                 .RegisteredAtUTC = DateTime.UtcNow,
-                .ExternalControlNumber = submission.ControlNumber
+                .ExternalControlNumber = submission.ControlNumber,
+                .RequesterGender = If(String.IsNullOrWhiteSpace(submission.RequesterGender), "", submission.RequesterGender)
             }
 
             ' The document row, its workflow state, the routing log, and the initial storage

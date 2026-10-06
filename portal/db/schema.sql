@@ -108,14 +108,15 @@ FROM documents;
 
 -- 8. Dedicated Local User Grants
 -- Security Invariant: Exactly one local user 'portal'@'localhost'.
--- User has table-level SELECT on osg.documents and column-level UPDATE on
--- BOTH (public_status, imported_at).
+-- User has SELECT plus INSERT on osg.documents, column-level UPDATE limited
+-- to (public_status, imported_at), and INSERT on osg.counters so a counter
+-- row can be created for a new prefix or year.
 CREATE USER IF NOT EXISTS 'portal'@'localhost' IDENTIFIED BY 'REPLACE_WITH_SECURE_PORTAL_DB_PASSWORD';
 
 GRANT SELECT, INSERT, UPDATE ON osg.pending_submissions TO 'portal'@'localhost';
 GRANT SELECT, INSERT, UPDATE, DELETE ON osg.otp_codes TO 'portal'@'localhost';
 GRANT SELECT, INSERT, UPDATE ON osg.requesters TO 'portal'@'localhost';
-GRANT SELECT, UPDATE ON osg.counters TO 'portal'@'localhost';
+GRANT SELECT, INSERT, UPDATE ON osg.counters TO 'portal'@'localhost';
 GRANT SELECT, INSERT ON osg.documents TO 'portal'@'localhost';
 GRANT UPDATE (public_status, imported_at) ON osg.documents TO 'portal'@'localhost';
 GRANT SELECT ON osg.public_documents TO 'portal'@'localhost';

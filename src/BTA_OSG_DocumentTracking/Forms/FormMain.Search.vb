@@ -118,7 +118,7 @@ Namespace BTA_OSG
             btnViewSearchDetail.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
 
             btnOpenPDF = New Button With {
-                .Text = " &Launch PDF",
+                .Text = " La&unch PDF",
                 .Size = New Size(125, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,

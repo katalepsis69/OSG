@@ -46,28 +46,6 @@ Namespace BTA_OSG
             End Using
         End Sub
 
-        Public Shared Sub PrintDirect(doc As Document, Optional routingLogs As List(Of RoutingLog) = Nothing, Optional directives As List(Of ActionDirective) = Nothing, Optional owner As Form = Nothing)
-            If doc Is Nothing Then Return
-
-            Dim service As New RoutingSlipPrintService(doc, routingLogs, directives)
-            Using printDoc As New PrintDocument()
-                printDoc.DocumentName = "RoutingSlip_" & doc.DocCode
-                AddHandler printDoc.PrintPage, AddressOf service.OnPrintPage
-
-                Using printDlg As New PrintDialog()
-                    printDlg.Document = printDoc
-                    printDlg.UseEXDialog = True
-                    Dim result = If(owner IsNot Nothing, printDlg.ShowDialog(owner), printDlg.ShowDialog())
-                    If result = DialogResult.OK Then
-                        ' Applied after the dialog: assigning PrinterSettings rebuilds DefaultPageSettings
-                        ' from the chosen device's devmode and discards anything set beforehand.
-                        ConfigurePage(printDoc)
-                        printDoc.Print()
-                    End If
-                End Using
-            End Using
-        End Sub
-
         ' The slip is laid out for A4. Page geometry is pinned rather than inherited because a
         ' receipt or label driver reports a paper too small to hold six columns, and its driver
         ' may not report a size at all.
@@ -169,11 +147,11 @@ Namespace BTA_OSG
             Dim rightColX As Single = bounds.Left + colW + padX
 
             g.DrawString("Date Registered:", fontBold, brushText, rightColX, innerY)
-            g.DrawString(_doc.RegisteredAtUTC.ToString("yyyy-MM-dd HH:mm UTC"), fontRegular, brushText, rightColX + 120, innerY)
+            g.DrawString(_doc.RegisteredAtUTC.ToString("yyyy-MM-dd HH:mm") & " local", fontRegular, brushText, rightColX + 120, innerY)
             innerY += rowH
 
             g.DrawString("Target Deadline:", fontBold, brushText, rightColX, innerY)
-            Dim deadlineStr As String = If(_doc.TargetDeadlineUTC.HasValue, _doc.TargetDeadlineUTC.Value.ToString("yyyy-MM-dd HH:mm UTC"), "None Specified")
+            Dim deadlineStr As String = If(_doc.TargetDeadlineUTC.HasValue, _doc.TargetDeadlineUTC.Value.ToString("yyyy-MM-dd HH:mm") & " local", "None Specified")
             g.DrawString(deadlineStr, fontRegular, brushText, rightColX + 120, innerY)
             innerY += rowH
 

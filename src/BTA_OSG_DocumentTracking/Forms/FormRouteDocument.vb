@@ -138,15 +138,27 @@ Namespace BTA_OSG
                 Return
             End If
 
-            Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
-            If Program.Coordinator IsNot Nothing Then
-                Program.Coordinator.RouteDocument(DocID, txtFrom.Text.Trim(), toOffice, cmbAction.Text, txtRemarks.Text.Trim(), StaffName, currentUserId)
-            Else
-                EmbeddedDB.AddRoutingLog(DocID, txtFrom.Text.Trim(), toOffice, StaffName, cmbAction.Text, txtRemarks.Text.Trim())
-                EmbeddedDB.LogAudit(StaffName, $"Routed Doc #{DocID} from {txtFrom.Text.Trim()} to {toOffice}")
-            End If
-            Me.DialogResult = DialogResult.OK
-            Me.Close()
+            ' Same guard as the directive button: a queued second click of a double-click
+            ' re-validates fine and would file the transmittal twice.
+            btnSave.Enabled = False
+            Try
+                Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
+                Try
+                    If Program.Coordinator IsNot Nothing Then
+                        Program.Coordinator.RouteDocument(DocID, txtFrom.Text.Trim(), toOffice, cmbAction.Text, txtRemarks.Text.Trim(), StaffName, currentUserId)
+                    Else
+                        EmbeddedDB.AddRoutingLog(DocID, txtFrom.Text.Trim(), toOffice, StaffName, cmbAction.Text, txtRemarks.Text.Trim())
+                        EmbeddedDB.LogAudit(StaffName, $"Routed Doc #{DocID} from {txtFrom.Text.Trim()} to {toOffice}", actionType:="ROUTE_LOGGED")
+                    End If
+                Catch ex As Exception
+                    MessageBox.Show(ex.Message, "Route Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    Return
+                End Try
+                Me.DialogResult = DialogResult.OK
+                Me.Close()
+            Finally
+                btnSave.Enabled = True
+            End Try
         End Sub
     End Class
 End Namespace

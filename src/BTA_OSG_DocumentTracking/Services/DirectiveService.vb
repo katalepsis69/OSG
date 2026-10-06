@@ -13,16 +13,18 @@ Namespace BTA_OSG
         Private ReadOnly _refRepo As ReferenceDataRepository
         Private ReadOnly _auditService As AuditService
         Private ReadOnly _portalBridge As IPortalBridge
+        Private ReadOnly _routingRepo As RoutingRepository
 
-        Public Sub New(directiveRepo As DirectiveRepository, docRepo As DocumentRepository, refRepo As ReferenceDataRepository, auditService As AuditService, Optional portalBridge As IPortalBridge = Nothing)
+        Public Sub New(directiveRepo As DirectiveRepository, docRepo As DocumentRepository, refRepo As ReferenceDataRepository, auditService As AuditService, Optional portalBridge As IPortalBridge = Nothing, Optional routingRepo As RoutingRepository = Nothing)
             _directiveRepo = directiveRepo
             _docRepo = docRepo
             _refRepo = refRepo
             _auditService = auditService
             _portalBridge = If(portalBridge, New PortalBridge(auditService:=auditService))
+            _routingRepo = routingRepo
         End Sub
 
-        Public Function IssueDirective(docId As Integer, directiveTypeId As Integer, directiveText As String, remarks As String, issuedByUserId As Integer) As ActionDirective
+        Public Function IssueDirective(docId As Integer, directiveTypeId As Integer, directiveText As String, remarks As String, issuedByUserId As Integer, Optional assignedTo As String = "") As ActionDirective
             Dim directive As New ActionDirective With {
                 .DocumentID = docId,
                 .DirectiveTypeID = directiveTypeId,
@@ -41,17 +43,60 @@ Namespace BTA_OSG
                 End If
             Next
 
-            ' Directive insert, status side effect, and audit row are one fact: a mid-way
-            ' failure must not leave a status change the directive record does not support.
+            ' The status side effect must not reopen a finished document (for example the
+            ' "Approved & Archived" directive on a RELEASED row), and the refusal has to
+            ' reach the operator rather than fall back to the offline cache.
+            Dim doc = _docRepo.GetById(docId)
+            If targetStatusId > 0 AndAlso doc IsNot Nothing Then
+                Dim currentCode = DesktopDataCoordinator.StatusCodeFor(doc.StatusID)
+                Dim targetCode = DesktopDataCoordinator.StatusCodeFor(targetStatusId)
+                If DocumentStatus.IsTerminalStatus(currentCode) AndAlso
+                   Not String.Equals(currentCode, targetCode, StringComparison.OrdinalIgnoreCase) Then
+                    Throw New GuardRefusedException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer receive this directive.")
+                End If
+            End If
+
+            ' The assignee combo carries the staff name; resolve it once, before the
+            ' transaction, so the assignment row joins the same fact as the directive.
+            Dim assigneeId As Integer? = DesktopDataCoordinator.ResolveUserId(assignedTo)
+
+            ' Directive insert, status side effect, custody log, assignment, and audit row
+            ' are one fact: a mid-way failure must not leave a status change the directive
+            ' record does not support.
             Using conn = _docRepo.ConnectionFactory.CreateConnection()
                 Using tx = conn.BeginTransaction()
                     Try
                         directive.DirectiveID = _directiveRepo.Insert(directive, tx)
                         If targetStatusId > 0 Then
                             _docRepo.UpdateStatus(docId, targetStatusId, tx)
+                            If _routingRepo IsNot Nothing Then
+                                _routingRepo.Insert(New RoutingLog With {
+                                    .DocumentID = docId,
+                                    .FromStatusID = If(doc IsNot Nothing, doc.StatusID, CType(Nothing, Integer?)),
+                                    .ToStatusID = targetStatusId,
+                                    .FromOffice = If(doc IsNot Nothing, doc.AssignedSection, ""),
+                                    .ToOffice = If(doc IsNot Nothing, doc.AssignedSection, ""),
+                                    .RoutingRemarks = "SG Directive: " & directiveText,
+                                    .RoutedByUserID = issuedByUserId,
+                                    .RoutedAtUTC = DateTime.UtcNow
+                                }, tx)
+                            End If
+                        End If
+                        If assigneeId.HasValue Then
+                            _docRepo.AddAssignment(New DocumentAssignment With {
+                                .DocumentID = docId,
+                                .AssignedUserID = assigneeId.Value,
+                                .AssignedByUserID = issuedByUserId,
+                                .AssignedAtUTC = DateTime.UtcNow,
+                                .Remarks = "Assigned via SG directive"
+                            }, tx)
                         End If
                         If _auditService IsNot Nothing Then
-                            _auditService.LogEvent("DIRECTIVE_ADDED", "Directive", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, tx)
+                            _auditService.LogEvent("DIRECTIVE_ADDED", "Directive", docId.ToString(),
+                                                   If(doc IsNot Nothing, doc.DocCode, Nothing),
+                                                   StatusJson(doc),
+                                                   "{""Directive"":""" & AuditService.JsonText(directiveText) & """,""AssignedTo"":""" & AuditService.JsonText(assignedTo) & """}",
+                                                   True, Nothing, tx)
                         End If
                         tx.Commit()
                     Catch
@@ -71,6 +116,16 @@ Namespace BTA_OSG
                 Next
             End If
             Return directive
+        End Function
+
+        ''' <summary>
+        ''' Before/after bag for the audit row: the status (and desk) the document is
+        ''' leaving. AGENTS.md Rule 4 wants JSON snapshots, not just the fact.
+        ''' </summary>
+        Private Shared Function StatusJson(doc As Document) As String
+            Dim code As String = If(doc IsNot Nothing, DesktopDataCoordinator.StatusCodeFor(doc.StatusID), "")
+            Dim section As String = If(doc IsNot Nothing, doc.AssignedSection, "")
+            Return "{""Status"":""" & AuditService.JsonText(code) & """,""Section"":""" & AuditService.JsonText(section) & """}"
         End Function
 
         Public Function RequestRevision(docId As Integer, punchlistNotes As String, issuedByUserId As Integer, returnToSection As String) As ActionDirective
@@ -103,13 +158,22 @@ Namespace BTA_OSG
                 combinedPunchlist = doc.RevisionPunchlist & vbCrLf & "[" & DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm") & "] " & punchlistNotes
             End If
 
+            ' A revision order must not drag a finished document back into the workflow.
+            If doc IsNot Nothing AndAlso DocumentStatus.IsTerminalStatus(DesktopDataCoordinator.StatusCodeFor(doc.StatusID)) Then
+                Throw New GuardRefusedException("This document is already " & DocumentStatus.DisplayName(DesktopDataCoordinator.StatusCodeFor(doc.StatusID)) & " and can no longer be returned for revision.")
+            End If
+
             Using conn = _docRepo.ConnectionFactory.CreateConnection()
                 Using tx = conn.BeginTransaction()
                     Try
                         directive.DirectiveID = _directiveRepo.Insert(directive, tx)
                         _docRepo.UpdateWorkflowState(docId, statusId, targetSec, combinedPunchlist, "Sec Gen requested revision: " & punchlistNotes, issuedByUserId, transaction:=tx)
                         If _auditService IsNot Nothing Then
-                            _auditService.LogEvent("REVISION_REQUESTED", "Directive", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, tx)
+                            _auditService.LogEvent("REVISION_REQUESTED", "Directive", docId.ToString(),
+                                                   If(doc IsNot Nothing, doc.DocCode, Nothing),
+                                                   StatusJson(doc),
+                                                   "{""Status"":""FOR_REVISION"",""Section"":""" & AuditService.JsonText(targetSec) & """}",
+                                                   True, Nothing, tx)
                         End If
                         tx.Commit()
                     Catch

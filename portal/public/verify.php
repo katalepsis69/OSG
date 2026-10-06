@@ -226,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST
                 // 5. Insert Document
                 $docStmt = $pdo->prepare(
                     'INSERT INTO documents (control_number, category, document_title, requester_id, public_status, created_at)
-                     VALUES (?, ?, ?, ?, "Received", NOW())'
+                     VALUES (?, ?, ?, ?, \'Received\', NOW())'
                 );
                 $docStmt->execute([$controlNumber, $category, $submission['document_title'], $requesterId]);
                 $documentId = (int)$pdo->lastInsertId();
@@ -234,12 +234,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST
                 // 6. Insert initial Received milestone
                 $msStmt = $pdo->prepare(
                     'INSERT INTO public_milestones (document_id, public_status, created_at, notified_at)
-                     VALUES (?, "Received", NOW(), NOW())'
+                     VALUES (?, \'Received\', NOW(), NOW())'
                 );
                 $msStmt->execute([$documentId]);
 
                 // 7. Mark pending submission verified
-                $pdo->prepare('UPDATE pending_submissions SET status = "verified" WHERE id = ?')->execute([$token]);
+                $pdo->prepare('UPDATE pending_submissions SET status = \'verified\' WHERE id = ?')->execute([$token]);
 
                 $pdo->commit();
 
@@ -323,32 +323,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST
     }
 }
 
-// 4. If submission was already verified in a prior request, load existing document
+// 4. If submission was already verified in a prior request, load existing document.
+// The receipt carries requester PII: it renders only when the requested token matches the session-bound pending token.
+$receiptLocked = false;
 if (!$verifiedDocument && $submission['status'] === 'verified') {
-    $existingStmt = $pdo->prepare(
-        'SELECT d.*, r.full_name, r.email, r.phone 
-         FROM documents d 
-         JOIN requesters r ON d.requester_id = r.id 
-         WHERE r.email = ? AND d.document_title = ? 
-         ORDER BY d.id DESC LIMIT 1'
-    );
-    $existingStmt->execute([$submission['email'], $submission['document_title']]);
-    $existingDoc = $existingStmt->fetch();
-    if ($existingDoc) {
-        $trackUrl = defined('PORTAL_BASE_URL')
-            ? rtrim(PORTAL_BASE_URL, '/') . '/track.php?cn=' . urlencode((string)$existingDoc['control_number'])
-            : 'https://portal.bta-osg.gov.ph/track.php?cn=' . urlencode((string)$existingDoc['control_number']);
+    if (!hash_equals((string)($_SESSION['pending_token'] ?? ''), $token)) {
+        $receiptLocked = true;
+    } else {
+        $existingStmt = $pdo->prepare(
+            'SELECT d.*, r.full_name, r.email, r.phone
+             FROM documents d
+             JOIN requesters r ON d.requester_id = r.id
+             WHERE r.email = ? AND d.document_title = ?
+             ORDER BY d.id DESC LIMIT 1'
+        );
+        $existingStmt->execute([$submission['email'], $submission['document_title']]);
+        $existingDoc = $existingStmt->fetch();
+        if ($existingDoc) {
+            $trackUrl = defined('PORTAL_BASE_URL')
+                ? rtrim(PORTAL_BASE_URL, '/') . '/track.php?cn=' . urlencode((string)$existingDoc['control_number'])
+                : 'https://portal.bta-osg.gov.ph/track.php?cn=' . urlencode((string)$existingDoc['control_number']);
 
-        $verifiedDocument = [
-            'control_number' => $existingDoc['control_number'],
-            'document_title' => $existingDoc['document_title'],
-            'category' => $existingDoc['category'],
-            'full_name' => $existingDoc['full_name'],
-            'email' => $existingDoc['email'],
-            'phone' => $existingDoc['phone'],
-            'created_at' => $existingDoc['created_at'] . ' UTC',
-            'track_url' => $trackUrl
-        ];
+            $verifiedDocument = [
+                'control_number' => $existingDoc['control_number'],
+                'document_title' => $existingDoc['document_title'],
+                'category' => $existingDoc['category'],
+                'full_name' => $existingDoc['full_name'],
+                'email' => $existingDoc['email'],
+                'phone' => $existingDoc['phone'],
+                'created_at' => $existingDoc['created_at'] . ' UTC',
+                'track_url' => $trackUrl
+            ];
+        }
     }
 }
 $activePage = 'index';
@@ -503,6 +509,17 @@ function format_pst_time(string $utcTimeStr): string {
                     <a href="index.php" class="portal-btn portal-btn-secondary">
                         Submit Another Document
                     </a>
+                </div>
+            </section>
+        <?php elseif ($receiptLocked): ?>
+            <!-- Neutral expiry view: a replayed receipt URL must not render requester PII -->
+            <section class="portal-card">
+                <div class="portal-card-header">
+                    <h1 class="portal-card-title">Verification Link No Longer Valid</h1>
+                </div>
+                <div class="portal-alert portal-alert-warning" role="alert">
+                    <span class="portal-alert-title">Link Expired:</span>
+                    This verification link is no longer valid. If you already verified your submission, track its status with the control number from your emailed receipt.
                 </div>
             </section>
         <?php else: ?>

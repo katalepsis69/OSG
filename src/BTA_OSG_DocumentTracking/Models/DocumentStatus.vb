@@ -18,6 +18,19 @@ Namespace BTA_OSG
             "IN_PROGRESS", "COMPLETED", "ARCHIVED"
         }
 
+        ' Workflow end states: routing, revision, and directives must refuse to move a
+        ' document out of one of these. Moving into the state it already sits in stays
+        ' legal so the internal transitions (Release, Approve&Archive) that re-log their
+        ' own target do not refuse themselves.
+        Public Shared ReadOnly TerminalStatusCodes As String() = {
+            "RELEASED", "FILED", "COMPLETED", "ARCHIVED", "CANCELLED"
+        }
+
+        Public Shared Function IsTerminalStatus(code As String) As Boolean
+            Dim c = If(code, "").Trim().ToUpperInvariant()
+            Return c.Length > 0 AndAlso Array.IndexOf(TerminalStatusCodes, c) >= 0
+        End Function
+
         Public Shared Function IsValidStatus(code As String) As Boolean
             If String.IsNullOrWhiteSpace(code) Then Return False
             Dim c = code.Trim().ToUpperInvariant()

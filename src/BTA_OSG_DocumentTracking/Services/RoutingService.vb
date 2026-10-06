@@ -7,6 +7,20 @@ Imports System.Collections.Generic
 Imports System.Threading.Tasks
 
 Namespace BTA_OSG
+    ''' <summary>
+    ''' Thrown when the server-side from-status guard refuses a transition. The
+    ''' coordinator's offline fallback must rethrow this instead of caching the move:
+    ''' replaying a transition the server deliberately rejected would file phantom
+    ''' custody and audit rows for an action that never happened.
+    ''' </summary>
+    Public Class GuardRefusedException
+        Inherits InvalidOperationException
+
+        Public Sub New(message As String)
+            MyBase.New(message)
+        End Sub
+    End Class
+
     Public Class RoutingService
         Private ReadOnly _routingRepo As RoutingRepository
         Private ReadOnly _docRepo As DocumentRepository
@@ -21,41 +35,6 @@ Namespace BTA_OSG
             _auditService = auditService
             _portalBridge = If(portalBridge, New PortalBridge(auditService:=auditService))
         End Sub
-
-        Public Function RouteDocument(docId As Integer, fromStatusId As Integer, toStatusCode As String, fromOffice As String, toOffice As String, remarks As String, routedByUserId As Integer) As RoutingLog
-            Dim toStatus = _refRepo.GetStatusByCode(toStatusCode)
-            Dim toStatusId As Integer = If(toStatus IsNot Nothing, toStatus.StatusID, fromStatusId)
-
-            Dim routingLog As New RoutingLog With {
-                .DocumentID = docId,
-                .FromStatusID = fromStatusId,
-                .ToStatusID = toStatusId,
-                .FromOffice = fromOffice,
-                .ToOffice = toOffice,
-                .RoutingRemarks = remarks,
-                .RoutedByUserID = routedByUserId,
-                .RoutedAtUTC = DateTime.UtcNow
-            }
-            Dim newId As Integer = _routingRepo.Insert(routingLog)
-            routingLog.RoutingLogID = newId
-
-            _docRepo.UpdateStatus(docId, toStatusId)
-            NotifyPortalStatus(docId, toStatusCode)
-
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("ROUTING_LOG_ADDED", "RoutingLog", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
-            End If
-            Return routingLog
-        End Function
-
-        Public Function AddRoutingLog(log As RoutingLog) As Integer
-            Dim newId As Integer = _routingRepo.Insert(log)
-            log.RoutingLogID = newId
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("ROUTING_LOG_ADDED", "RoutingLog", log.DocumentID.ToString(), Nothing, Nothing, Nothing, True, Nothing)
-            End If
-            Return newId
-        End Function
 
         Public Function ResubmitDocument(docId As Integer, resubmittedByUserId As Integer, notes As String, Optional expectedFromStatusId As Integer = 0) As Boolean
             Dim forReviewStatus = _refRepo.GetStatusByCode("FOR_REVIEW")
@@ -78,6 +57,14 @@ Namespace BTA_OSG
                             .RoutedAtUTC = DateTime.UtcNow
                         }
                         _routingRepo.Insert(routingLog, trans)
+                        ' The audit row joins the transaction: an audit failure after a bare
+                        ' commit used to reach the coordinator's offline fallback and re-apply
+                        ' the transition locally.
+                        If _auditService IsNot Nothing Then
+                            _auditService.LogEvent("DOCUMENT_RESUBMITTED", "Document", docId.ToString(),
+                                                   If(doc IsNot Nothing, doc.DocCode, Nothing),
+                                                   StatusJson(doc), """Status"":""FOR_REVIEW""", True, Nothing, trans)
+                        End If
                         trans.Commit()
                     Catch
                         trans.Rollback()
@@ -86,9 +73,6 @@ Namespace BTA_OSG
                 End Using
             End Using
 
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_RESUBMITTED", "Document", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
-            End If
             NotifyPortalStatus(docId, "FOR_REVIEW")
             Return True
         End Function
@@ -113,6 +97,11 @@ Namespace BTA_OSG
                             .RoutedAtUTC = DateTime.UtcNow
                         }
                         _routingRepo.Insert(routingLog, trans)
+                        If _auditService IsNot Nothing Then
+                            _auditService.LogEvent("DOCUMENT_APPROVED", "Document", docId.ToString(),
+                                                   If(doc IsNot Nothing, doc.DocCode, Nothing),
+                                                   StatusJson(doc), """Status"":""APPROVED""", True, Nothing, trans)
+                        End If
                         trans.Commit()
                     Catch
                         trans.Rollback()
@@ -121,9 +110,6 @@ Namespace BTA_OSG
                 End Using
             End Using
 
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_APPROVED", "Document", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
-            End If
             NotifyPortalStatus(docId, "APPROVED")
             Return True
         End Function
@@ -148,6 +134,11 @@ Namespace BTA_OSG
                             .RoutedAtUTC = DateTime.UtcNow
                         }
                         _routingRepo.Insert(routingLog, trans)
+                        If _auditService IsNot Nothing Then
+                            _auditService.LogEvent("DOCUMENT_RELEASED", "Document", docId.ToString(),
+                                                   If(doc IsNot Nothing, doc.DocCode, Nothing),
+                                                   StatusJson(doc), """Status"":""RELEASED""", True, Nothing, trans)
+                        End If
                         trans.Commit()
                     Catch
                         trans.Rollback()
@@ -156,11 +147,19 @@ Namespace BTA_OSG
                 End Using
             End Using
 
-            If _auditService IsNot Nothing Then
-                _auditService.LogEvent("DOCUMENT_RELEASED", "Document", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing)
-            End If
             NotifyPortalStatus(docId, "RELEASED")
             Return True
+        End Function
+
+        ''' <summary>
+        ''' Before/after bag for a transition audit row: the status (and the desk it sat at)
+        ''' the document is leaving. AGENTS.md Rule 4 wants JSON snapshots, not just the fact
+        ''' that something happened.
+        ''' </summary>
+        Private Shared Function StatusJson(doc As Document) As String
+            Dim code As String = If(doc IsNot Nothing, DesktopDataCoordinator.StatusCodeFor(doc.StatusID), "")
+            Dim section As String = If(doc IsNot Nothing, doc.AssignedSection, "")
+            Return "{""Status"":""" & AuditService.JsonText(code) & """,""Section"":""" & AuditService.JsonText(section) & """}"
         End Function
 
         ''' <summary>
@@ -172,7 +171,7 @@ Namespace BTA_OSG
         Private Sub ApplyGuardedState(trans As Microsoft.Data.SqlClient.SqlTransaction, docId As Integer, expectedFromStatusId As Integer, statusId As Integer, assignedSection As String, punchlist As String, lastAction As String, modifiedBy As Integer)
             If expectedFromStatusId > 0 Then
                 Dim applied = _docRepo.UpdateWorkflowStateFromStatus(docId, expectedFromStatusId, statusId, assignedSection, punchlist, lastAction, modifiedBy, transaction:=trans)
-                If applied = 0 Then Throw New InvalidOperationException("The document's state changed on the server. Refresh the document and try again.")
+                If applied = 0 Then Throw New GuardRefusedException("The document's state changed on the server. Refresh the document and try again.")
             Else
                 _docRepo.UpdateWorkflowState(docId, statusId, assignedSection, punchlist, lastAction, modifiedBy, transaction:=trans)
             End If

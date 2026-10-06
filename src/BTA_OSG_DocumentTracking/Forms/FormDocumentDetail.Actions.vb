@@ -39,19 +39,22 @@ Namespace BTA_OSG
                 canSoftCopyUser = Convert.ToBoolean(user("CanSoftCopy"))
             End If
 
-            btnRoute.Enabled = canRouteUser
-            btnMove.Enabled = canMoveUser
-            btnLaunchPdf.Enabled = canSoftCopyUser
-
             Dim role = user("Role").ToString()
             Dim office = If(user.Table.Columns.Contains("Office") AndAlso Not IsDBNull(user("Office")), user("Office").ToString(), "")
             Dim isManager As Boolean = (role = "Secretary-General" OrElse role = "System Administrator" OrElse role = "OSG Chief")
             Dim status = DocRow("CurrentStatus").ToString().ToUpperInvariant()
+            ' Routing is role-gated AND status-gated: a filed, released, archived, or
+            ' completed document has left the active workflow and cannot be re-routed.
+            btnRoute.Enabled = canRouteUser AndAlso Not DocumentStatus.IsTerminalStatus(status)
+            btnMove.Enabled = canMoveUser
+            btnLaunchPdf.Enabled = canSoftCopyUser
+
             Dim assignedSec = DocRow("AssignedSection").ToString()
             Dim userSection = If(Not String.IsNullOrWhiteSpace(office), office, role)
 
-            ' Sec Gen / Manager can request revision if document is not released/filed
-            btnRequestRevision.Visible = isManager AndAlso (status <> "RELEASED" AndAlso status <> "FILED")
+            ' Sec Gen / Manager can request revision while the document is still in the
+            ' active workflow; terminal states refuse server-side too, so the button goes.
+            btnRequestRevision.Visible = isManager AndAlso Not DocumentStatus.IsTerminalStatus(status)
 
             ' Sec Gen / Manager can approve if document is under review or received
             btnApprove.Visible = isManager AndAlso (status = "FOR_REVIEW" OrElse status.Contains("REVIEW") OrElse status = "RECEIVED")
@@ -90,13 +93,25 @@ Namespace BTA_OSG
 
         ''' <summary>
         ''' The status id this dialog is showing, for the server-side from-status guard.
-        ''' The cache stores status codes while SQL compares ids, so resolve here; an
-        ''' unresolvable code returns 0, which the caller treats as no guard.
+        ''' The cache stores status codes while SQL compares ids, so resolve here. When a
+        ''' connected write cannot verify the shown status (unknown code), the caller must
+        ''' refuse instead of writing unguarded: 0 would mean "no guard" server-side.
         ''' </summary>
         Private Function ExpectedFromStatusId() As Integer
             If AppStartup.ReferenceDataRepo Is Nothing Then Return 0
             Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(DocRow("CurrentStatus").ToString())
             Return If(status IsNot Nothing, status.StatusID, 0)
+        End Function
+
+        ''' <summary>
+        ''' Fail-closed for the connected transitions: when the server is reachable and the
+        ''' dialog's status code does not resolve to a seeded id, the from-status guard would
+        ''' degrade to "no guard", so the action is refused with a refresh hint instead.
+        ''' </summary>
+        Private Function StatusUnverifiableForConnectedWrite() As Boolean
+            If Program.Coordinator Is Nothing OrElse Not Program.IsDatabaseConnected Then Return False
+            If AppStartup.ReferenceDataRepo Is Nothing Then Return False
+            Return ExpectedFromStatusId() = 0
         End Function
 
         ''' <summary>
@@ -144,16 +159,26 @@ Namespace BTA_OSG
 
             Using dlg As New FormRevisionDialog(DocID, DocRow("DocCode").ToString(), DocRow("Title").ToString(), DocRow("AssignedSection").ToString())
                 If dlg.ShowDialog(Me) = DialogResult.OK Then
+                    If StatusUnverifiableForConnectedWrite() Then
+                        WarnStateMoved("requesting a revision")
+                        Return
+                    End If
                     Dim staffName = MainFrm.CurrentUser("FullName").ToString()
                     Dim staffUserId As Integer = 1
                     If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
                         staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
                     End If
-                    If Program.Coordinator IsNot Nothing Then
-                        Program.Coordinator.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staffName, staffUserId)
-                    Else
-                        EmbeddedDB.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staffName)
-                    End If
+                    Try
+                        If Program.Coordinator IsNot Nothing Then
+                            Program.Coordinator.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staffName, staffUserId)
+                        Else
+                            EmbeddedDB.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staffName)
+                        End If
+                    Catch ex As Exception
+                        MessageBox.Show(ex.Message, "Revision Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                        RefreshGrids()
+                        Return
+                    End Try
                     MainFrm.ReportStatus("Revision order logged and returned to " & dlg.TargetSection & ".")
                     RefreshGrids()
                     MainFrm.RefreshActiveTabGrid()
@@ -176,16 +201,26 @@ Namespace BTA_OSG
                 If promptDlg.ShowDialog(Me) = DialogResult.OK Then
                     Dim notes = promptDlg.PromptValue
                     If Not String.IsNullOrWhiteSpace(notes) Then
+                        If StatusUnverifiableForConnectedWrite() Then
+                            WarnStateMoved("resubmitting")
+                            Return
+                        End If
                         Dim staffName = MainFrm.CurrentUser("FullName").ToString()
                         Dim staffUserId As Integer = 1
                         If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
                             staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
                         End If
-                If Program.Coordinator IsNot Nothing Then
-                    Program.Coordinator.ResubmitDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
-                Else
-                    EmbeddedDB.ResubmitDocument(DocID, staffName, notes)
-                End If
+                        Try
+                            If Program.Coordinator IsNot Nothing Then
+                                Program.Coordinator.ResubmitDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
+                            Else
+                                EmbeddedDB.ResubmitDocument(DocID, staffName, notes)
+                            End If
+                        Catch ex As Exception
+                            MessageBox.Show(ex.Message, "Resubmit Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                            RefreshGrids()
+                            Return
+                        End Try
                         MainFrm.ReportStatus("Document resubmitted to the Secretary-General for review.")
                         RefreshGrids()
                         MainFrm.RefreshActiveTabGrid()
@@ -219,11 +254,21 @@ Namespace BTA_OSG
                     WarnStateMoved("approving")
                     Return
                 End If
-                If Program.Coordinator IsNot Nothing Then
-                    Program.Coordinator.ApproveDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
-                Else
-                    EmbeddedDB.ApproveDocument(DocID, staffName, notes)
+                If StatusUnverifiableForConnectedWrite() Then
+                    WarnStateMoved("approving")
+                    Return
                 End If
+                Try
+                    If Program.Coordinator IsNot Nothing Then
+                        Program.Coordinator.ApproveDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
+                    Else
+                        EmbeddedDB.ApproveDocument(DocID, staffName, notes)
+                    End If
+                Catch ex As Exception
+                    MessageBox.Show(ex.Message, "Approval Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    RefreshGrids()
+                    Return
+                End Try
                 MainFrm.ReportStatus("Document approved and routed to Records Section for release.")
                 RefreshGrids()
                 MainFrm.RefreshActiveTabGrid()
@@ -248,11 +293,21 @@ Namespace BTA_OSG
                     WarnStateMoved("releasing")
                     Return
                 End If
-                If Program.Coordinator IsNot Nothing Then
-                    Program.Coordinator.ReleaseDocument(DocID, staffName, "Released to destination office.", staffUserId, ExpectedFromStatusId())
-                Else
-                    EmbeddedDB.ReleaseDocument(DocID, staffName, "Released to destination office.")
+                If StatusUnverifiableForConnectedWrite() Then
+                    WarnStateMoved("releasing")
+                    Return
                 End If
+                Try
+                    If Program.Coordinator IsNot Nothing Then
+                        Program.Coordinator.ReleaseDocument(DocID, staffName, "Released to destination office.", staffUserId, ExpectedFromStatusId())
+                    Else
+                        EmbeddedDB.ReleaseDocument(DocID, staffName, "Released to destination office.")
+                    End If
+                Catch ex As Exception
+                    MessageBox.Show(ex.Message, "Release Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    RefreshGrids()
+                    Return
+                End Try
                 MainFrm.ReportStatus("Document released and logged in the archive.")
                 RefreshGrids()
                 MainFrm.RefreshActiveTabGrid()
@@ -349,7 +404,7 @@ Namespace BTA_OSG
             Try
                 Process.Start(New ProcessStartInfo With {.FileName = url, .UseShellExecute = True})
                 If MainFrm.CurrentUser IsNot Nothing Then
-                    EmbeddedDB.LogAudit(MainFrm.CurrentUser("FullName").ToString(), "Launched Document Soft Copy: " & url)
+                    EmbeddedDB.LogAudit(MainFrm.CurrentUser("FullName").ToString(), "Launched Document Soft Copy: " & url, actionType:="SOFT_COPY_LAUNCHED")
                 End If
             Catch ex As Exception
                 MessageBox.Show("Error opening document: " & ex.Message, "Launch Failed", MessageBoxButtons.OK, MessageBoxIcon.Error)

@@ -133,7 +133,7 @@ Namespace BTA_OSG
                 .Padding = New Padding(0, 12, 0, 6)
             }
             btnCancel = New Button With {
-                .Text = "&Close without claiming",
+                .Text = "Close &without claiming",
                 .Size = New Size(180, 32),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
@@ -143,7 +143,7 @@ Namespace BTA_OSG
                 .TabIndex = 10
             }
             btnClaim = New Button With {
-                .Text = "&Claim administrator",
+                .Text = "Cl&aim administrator",
                 .Size = New Size(170, 32),
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,
@@ -248,7 +248,8 @@ Namespace BTA_OSG
             Try
                 Dim claimed = Program.Coordinator.RegisterUser(fullName, "System Administrator", desk, cardUid,
                                                                canRoute:=True, canMove:=True, canSoftCopy:=True,
-                                                               enrolledByName:=fullName, enrolledByUserId:=0)
+                                                               enrolledByName:=fullName, enrolledByUserId:=0,
+                                                               claimGuard:=True)
                 If connected AndAlso Not claimed Then
                     ' RegisterUser keeps the claim in the local store (pendingSync) when SQL
                     ' refuses it, so "nothing was saved" would be false, and a retry, often
@@ -270,6 +271,12 @@ Namespace BTA_OSG
                 End If
                 Me.DialogResult = DialogResult.OK
                 Me.Close()
+            Catch refused As GuardRefusedException
+                ' Another SYSADMIN exists: the server refused the claim inside its
+                ' transaction. Surface it and cache nothing, so a retry cannot stack a
+                ' second administrator into the replay outbox.
+                SetStatus(refused.Message, CivicCalmTheme.ColorDanger)
+                Return
             Finally
                 SetBusy(False)
             End Try

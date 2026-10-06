@@ -19,7 +19,7 @@ Namespace BTA_OSG
             End Get
         End Property
 
-        Private Const DOC_COLS As String = "DocumentID, DocCode, Title, DocumentTypeID, OriginOffice, DestinationOffice, StatusID, ReceivedDate, CurrentStorageLocationID, Remarks, IsDeleted, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber"
+        Private Const DOC_COLS As String = "DocumentID, DocCode, Title, DocumentTypeID, OriginOffice, DestinationOffice, StatusID, ReceivedDate, CurrentStorageLocationID, Remarks, IsDeleted, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber, GoogleDriveUrl, RequesterGender"
         Public Function GetById(docId As Integer) As Document
             Using conn = _connectionFactory.CreateConnection()
                 Dim sql = "SELECT " & DOC_COLS & " FROM tbl_Documents WHERE DocumentID = @id"
@@ -107,17 +107,12 @@ Namespace BTA_OSG
             Return list
         End Function
 
-        Public Function GetVisibleToUser(userId As Integer, roles As List(Of Role), office As String, hasViewAll As Boolean, titleLike As String, pageSize As Integer, pageNumber As Integer) As List(Of Document)
-            ' Simplified logic for visibility, normally this would check assignments or permissions
-            Return GetByFilter(titleLike, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, Nothing, pageSize, pageNumber)
-        End Function
-
         ' When a transaction is supplied its connection is already open and the command
         ' joins it; otherwise the method owns a short-lived connection, as before.
         Public Function Insert(doc As Document, Optional transaction As SqlTransaction = Nothing) As Integer
-            Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber) " &
+            Dim sql = "INSERT INTO tbl_Documents (DocCode, Title, DocumentTypeID, StatusID, OriginOffice, DestinationOffice, CurrentStorageLocationID, ReceivedDate, Remarks, CreatedByUserID, FlowDirection, AssignedSection, TargetDeadlineUTC, RevisionPunchlist, LastActionTaken, ExternalControlNumber, GoogleDriveUrl, RequesterGender) " &
                        "OUTPUT INSERTED.DocumentID " &
-                       "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID, @FlowDirection, @AssignedSection, @TargetDeadlineUTC, @RevisionPunchlist, @LastActionTaken, @ExternalControlNumber)"
+                       "VALUES (@DocCode, @Title, @DocumentTypeID, @StatusID, @OriginOffice, @DestinationOffice, @CurrentStorageLocationID, @ReceivedDate, @Remarks, @CreatedByUserID, @FlowDirection, @AssignedSection, @TargetDeadlineUTC, @RevisionPunchlist, @LastActionTaken, @ExternalControlNumber, @GoogleDriveUrl, @RequesterGender)"
             Dim conn As SqlConnection = If(transaction IsNot Nothing, transaction.Connection, _connectionFactory.CreateConnection())
             Try
                 Using cmd = New SqlCommand(sql, conn, transaction)
@@ -137,6 +132,8 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@RevisionPunchlist", If(doc.RevisionPunchlist IsNot Nothing, CType(doc.RevisionPunchlist, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@LastActionTaken", If(doc.LastActionTaken IsNot Nothing, CType(doc.LastActionTaken, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ExternalControlNumber", ExternalControlNumberParam(doc.ExternalControlNumber))
+                    cmd.Parameters.AddWithValue("@GoogleDriveUrl", EmptyToDbNull(doc.GoogleDriveUrl))
+                    cmd.Parameters.AddWithValue("@RequesterGender", EmptyToDbNull(doc.RequesterGender))
                     Return Convert.ToInt32(cmd.ExecuteScalar())
                 End Using
             Finally
@@ -150,7 +147,7 @@ Namespace BTA_OSG
                            "OriginOffice = @OriginOffice, DestinationOffice = @DestinationOffice, CurrentStorageLocationID = @CurrentStorageLocationID, " &
                            "ReceivedDate = @ReceivedDate, Remarks = @Remarks, FlowDirection = @FlowDirection, AssignedSection = @AssignedSection, " &
                            "TargetDeadlineUTC = @TargetDeadlineUTC, RevisionPunchlist = @RevisionPunchlist, LastActionTaken = @LastActionTaken, " &
-                           "ExternalControlNumber = @ExternalControlNumber, " &
+                           "ExternalControlNumber = @ExternalControlNumber, GoogleDriveUrl = @GoogleDriveUrl, RequesterGender = @RequesterGender, " &
                            "ModifiedByUserID=@ModifiedByUserID, ModifiedAtUTC=SYSUTCDATETIME() " &
                            "WHERE DocumentID = @id"
                 Using cmd = New SqlCommand(sql, conn)
@@ -168,6 +165,8 @@ Namespace BTA_OSG
                     cmd.Parameters.AddWithValue("@RevisionPunchlist", If(doc.RevisionPunchlist IsNot Nothing, CType(doc.RevisionPunchlist, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@LastActionTaken", If(doc.LastActionTaken IsNot Nothing, CType(doc.LastActionTaken, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@ExternalControlNumber", ExternalControlNumberParam(doc.ExternalControlNumber))
+                    cmd.Parameters.AddWithValue("@GoogleDriveUrl", EmptyToDbNull(doc.GoogleDriveUrl))
+                    cmd.Parameters.AddWithValue("@RequesterGender", EmptyToDbNull(doc.RequesterGender))
                     cmd.Parameters.AddWithValue("@ModifiedByUserID", If(modifiedBy.HasValue, CType(modifiedBy.Value, Object), DBNull.Value))
                     cmd.Parameters.AddWithValue("@id", doc.DocumentID)
                     cmd.ExecuteNonQuery()
@@ -376,10 +375,6 @@ Namespace BTA_OSG
             End Try
         End Sub
 
-        Public Function SearchDocuments(hasViewAll As Boolean, userId As Integer, titleLike As String, typeId As Integer?, statusId As Integer?, originLike As String, destLike As String, storageId As Integer?, dateFrom As DateTime?, dateTo As DateTime?, pageSize As Integer, pageNumber As Integer) As List(Of Document)
-            Return GetByFilter(titleLike, typeId, statusId, originLike, destLike, storageId, dateFrom, dateTo, pageSize, pageNumber)
-        End Function
-
         Public Function GetBySection(sectionName As String, ongoingOnly As Boolean, pageSize As Integer, pageNumber As Integer) As List(Of Document)
             pageSize = Math.Max(1, Math.Min(100, pageSize))
             pageNumber = Math.Max(1, pageNumber)
@@ -429,7 +424,9 @@ Namespace BTA_OSG
                 .TargetDeadlineUTC = If(IsDBNull(reader("TargetDeadlineUTC")), CType(Nothing, DateTime?), Convert.ToDateTime(reader("TargetDeadlineUTC"))),
                 .RevisionPunchlist = If(IsDBNull(reader("RevisionPunchlist")), Nothing, Convert.ToString(reader("RevisionPunchlist"))),
                 .LastActionTaken = If(IsDBNull(reader("LastActionTaken")), Nothing, Convert.ToString(reader("LastActionTaken"))),
-                .ExternalControlNumber = If(IsDBNull(reader("ExternalControlNumber")), Nothing, Convert.ToString(reader("ExternalControlNumber")))
+                .ExternalControlNumber = If(IsDBNull(reader("ExternalControlNumber")), Nothing, Convert.ToString(reader("ExternalControlNumber"))),
+                .GoogleDriveUrl = If(IsDBNull(reader("GoogleDriveUrl")), Nothing, Convert.ToString(reader("GoogleDriveUrl"))),
+                .RequesterGender = If(IsDBNull(reader("RequesterGender")), Nothing, Convert.ToString(reader("RequesterGender")))
             }
         End Function
 
@@ -437,6 +434,13 @@ Namespace BTA_OSG
         ' absent control number must be stored as NULL: an empty string would collide
         ' across every non-portal document in the registry.
         Private Shared Function ExternalControlNumberParam(value As String) As Object
+            If String.IsNullOrWhiteSpace(value) Then Return DBNull.Value
+            Return CType(value, Object)
+        End Function
+
+        ' GoogleDriveUrl and RequesterGender have no unique index, but NULL still reads
+        ' better than '' for rows that never carried the field.
+        Private Shared Function EmptyToDbNull(value As String) As Object
             If String.IsNullOrWhiteSpace(value) Then Return DBNull.Value
             Return CType(value, Object)
         End Function

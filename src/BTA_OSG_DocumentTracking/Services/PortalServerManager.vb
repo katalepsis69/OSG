@@ -28,7 +28,10 @@ Namespace BTA_OSG
         ''' </summary>
         Public Shared Async Function EnsureRunningAsync(Optional statusCallback As Action(Of String) = Nothing) As Task(Of Boolean)
             Dim baseUrl = AppSettings.Instance.PortalSettings.BaseUrl
-            If String.IsNullOrWhiteSpace(baseUrl) Then
+            ' The desktop portal is a local service (the headless server binds 127.0.0.1): a
+            ' settings layer that still carries an external default must not make the badge
+            ' probe a stranger's server, so a non-loopback BaseUrl is replaced outright.
+            If String.IsNullOrWhiteSpace(baseUrl) OrElse Not IsLoopbackBaseUrl(baseUrl) Then
                 baseUrl = "http://localhost:8085"
             End If
 
@@ -79,6 +82,19 @@ Namespace BTA_OSG
                 Return True
             Catch ex As Exception
                 statusCallback?.Invoke("OSGPortal: Failed to open browser: " & ex.Message)
+                Return False
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' True only for loopback hosts: the local portal posture never points at a
+        ''' remote machine, so anything else is a stale or foreign setting.
+        ''' </summary>
+        Private Shared Function IsLoopbackBaseUrl(baseUrl As String) As Boolean
+            Try
+                Dim host = New Uri(baseUrl).Host.ToLowerInvariant()
+                Return host = "localhost" OrElse host = "127.0.0.1" OrElse host = "::1"
+            Catch
                 Return False
             End Try
         End Function
@@ -346,7 +362,9 @@ Namespace BTA_OSG
                     Dim cand = Path.Combine(dirPath, "bin", "mysqld.exe")
                     If File.Exists(cand) Then
                         Try
-                            Process.Start(New ProcessStartInfo With {
+                            ' Tracked like the bundled mysqld so StopServer can kill it; an
+                            ' untracked spawn outlives the app and squats on port 3306.
+                            _mysqlProcess = Process.Start(New ProcessStartInfo With {
                                 .FileName = cand,
                                 .CreateNoWindow = True,
                                 .UseShellExecute = False,

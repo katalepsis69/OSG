@@ -14,8 +14,10 @@
 -- deletes; keep it commented out until the list looks right, because documents
 -- an operator registered for real can share patterns with probe titles.
 -- The audit trail is append-only: rows naming purged probe documents are the
--- one sanctioned exception, and only because they name test artifacts. Run a
--- backup first (see backup_sqlserver.sql).
+-- one sanctioned exception, and only because they name test artifacts. Deleting
+-- a mid-chain audit row breaks the 014 hash-chain verification for every
+-- subsequent entry, and the chain cannot be repaired by the app, which only
+-- fills NULL hashes. Run a backup first (see backup_sqlserver.sql).
 -- ============================================================================
 
 USE BTA_OSG_DB;
@@ -77,6 +79,22 @@ DELETE ad FROM dbo.tbl_ActionDirectives ad
 JOIN @probeDocs t ON ad.DocumentID = t.DocumentID;
 DELETE d FROM dbo.tbl_Documents d
 JOIN @probeDocs t ON d.DocumentID = t.DocumentID;
+
+DELETE c FROM dbo.tbl_RfidCards c
+JOIN dbo.tbl_Users u ON c.UserID = u.UserID
+WHERE u.Username = 'probeofficer'
+   OR u.FullName LIKE 'Self-Check %'
+   OR u.FullName LIKE 'E2E Replay Staff%';
+DELETE r FROM dbo.tbl_UserRoles r
+JOIN dbo.tbl_Users u ON r.UserID = u.UserID
+WHERE u.Username = 'probeofficer'
+   OR u.FullName LIKE 'Self-Check %'
+   OR u.FullName LIKE 'E2E Replay Staff%';
+DELETE f FROM dbo.tbl_RfidFailedAttempts f
+JOIN dbo.tbl_Users u ON f.UserID = u.UserID
+WHERE u.Username = 'probeofficer'
+   OR u.FullName LIKE 'Self-Check %'
+   OR u.FullName LIKE 'E2E Replay Staff%';
 
 DELETE u FROM dbo.tbl_Users u
 WHERE u.Username = 'probeofficer'

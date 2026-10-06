@@ -37,30 +37,29 @@ function osg_rate_limit(string $bucket, int $max, int $windowSeconds): bool {
     $now = time();
     $requests = [];
 
-    if (file_exists($file)) {
-        $fp = fopen($file, 'c+');
-        if ($fp && flock($fp, LOCK_SH)) {
-            $decoded = json_decode((string)stream_get_contents($fp), true);
-            flock($fp, LOCK_UN);
-            fclose($fp);
-            if (is_array($decoded)) {
-                $requests = array_values(array_filter($decoded, fn($ts) => ($now - (int)$ts) < $windowSeconds));
-            }
-        }
-    }
-
-    if (count($requests) >= $max) {
-        return false;
-    }
-
-    $requests[] = $now;
     $fp = fopen($file, 'c+');
-    if ($fp && flock($fp, LOCK_EX)) {
-        ftruncate($fp, 0);
-        rewind($fp);
-        fwrite($fp, json_encode($requests));
-        flock($fp, LOCK_UN);
-        fclose($fp);
+    if (!$fp) {
+        return true;
     }
-    return true;
+
+    // One exclusive lock covers read, prune, and append: a shared-lock read let
+    // concurrent requests all observe the pre-increment count and slip past the cap.
+    $allowed = true;
+    if (flock($fp, LOCK_EX)) {
+        $decoded = json_decode((string)stream_get_contents($fp), true);
+        if (is_array($decoded)) {
+            $requests = array_values(array_filter($decoded, fn($ts) => ($now - (int)$ts) < $windowSeconds));
+        }
+        if (count($requests) < $max) {
+            $requests[] = $now;
+            ftruncate($fp, 0);
+            rewind($fp);
+            fwrite($fp, json_encode($requests));
+        } else {
+            $allowed = false;
+        }
+        flock($fp, LOCK_UN);
+    }
+    fclose($fp);
+    return $allowed;
 }

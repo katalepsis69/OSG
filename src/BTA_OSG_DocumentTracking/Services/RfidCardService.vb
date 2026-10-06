@@ -16,7 +16,7 @@ Namespace BTA_OSG
 
         Public Function IssueCard(userId As Integer, cardPublicId As String, cardLabel As String, issuedBy As Integer, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing) As Integer
             If String.IsNullOrWhiteSpace(cardPublicId) Then Throw New ArgumentException("CardPublicID cannot be empty.")
-            Dim cleanId As String = cardPublicId.Trim().ToUpperInvariant()
+            Dim cleanId As String = EmbeddedDB.SanitizeCardUid(cardPublicId)
             Dim newId As Integer = 0
 
             Dim conn As SqlConnection = If(transaction IsNot Nothing, transaction.Connection, _connFactory.CreateConnection())
@@ -54,5 +54,29 @@ Namespace BTA_OSG
                 _auditService.LogEvent("RFID_REVOKED", "RfidCard", cardId.ToString(), Nothing, Nothing, Nothing, True, reason)
             End If
         End Sub
+
+        ''' <summary>
+        ''' Lost-badge recovery: deactivates every active card of the account and returns how
+        ''' many were revoked. The Admin grid carries no card id, so revocation keys on the
+        ''' user; the Users mirror drops revoked cards, so the badge stops authenticating on
+        ''' every desk at the next pull.
+        ''' </summary>
+        Public Function RevokeActiveCardsForUser(userId As Integer, revokedBy As Integer, reason As String) As Integer
+            Dim revoked As Integer
+            Using conn As SqlConnection = _connFactory.CreateConnection()
+                Using cmd As New SqlCommand("UPDATE tbl_RfidCards SET IsActive = 0, RevokedByUserID = @rb, RevocationReason = @rr, RevokedAtUTC = SYSUTCDATETIME() WHERE UserID = @u AND IsActive = 1; SELECT @@ROWCOUNT;", conn)
+                    cmd.Parameters.AddWithValue("@rb", revokedBy)
+                    cmd.Parameters.AddWithValue("@rr", If(reason IsNot Nothing, CType(reason, Object), DBNull.Value))
+                    cmd.Parameters.AddWithValue("@u", userId)
+                    revoked = Convert.ToInt32(cmd.ExecuteScalar())
+                End Using
+            End Using
+
+            If _auditService IsNot Nothing Then
+                _auditService.LogEvent("RFID_REVOKED", "RfidCard", userId.ToString(), Nothing, Nothing,
+                                       "{""RevokedCards"":" & revoked.ToString() & "}", True, reason)
+            End If
+            Return revoked
+        End Function
     End Class
 End Namespace

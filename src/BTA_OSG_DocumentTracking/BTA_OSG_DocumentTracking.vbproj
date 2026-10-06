@@ -122,6 +122,9 @@
     <EmbeddedResource Include="..\..\db\scripts\015_replay_and_integrity_fixes.sql">
       <LogicalName>osgsql.015_replay_and_integrity_fixes.sql</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="..\..\db\scripts\016_add_requester_gender.sql">
+      <LogicalName>osgsql.016_add_requester_gender.sql</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

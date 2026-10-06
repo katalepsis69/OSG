@@ -46,10 +46,10 @@ Namespace BTA_OSG
             cmbDirective.SelectedIndex = 0
 
             cmbDirAssign = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
-            txtDirNotes = New TextBox With {.Dock = DockStyle.Fill, .Text = "", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
+            txtDirNotes = New TextBox With {.Name = "txtDirNotes", .Dock = DockStyle.Fill, .Text = "", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
             btnApplyDirective = New Button With {
-                .Text = " &Log Action Directive",
+                .Text = " Lo&g Action Directive",
                 .Dock = DockStyle.Fill,
                 .BackColor = CivicCalmTheme.ColorPrimary,
                 .ForeColor = Color.White,

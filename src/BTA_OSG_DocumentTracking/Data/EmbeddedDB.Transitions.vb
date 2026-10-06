@@ -33,12 +33,20 @@ Namespace BTA_OSG
                     ' CurrentStatus replayed to a RECEIVED fallback corrupted the status.
                     ' "Approved & Archived" maps to ARCHIVED to match the connected path,
                     ' where the APPROVE_ARCHIVE type's ResultStatusID is the archived status.
+                    Dim targetCode As String = ""
                     If directive = "REVISION_REQUESTED" Then
-                        docRows(0)("CurrentStatus") = "FOR_REVISION"
+                        targetCode = "FOR_REVISION"
                     ElseIf directive = "APPROVED" Then
-                        docRows(0)("CurrentStatus") = "APPROVED"
+                        targetCode = "APPROVED"
                     ElseIf directive = "Approved & Archived" Then
-                        docRows(0)("CurrentStatus") = "ARCHIVED"
+                        targetCode = "ARCHIVED"
+                    End If
+                    If targetCode.Length > 0 Then
+                        Dim currentCode = docRows(0)("CurrentStatus").ToString().Trim().ToUpperInvariant()
+                        If DocumentStatus.IsTerminalStatus(currentCode) AndAlso currentCode <> targetCode Then
+                            Throw New InvalidOperationException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer receive this directive.")
+                        End If
+                        docRows(0)("CurrentStatus") = targetCode
                     End If
                     docRows(0)("LastActionTaken") = "SG Directive: " & directive
                     If Not String.IsNullOrEmpty(assignedTo) Then docRows(0)("AssignedStaff") = assignedTo
@@ -80,6 +88,13 @@ Namespace BTA_OSG
                     ' must not overwrite.
                     Dim actionCode = If(action, "").Trim().ToUpperInvariant()
                     If Array.IndexOf(DocumentStatus.RouteTargetStatusCodes, actionCode) >= 0 Then
+                        Dim currentCode = docRows(0)("CurrentStatus").ToString().Trim().ToUpperInvariant()
+                        ' Re-logging the status the document already sits in is the internal
+                        ' transitions re-recording their own target; moving a terminal
+                        ' document anywhere else reopens a filed row and is refused.
+                        If DocumentStatus.IsTerminalStatus(currentCode) AndAlso currentCode <> actionCode Then
+                            Throw New InvalidOperationException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer be routed.")
+                        End If
                         docRows(0)("CurrentStatus") = actionCode
                     End If
                     If Not action.Equals("REVISION_REQUESTED", StringComparison.OrdinalIgnoreCase) Then
@@ -146,6 +161,7 @@ Namespace BTA_OSG
             SyncLock _syncLock
                 Dim doc = FindDocumentRow(docId)
                 If doc Is Nothing Then Return
+                RefuseTerminal(doc, "returned for revision")
 
                 doc("CurrentStatus") = "FOR_REVISION"
                 Dim prevPunchlist As String = doc("RevisionPunchlist").ToString()
@@ -173,6 +189,7 @@ Namespace BTA_OSG
             SyncLock _syncLock
                 Dim doc = FindDocumentRow(docId)
                 If doc Is Nothing Then Return
+                RefuseTerminal(doc, "resubmitted")
 
                 Dim originSec As String = doc("AssignedSection").ToString()
                 doc("CurrentStatus") = "FOR_REVIEW"
@@ -195,6 +212,7 @@ Namespace BTA_OSG
             SyncLock _syncLock
                 Dim doc = FindDocumentRow(docId)
                 If doc Is Nothing Then Return
+                RefuseTerminal(doc, "approved")
 
                 doc("CurrentStatus") = "APPROVED"
                 doc("AssignedSection") = "Records Section"
@@ -217,6 +235,7 @@ Namespace BTA_OSG
             SyncLock _syncLock
                 Dim doc = FindDocumentRow(docId)
                 If doc Is Nothing Then Return
+                RefuseTerminal(doc, "released")
 
                 Dim dest As String = doc("DestinationOffice").ToString()
                 doc("CurrentStatus") = "RELEASED"
@@ -242,6 +261,20 @@ Namespace BTA_OSG
             If rows.Length = 0 Then Return Nothing
             Return rows(0)
         End Function
+
+        ''' <summary>
+        ''' The offline half of the terminal-state rule (the connected path refuses in
+        ''' RoutingService/DirectiveService): a filed, released, archived, or completed
+        ''' document cannot re-enter the workflow through a revision, resubmit, approval,
+        ''' or release. Re-log of the same terminal status stays legal so the internal
+        ''' transitions that re-record their own target do not refuse themselves.
+        ''' </summary>
+        Private Shared Sub RefuseTerminal(doc As DataRow, verb As String)
+            Dim currentCode = doc("CurrentStatus").ToString().Trim().ToUpperInvariant()
+            If DocumentStatus.IsTerminalStatus(currentCode) Then
+                Throw New InvalidOperationException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer be " & verb & ".")
+            End If
+        End Sub
 
         ' The portal push runs after _syncLock releases: it performs network I/O and must not
         ' hold the cache lock across it.

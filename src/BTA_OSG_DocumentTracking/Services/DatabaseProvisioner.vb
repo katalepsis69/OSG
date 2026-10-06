@@ -8,7 +8,7 @@ Imports Microsoft.Data.SqlClient
 
 Namespace BTA_OSG
     ''' <summary>
-    ''' Applies the canonical schema (db/scripts 001-015, embedded in the exe) and creates
+    ''' Applies the canonical schema (db/scripts 001-016, embedded in the exe) and creates
     ''' the shared bta_app SQL login, so the connect dialog can prepare a fresh server
     ''' with no scripts on disk. Every step is idempotent: the scripts carry their own
     ''' IF NOT EXISTS / COL_LENGTH guards, so a re-run repairs a partial schema and is a
@@ -35,7 +35,8 @@ Namespace BTA_OSG
             Tuple.Create("012_retire_bootstrap_admin.sql", AppDatabaseName),
             Tuple.Create("013_realign_document_sequences.sql", AppDatabaseName),
             Tuple.Create("014_audit_hash_chain.sql", AppDatabaseName),
-            Tuple.Create("015_replay_and_integrity_fixes.sql", AppDatabaseName)
+            Tuple.Create("015_replay_and_integrity_fixes.sql", AppDatabaseName),
+            Tuple.Create("016_add_requester_gender.sql", AppDatabaseName)
         }
 
         ''' <summary>

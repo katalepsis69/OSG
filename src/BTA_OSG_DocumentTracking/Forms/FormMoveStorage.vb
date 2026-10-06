@@ -127,15 +127,27 @@ Namespace BTA_OSG
                 Return
             End If
 
-            Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
-            If Program.Coordinator IsNot Nothing Then
-                Program.Coordinator.MoveStorage(DocID, txtFromLoc.Text.Trim(), toLoc, txtReason.Text.Trim(), StaffName, currentUserId)
-            Else
-                EmbeddedDB.AddMovementLog(DocID, txtFromLoc.Text.Trim(), toLoc, StaffName, txtReason.Text.Trim())
-                EmbeddedDB.LogAudit(StaffName, $"Transferred Doc #{DocID} storage location from {txtFromLoc.Text.Trim()} to {toLoc}")
-            End If
-            Me.DialogResult = DialogResult.OK
-            Me.Close()
+            ' Double-click guard, same as the route dialog: the second queued click must not
+            ' file a second movement (and a second auto-created landmark).
+            btnSave.Enabled = False
+            Try
+                Dim currentUserId As Integer = If(StaffUserId > 0, StaffUserId, 1)
+                Try
+                    If Program.Coordinator IsNot Nothing Then
+                        Program.Coordinator.MoveStorage(DocID, txtFromLoc.Text.Trim(), toLoc, txtReason.Text.Trim(), StaffName, currentUserId)
+                    Else
+                        EmbeddedDB.AddMovementLog(DocID, txtFromLoc.Text.Trim(), toLoc, StaffName, txtReason.Text.Trim())
+                        EmbeddedDB.LogAudit(StaffName, $"Transferred Doc #{DocID} storage location from {txtFromLoc.Text.Trim()} to {toLoc}", actionType:="STORAGE_MOVED")
+                    End If
+                Catch ex As Exception
+                    MessageBox.Show(ex.Message, "Transfer Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                    Return
+                End Try
+                Me.DialogResult = DialogResult.OK
+                Me.Close()
+            Finally
+                btnSave.Enabled = True
+            End Try
         End Sub
     End Class
 End Namespace

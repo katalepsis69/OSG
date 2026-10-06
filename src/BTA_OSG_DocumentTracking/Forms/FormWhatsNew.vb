@@ -39,14 +39,16 @@ Namespace BTA_OSG
         Private _remoteNotes As String = ""
         Private _latestPublishedAt As DateTime = DateTime.MinValue
         Private _alreadyChecked As Boolean = False
+        Private _checkSucceeded As Boolean = True
 
-        Public Sub New(Optional hasUpdate As Boolean = False, Optional latestVersion As String = "", Optional downloadUrl As String = "", Optional releaseNotes As String = "", Optional latestPublishedAt As DateTime = Nothing, Optional alreadyChecked As Boolean = False)
+        Public Sub New(Optional hasUpdate As Boolean = False, Optional latestVersion As String = "", Optional downloadUrl As String = "", Optional releaseNotes As String = "", Optional latestPublishedAt As DateTime = Nothing, Optional alreadyChecked As Boolean = False, Optional checkSucceeded As Boolean = True)
             _hasUpdate = hasUpdate
             _latestVersion = latestVersion
             _downloadUrl = downloadUrl
             _remoteNotes = releaseNotes
             _latestPublishedAt = latestPublishedAt
             _alreadyChecked = alreadyChecked
+            _checkSucceeded = checkSucceeded
 
             InitializeComponent()
             PopulateChangelog(_remoteNotes, Nothing)
@@ -70,7 +72,8 @@ Namespace BTA_OSG
                 If e.KeyCode = Keys.Escape Then Me.Close()
             End Sub
 
-            ' Top Header Panel
+            ' Top header: a two-column layout panel so the text rows grow with DPI instead
+            ' of colliding at fixed y offsets, and the badge right-aligns by anchoring.
             pnlHeader = New Panel With {
                 .Dock = DockStyle.Top,
                 .Height = 84,
@@ -85,14 +88,25 @@ Namespace BTA_OSG
             }
             pnlHeader.Controls.Add(pnlBorderBottom)
 
+            Dim headerLayout As New TableLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .ColumnCount = 2,
+                .RowCount = 2,
+                .BackColor = CivicCalmTheme.ColorSurface
+            }
+            headerLayout.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
+            headerLayout.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+            headerLayout.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+            headerLayout.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+
             lblHeaderTitle = New Label With {
                 .Text = "What's New in BTA OSG",
                 .Font = CivicCalmTheme.FontFormTitle,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .AutoSize = True,
-                .Location = New Point(20, 16)
+                .Margin = New Padding(0, 0, 0, 2)
             }
-            pnlHeader.Controls.Add(lblHeaderTitle)
+            headerLayout.Controls.Add(lblHeaderTitle, 0, 0)
 
             Dim currentVer = Assembly.GetExecutingAssembly().GetName().Version
             Dim verStr = If(currentVer IsNot Nothing, $"v{AppUpdateService.FormatVersion(currentVer)}", "v?")
@@ -102,30 +116,33 @@ Namespace BTA_OSG
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .ForeColor = CivicCalmTheme.ColorInkMuted,
                 .AutoSize = True,
-                .Location = New Point(20, 42)
+                .Margin = New Padding(0)
             }
-            pnlHeader.Controls.Add(lblHeaderSubtitle)
+            headerLayout.Controls.Add(lblHeaderSubtitle, 0, 1)
 
-            ' Status Badge
+            ' Status badge
             lblStatusBadge = New Label With {
                 .AutoSize = False,
                 .Size = New Size(190, 28),
                 .TextAlign = ContentAlignment.MiddleCenter,
                 .Font = CivicCalmTheme.FontFieldLabel,
-                .Location = New Point(Math.Max(10, Me.ClientSize.Width - 210), 24)
+                .Anchor = AnchorStyles.Right,
+                .Margin = New Padding(8, 0, 0, 0)
             }
-
-            ' Reposition badge relative to header client width to prevent docking offset bugs
-            AddHandler pnlHeader.Resize, Sub(s, e)
-                If lblStatusBadge IsNot Nothing Then
-                    lblStatusBadge.Location = New Point(Math.Max(10, pnlHeader.ClientSize.Width - lblStatusBadge.Width - 20), 24)
-                End If
-            End Sub
+            headerLayout.Controls.Add(lblStatusBadge, 1, 0)
+            headerLayout.SetRowSpan(lblStatusBadge, 2)
+            pnlHeader.Controls.Add(headerLayout)
 
             If _hasUpdate Then
                 lblStatusBadge.Text = $"Update Available ({AppUpdateService.FormatTagLabel(_latestVersion)})"
                 lblStatusBadge.BackColor = CivicCalmTheme.ColorStatusReceivedBg
                 lblStatusBadge.ForeColor = CivicCalmTheme.ColorStatusReceivedFg
+            ElseIf _alreadyChecked AndAlso Not _checkSucceeded Then
+                ' A failed check is not a verified fact: the badge must not claim "up to
+                ' date" when nothing was compared.
+                lblStatusBadge.Text = "Update Check Unavailable"
+                lblStatusBadge.BackColor = CivicCalmTheme.ColorStatusReceivedBg
+                lblStatusBadge.ForeColor = CivicCalmTheme.ColorWarning
             ElseIf Not String.IsNullOrEmpty(_latestVersion) Then
                 lblStatusBadge.Text = $"System Up to Date ({verStr})"
                 lblStatusBadge.BackColor = CivicCalmTheme.ColorPrimarySoft
@@ -139,7 +156,6 @@ Namespace BTA_OSG
                 lblStatusBadge.BackColor = CivicCalmTheme.ColorWell
                 lblStatusBadge.ForeColor = CivicCalmTheme.ColorInkMuted
             End If
-            pnlHeader.Controls.Add(lblStatusBadge)
 
             ' Bottom Footer Panel
             pnlFooter = New Panel With {

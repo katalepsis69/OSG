@@ -322,7 +322,7 @@ Namespace BTA_OSG
             pnlWorkflowRibbon = New Panel With {
                 .Dock = DockStyle.Top,
                 .Height = 44,
-                .BackColor = Color.FromArgb(240, 244, 248),
+                .BackColor = CivicCalmTheme.ColorCanvas,
                 .Padding = New Padding(20, 6, 20, 6)
             }
 
@@ -337,7 +337,7 @@ Namespace BTA_OSG
                 .Dock = DockStyle.Fill,
                 .ColumnCount = 3,
                 .RowCount = 1,
-                .BackColor = Color.FromArgb(240, 244, 248)
+                .BackColor = CivicCalmTheme.ColorCanvas
             }
             tblRibbon.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 45.0F))
             tblRibbon.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 40.0F))
@@ -512,7 +512,7 @@ Namespace BTA_OSG
             End If
 
             Dim btnOpenExt As New Button With {
-                .Text = "&Open in External Browser",
+                .Text = "Open in E&xternal Browser",
                 .Size = New Size(180, 28),
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .BackColor = CivicCalmTheme.ColorWell,
@@ -707,13 +707,13 @@ Namespace BTA_OSG
                 If row.Cells("Status").Value IsNot Nothing Then
                     Dim st = row.Cells("Status").Value.ToString()
                     If st.Contains("CURRENT") Then
-                        row.DefaultCellStyle.BackColor = Color.FromArgb(232, 244, 253)
+                        row.DefaultCellStyle.BackColor = CivicCalmTheme.ColorStatusReviewBg
                         row.DefaultCellStyle.Font = CivicCalmTheme.FontFieldLabel
-                        row.DefaultCellStyle.ForeColor = Color.FromArgb(13, 71, 161)
+                        row.DefaultCellStyle.ForeColor = CivicCalmTheme.ColorStatusReviewFg
                     ElseIf st = "COMPLETED" Then
-                        row.Cells("Status").Style.ForeColor = Color.FromArgb(46, 125, 50)
+                        row.Cells("Status").Style.ForeColor = CivicCalmTheme.ColorStatusApprovedFg
                     Else
-                        row.Cells("Status").Style.ForeColor = Color.FromArgb(100, 116, 139)
+                        row.Cells("Status").Style.ForeColor = CivicCalmTheme.ColorStatusPendingFg
                     End If
                 End If
             Next

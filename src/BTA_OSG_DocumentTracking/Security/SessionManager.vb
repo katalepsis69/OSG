@@ -18,18 +18,6 @@ Namespace BTA_OSG
             End If
         End Sub
 
-        Public Shared Function CheckTimeout(settings As AppSettings, Optional auditRepo As Object = Nothing) As Boolean
-            If CurrentSession Is Nothing Then Return True
-            
-            Dim timeSinceLastActivity As TimeSpan = DateTime.UtcNow - CurrentSession.LastActivityUTC
-            If timeSinceLastActivity.TotalMinutes > settings.SessionSettings.TimeoutMinutes Then
-                CurrentSession = Nothing
-                Return True
-            End If
-            
-            Return False
-        End Function
-
         Public Shared Sub Touch()
             If CurrentSession IsNot Nothing Then
                 CurrentSession.LastActivityUTC = DateTime.UtcNow

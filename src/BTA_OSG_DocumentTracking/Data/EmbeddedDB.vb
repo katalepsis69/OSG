@@ -379,6 +379,9 @@ Namespace BTA_OSG
         End Sub
 
         Public Shared Sub AddUser(uid As String, name As String, role As String, Optional office As String = "", Optional canRoute As Boolean = True, Optional canMove As Boolean = True, Optional canSoftCopy As Boolean = True, Optional pendingSync As Boolean = False)
+            ' canSoftCopy defaults True: the Admin enrolment checkbox starts checked, so
+            ' soft-copy access is an explicit enrolment choice recorded per user. The
+            ' consumption sites still deny on a NULL or missing flag.
             Dim dt = DataSet.Tables("Users")
             Dim cleanUid = uid.Trim().ToUpperInvariant()
             Dim effOffice = If(String.IsNullOrWhiteSpace(office), role, office)
@@ -454,6 +457,17 @@ Namespace BTA_OSG
             Return If(If(uid, "").Length > 4, "****" & uid.Substring(uid.Length - 4), uid)
         End Function
 
+        ' Readers pad card IDs with trailing control characters (STX/ETX). Every entry point
+        ' that accepts a typed or pasted UID funnels through this one sanitizer so what is
+        ' stored always matches what the login lookup cleans.
+        Public Shared Function SanitizeCardUid(value As String) As String
+            Dim sb As New System.Text.StringBuilder(If(value, "").Length)
+            For Each ch In If(value, "")
+                If Not Char.IsControl(ch) Then sb.Append(ch)
+            Next
+            Return sb.ToString().Trim().ToUpperInvariant()
+        End Function
+
         ' The offline terminal lockout reads the same configured threshold the connected
         ' path enforces at FormMain, so a tuned setting is not silently ignored offline.
         Private Shared ReadOnly Property TerminalLockoutThreshold As Integer
@@ -510,8 +524,20 @@ Namespace BTA_OSG
             End Select
 
             Dim yearStr As String = DateTime.Now.Year.ToString()
-            Dim matchingRows = DataSet.Tables("Documents").Select(String.Format("DocCode LIKE '{0}-{1}-%'", prefix, yearStr))
-            Dim nextSeq As Integer = matchingRows.Length + 1
+            ' Max of the codes on file, not row count: mirror reconciliation and SQL-side
+            ' deletes remove rows, and a count-based mint would then reuse a printed number.
+            Dim nextSeq As Integer = 1
+            SyncLock _syncLock
+                Dim matchingRows = DataSet.Tables("Documents").Select(String.Format("DocCode LIKE '{0}-{1}-%'", prefix.Replace("'", "''"), yearStr))
+                For Each r As DataRow In matchingRows
+                    Dim code = r("DocCode").ToString()
+                    Dim lastDash = code.LastIndexOf("-"c)
+                    Dim seq As Integer
+                    If lastDash >= 0 AndAlso Integer.TryParse(code.Substring(lastDash + 1), seq) AndAlso seq >= nextSeq Then
+                        nextSeq = seq + 1
+                    End If
+                Next
+            End SyncLock
             Return String.Format("{0}-{1}-{2:D3}", prefix, yearStr, nextSeq)
         End Function
 

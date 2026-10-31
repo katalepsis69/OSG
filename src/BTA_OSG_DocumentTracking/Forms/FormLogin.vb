@@ -152,40 +152,10 @@ Namespace BTA_OSG
                 .WrapContents = False,
                 .Margin = New Padding(0, 8, 0, 0)
             }
-            btnSignIn = New Button With {
-                .Text = " &Sign in",
-                .Size = New Size(115, 32),
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .TabIndex = 1,
-                .Image = AppAssets.GetIcon("identification-card", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnSignIn.FlatAppearance.BorderSize = 0
+            btnSignIn = CivicCalmTheme.CreateIconButton("&Sign in", "identification-card", backColor:=CivicCalmTheme.ColorPrimary, tabIndex:=1)
             AddHandler btnSignIn.Click, Sub() OnSignIn()
 
-            btnCancel = New Button With {
-                .Text = " &Cancel",
-                .Size = New Size(100, 32),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .TabIndex = 2,
-                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnCancel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnCancel = CivicCalmTheme.CreateIconButton("&Cancel", "x", 14, tabIndex:=2)
             AddHandler btnCancel.Click, Sub()
                                             Me.DialogResult = DialogResult.Cancel
                                             Me.Close()

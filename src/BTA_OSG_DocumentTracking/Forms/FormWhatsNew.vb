@@ -19,7 +19,10 @@ Namespace BTA_OSG
 
         Private Class LocalHistoryEntry
             Public Property VersionText As String = ""
+            ' Only for releases that predate tagging: a curated heading when no real date
+            ' exists to format.
             Public Property HeaderText As String = ""
+            Public Property ReleaseDate As DateTime = DateTime.MinValue
             Public Property Bullets As New List(Of String)()
         End Class
 
@@ -281,22 +284,9 @@ Namespace BTA_OSG
                 rtbChangelog.BringToFront()
             End If
 
-            btnUpdateNow = New Button With {
-                .Text = " &Update && Restart Now",
-                .Size = New Size(205, 34),
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(6, 0, 0, 0),
-                .Image = AppAssets.GetIcon("arrow-clockwise", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(8, 0, 8, 0)
-            }
-            btnUpdateNow.FlatAppearance.BorderSize = 0
+            ' AutoSize: the progress line ("Downloading 18.4 of 43.5 MB (42%)") clips a fixed
+            ' 205px button mid-download.
+            btnUpdateNow = CivicCalmTheme.CreateIconButton("&Update && Restart Now", "arrow-clockwise", backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(6, 0, 0, 0))
             AddHandler btnUpdateNow.Click, Async Sub()
                 btnUpdateNow.Enabled = False
                 If prgDownload IsNot Nothing Then prgDownload.Visible = True
@@ -308,7 +298,7 @@ Namespace BTA_OSG
                                                                           Else
                                                                               prgDownload.Style = ProgressBarStyle.Marquee
                                                                           End If
-                                                                          If Not String.IsNullOrEmpty(p.Label) Then btnUpdateNow.Text = " " & p.Label
+                                                                          If Not String.IsNullOrEmpty(p.Label) Then btnUpdateNow.Text = p.Label
                                                                       End Sub)
                 Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me, reporter)
                 ' Success exits the process from the service; this restore is the failure path
@@ -316,7 +306,7 @@ Namespace BTA_OSG
                 If Not Me.IsDisposed Then
                     If prgDownload IsNot Nothing Then prgDownload.Visible = False
                     btnUpdateNow.Enabled = True
-                    btnUpdateNow.Text = " &Update && Restart Now"
+                    btnUpdateNow.Text = "&Update && Restart Now"
                 End If
             End Sub
             flpFooter.Controls.Add(btnUpdateNow)
@@ -331,9 +321,13 @@ Namespace BTA_OSG
         Private Shared Function GetLocalHistory() As List(Of LocalHistoryEntry)
             Dim history As New List(Of LocalHistoryEntry)()
 
+            ' Releases from v2.1 on carry their real tag date (git tags v2.1 through v2.7
+            ' were all cut 2026-10-03), so every heading shows a dated day like the
+            ' GitHub-fed entries do. The three entries below without a date predate
+            ' tagging and keep their month heading; no day was ever recorded for them.
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.5",
-                .HeaderText = "v2.5 - October 2026",
+                .ReleaseDate = New DateTime(2026, 10, 3),
                 .Bullets = New List(Of String) From {
                     "Details Window Stability: Fixed flickering, ghosting, and black leftovers when resizing or maximizing, especially on the Document Overview tab.",
                     "Truthful Roadmap: The step-by-step custody roadmap now shows where a document really is; freshly registered documents start at their assigned desk.",
@@ -344,7 +338,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.4",
-                .HeaderText = "v2.4 - October 2026",
+                .ReleaseDate = New DateTime(2026, 10, 3),
                 .Bullets = New List(Of String) From {
                     "Sidebar Navigation: Relocated What's New button to the bottom of the left navigation pane for easy access.",
                     "Header Streamlining: Cleaned up the top banner to keep focus on badge scanning and user logout.",
@@ -354,7 +348,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.3",
-                .HeaderText = "v2.3 - October 2026",
+                .ReleaseDate = New DateTime(2026, 10, 3),
                 .Bullets = New List(Of String) From {
                     "Sharp Desktop Icons: Integrated 23 clean vector icons that stay sharp on all monitor display scalings.",
                     "Theme Contrast Tinting: Icons adapt automatically to match screen theme colors for high readability.",
@@ -365,7 +359,7 @@ Namespace BTA_OSG
 
             history.Add(New LocalHistoryEntry With {
                 .VersionText = "2.1",
-                .HeaderText = "v2.1 - October 2026",
+                .ReleaseDate = New DateTime(2026, 10, 3),
                 .Bullets = New List(Of String) From {
                     "What's New & Release Changelogs: Integrated release history and update notification window.",
                     "1-Click System Updates: Self-service update checker querying GitHub Releases with automated in-place restart.",
@@ -434,7 +428,24 @@ Namespace BTA_OSG
             Return name & " - " & releasedAt.ToString("MMMM d, yyyy", CultureInfo.InvariantCulture)
         End Function
 
+        ''' <summary>Curated entry heading: the real date when one is recorded, else the
+        ''' entry's own text (pre-tagging releases keep their month heading).</summary>
+        Private Shared Function CuratedHeading(entry As LocalHistoryEntry) As String
+            If entry.ReleaseDate <> DateTime.MinValue Then
+                Return FormatReleaseHeading("v" & entry.VersionText, entry.ReleaseDate)
+            End If
+            Return entry.HeaderText
+        End Function
+
         Private Sub PopulateChangelog(remoteNotes As String, pastReleases As List(Of ReleaseHistoryEntry))
+            ' Rebuilt every time the network answers, and the two passes (constructor,
+            ' OnShown) land about a second apart. Freeze the redraw across the rebuild:
+            ' an RTB repaints on every append and jumps its view to the insertion point,
+            ' so without the freeze the open sequence is: stale list, auto-scroll to the
+            ' bottom, snap back to the top, list again. One frame instead of four.
+            Dim keepTop As Integer = 0
+            If rtbChangelog.TextLength > 0 Then keepTop = Math.Max(0, rtbChangelog.GetCharIndexFromPosition(New Point(4, 4)))
+            SetRedraw(False)
             rtbChangelog.Clear()
 
             ' If remote release notes are available from GitHub, show them at top
@@ -446,8 +457,9 @@ Namespace BTA_OSG
 
             ' Past GitHub releases, newest first. The releases list is the single changelog
             ' source, so a release can never vanish between "latest" and the local list again
-            ' (2.1.4 was skipped exactly that way). Where a curated local entry exists it is
-            ' preferred; otherwise the release body renders as-is.
+            ' (2.1.4 was skipped exactly that way). Where a curated local entry exists its
+            ' bullets are preferred, but the heading still takes the GitHub published date:
+            ' one dated scheme ("October 3, 2026") for every entry on screen.
             Dim shownVersions As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
             If pastReleases IsNot Nothing Then
                 For Each rel In pastReleases
@@ -459,9 +471,8 @@ Namespace BTA_OSG
 
                     Dim localEntry = GetLocalHistory().FirstOrDefault(Function(h) NormalizeVersion(h.VersionText) = versionKey)
                     If localEntry IsNot Nothing Then
-                        ' Curated entries carry their own dated two-part heading
-                        ' ("v2.1 - October 2026"), matching the GitHub-fed entries.
-                        AppendHeader(localEntry.HeaderText)
+                        Dim headingDate = If(rel.PublishedAt <> DateTime.MinValue, rel.PublishedAt, localEntry.ReleaseDate)
+                        AppendHeader(FormatReleaseHeading(AppUpdateService.FormatTagLabel(rel.TagName), headingDate))
                         For Each b In localEntry.Bullets
                             AppendBullet(b)
                         Next
@@ -478,15 +489,31 @@ Namespace BTA_OSG
             ' list when offline.
             For Each entry In GetLocalHistory()
                 If shownVersions.Contains(NormalizeVersion(entry.VersionText)) Then Continue For
-                AppendHeader(entry.HeaderText)
+                AppendHeader(CuratedHeading(entry))
                 For Each b In entry.Bullets
                     AppendBullet(b)
                 Next
                 AppendSeparator()
             Next
 
-            rtbChangelog.SelectionStart = 0
+            ' Land at the top on open, and hold the reader's place when the network answer
+            ' rebuilds the list underneath them.
+            rtbChangelog.SelectionStart = Math.Min(keepTop, rtbChangelog.TextLength)
+            rtbChangelog.SelectionLength = 0
             rtbChangelog.ScrollToCaret()
+            SetRedraw(True)
+        End Sub
+
+        Private Const WmSetRedraw As Integer = &HB
+
+        <System.Runtime.InteropServices.DllImport("user32.dll")>
+        Private Shared Function SendMessage(hWnd As IntPtr, msg As Integer, wParam As IntPtr, lParam As IntPtr) As IntPtr
+        End Function
+
+        Private Sub SetRedraw(enabled As Boolean)
+            If rtbChangelog Is Nothing OrElse Not rtbChangelog.IsHandleCreated Then Return
+            SendMessage(rtbChangelog.Handle, WmSetRedraw, If(enabled, New IntPtr(1), IntPtr.Zero), IntPtr.Zero)
+            If enabled Then rtbChangelog.Invalidate()
         End Sub
 
         Private Sub AppendHeader(text As String)
@@ -496,9 +523,16 @@ Namespace BTA_OSG
         End Sub
 
         Private Sub AppendBullet(text As String)
+            Dim startIdx = rtbChangelog.TextLength
             rtbChangelog.SelectionFont = CivicCalmTheme.FontBody
             rtbChangelog.SelectionColor = CivicCalmTheme.ColorInk
-            rtbChangelog.AppendText("  •  " & text & vbCrLf)
+            rtbChangelog.AppendText("•  " & text & vbCrLf)
+            ' Hanging indent: wrapped lines align under the text, not under the bullet, so
+            ' long changelog lines read as one item instead of a ragged block.
+            rtbChangelog.Select(startIdx, rtbChangelog.TextLength - startIdx)
+            rtbChangelog.SelectionIndent = 0
+            rtbChangelog.SelectionHangingIndent = 16
+            rtbChangelog.SelectionLength = 0
         End Sub
 
         ''' <summary>

@@ -67,6 +67,15 @@ Namespace BTA_OSG
 
             RemoveHandler dgv.CellFormatting, AddressOf HandleCellFormatting
             AddHandler dgv.CellFormatting, AddressOf HandleCellFormatting
+            RemoveHandler dgv.ColumnAdded, AddressOf HandleColumnAdded
+            AddHandler dgv.ColumnAdded, AddressOf HandleColumnAdded
+        End Sub
+
+        ' A Byte() token auto-generates as an image cell; hiding after binding is too late.
+        Private Shared Sub HandleColumnAdded(sender As Object, e As DataGridViewColumnEventArgs)
+            If e.Column IsNot Nothing AndAlso String.Equals(e.Column.Name, "RowVersion", StringComparison.Ordinal) Then
+                e.Column.Visible = False
+            End If
         End Sub
 
         Private Shared Sub ApplyStatusBadge(e As DataGridViewCellFormattingEventArgs, backColor As Color, foreColor As Color)
@@ -277,9 +286,7 @@ Namespace BTA_OSG
                         Case "CabinetID", "ShelfNo", "BoxCode", "RevisionPunchlist", "ExternalControlNumber"
                             col.Visible = False
                         Case "RowVersion"
-                            ' A Byte() column auto-generates as an image cell, and rendering the
-                            ' optimistic-concurrency token as a picture throws "Parameter is not
-                            ' valid" once the mirror fills it in from SQL. It is never display data.
+                            ' Fallback for a column added before ApplyCivicStyle attached its handler.
                             col.Visible = False
                     End Select
                 Next

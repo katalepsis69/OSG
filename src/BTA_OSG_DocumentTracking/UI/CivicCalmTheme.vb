@@ -2,6 +2,7 @@ Option Explicit On
 Option Strict On
 
 Imports System.Drawing
+Imports System.Windows.Forms
 
 Namespace BTA_OSG
     Public NotInheritable Class CivicCalmTheme
@@ -56,5 +57,56 @@ Namespace BTA_OSG
         Public Shared ReadOnly FontTabular As New Font("Segoe UI", 9.0F, FontStyle.Regular)
         Public Shared ReadOnly FontIdentifier As New Font("Segoe UI", 8.5F, FontStyle.Regular)
         Public Shared ReadOnly FontMicrocopy As New Font("Segoe UI", 8.0F, FontStyle.Regular)
+
+        ''' <summary>
+        ''' Central factory for consistent, accessible icon buttons across all forms.
+        ''' Standardizes AutoSize, minimum height, flat style, hand cursor, padding,
+        ''' and aligned icon placement.
+        ''' </summary>
+        Public Shared Function CreateIconButton(text As String,
+                                                Optional iconName As String = Nothing,
+                                                Optional iconSize As Integer = 16,
+                                                Optional backColor As Color? = Nothing,
+                                                Optional foreColor As Color? = Nothing,
+                                                Optional minHeight As Integer = 34,
+                                                Optional margin As Padding? = Nothing,
+                                                Optional tabIndex As Integer? = Nothing,
+                                                Optional visible As Boolean? = Nothing) As Button
+            Dim bg = If(backColor.HasValue, backColor.Value, ColorWell)
+            Dim fg = If(foreColor.HasValue, foreColor.Value, If(bg = ColorWell OrElse bg = ColorSurface, ColorInk, Color.White))
+            Dim btn As New Button With {
+                .Text = text,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                .MinimumSize = New Size(0, minHeight),
+                .BackColor = bg,
+                .ForeColor = fg,
+                .FlatStyle = FlatStyle.Flat,
+                .Font = FontFieldLabel,
+                .Cursor = Cursors.Hand,
+                .TextAlign = ContentAlignment.MiddleCenter,
+                .Padding = New Padding(6, 0, 6, 0)
+            }
+            If margin.HasValue Then
+                btn.Margin = margin.Value
+            End If
+            If tabIndex.HasValue Then
+                btn.TabIndex = tabIndex.Value
+            End If
+            If visible.HasValue Then
+                btn.Visible = visible.Value
+            End If
+            If Not String.IsNullOrEmpty(iconName) Then
+                btn.Image = AppAssets.GetIcon(iconName, iconSize, fg)
+                btn.ImageAlign = ContentAlignment.MiddleLeft
+                btn.TextImageRelation = TextImageRelation.ImageBeforeText
+            End If
+            If bg = ColorWell OrElse bg = ColorSurface Then
+                btn.FlatAppearance.BorderColor = ColorBorder
+            Else
+                btn.FlatAppearance.BorderSize = 0
+            End If
+            Return btn
+        End Function
     End Class
 End Namespace

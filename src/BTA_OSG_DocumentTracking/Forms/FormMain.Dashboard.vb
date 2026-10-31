@@ -108,29 +108,17 @@ Namespace BTA_OSG
             cmbDashCategory.SelectedIndex = 0
             AddHandler cmbDashCategory.SelectedIndexChanged, Sub() RefreshActiveTabGrid()
 
-            btnDashResetFilters = New Button With {
-                .Text = " &Reset Filters",
-                .Size = New Size(110, 28),
-                .Font = CivicCalmTheme.FontMicrocopy,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Margin = New Padding(16, 1, 0, 0),
-                .Image = AppAssets.GetIcon("arrow-clockwise", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(4, 0, 4, 0)
-            }
-            btnDashResetFilters.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnDashResetFilters = CivicCalmTheme.CreateIconButton("&Reset Filters", "arrow-clockwise", 14, margin:=New Padding(16, 1, 0, 0))
             AddHandler btnDashResetFilters.Click, Sub()
                                                       cmbDashSection.SelectedIndex = 0
                                                       cmbDashCategory.SelectedIndex = 0
                                                   End Sub
 
             Dim btnPrintDashSlip As New Button With {
-                .Text = " &Print Slip",
-                .Size = New Size(105, 28),
+                .Text = "&Print Slip",
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                .MinimumSize = New Size(0, 28),
                 .Font = CivicCalmTheme.FontMicrocopy,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,

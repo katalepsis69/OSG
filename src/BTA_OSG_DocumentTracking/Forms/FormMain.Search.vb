@@ -66,73 +66,13 @@ Namespace BTA_OSG
                                                  End If
                                              End Sub
 
-            btnSearch = New Button With {
-                .Text = " &Search",
-                .Size = New Size(100, 32),
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0),
-                .Image = AppAssets.GetIcon("magnifying-glass", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnSearch.FlatAppearance.BorderSize = 0
+            btnSearch = CivicCalmTheme.CreateIconButton("&Search", "magnifying-glass", backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(0, 4, 8, 0))
 
-            btnClearSearch = New Button With {
-                .Text = " &Clear Filters",
-                .Size = New Size(115, 32),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontBody,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0),
-                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnClearSearch.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnClearSearch = CivicCalmTheme.CreateIconButton("&Clear Filters", "x", 14, margin:=New Padding(0, 4, 8, 0))
 
-            btnViewSearchDetail = New Button With {
-                .Text = " &View Details",
-                .Size = New Size(125, 32),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 8, 0),
-                .Image = AppAssets.GetIcon("eye", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnViewSearchDetail.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnViewSearchDetail = CivicCalmTheme.CreateIconButton("&View Details", "eye", margin:=New Padding(0, 4, 8, 0))
 
-            btnOpenPDF = New Button With {
-                .Text = " La&unch PDF",
-                .Size = New Size(125, 32),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 4, 0, 0),
-                .Image = AppAssets.GetIcon("folder-open", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnOpenPDF.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnOpenPDF = CivicCalmTheme.CreateIconButton("La&unch PDF", "folder-open", margin:=New Padding(0, 4, 0, 0))
 
             AddHandler btnSearch.Click, AddressOf OnSearch
             AddHandler btnClearSearch.Click, Sub()

@@ -6,9 +6,9 @@ Imports Microsoft.Data.SqlClient
 
 Namespace BTA_OSG
     Public Class SequenceRepository
-        Private ReadOnly _connectionFactory As IDbConnectionFactory
+        Private ReadOnly _connectionFactory As SqlConnectionFactory
 
-        Public Sub New(connectionFactory As IDbConnectionFactory)
+        Public Sub New(connectionFactory As SqlConnectionFactory)
             _connectionFactory = connectionFactory
         End Sub
 

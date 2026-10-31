@@ -90,44 +90,12 @@ Namespace BTA_OSG
 
             txtGDrive = New TextBox With {.Height = 28, .Text = "", .TabIndex = 11, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
-            btnAttachScan = New Button With {
-                .Text = " &Attach / Scan Document",
-                .Size = New Size(340, 32),
-                .TabIndex = 12,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontMicrocopy,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 2, 0, 6),
-                .Image = AppAssets.GetIcon("folder-open", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnAttachScan.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnAttachScan = CivicCalmTheme.CreateIconButton("&Attach / Scan Document", "folder-open", 14, margin:=New Padding(0, 2, 0, 6), tabIndex:=12)
             AddHandler btnAttachScan.Click, AddressOf OnAttachScanDocument
 
             cmbAssignedStaff = New ComboBox With {.DropDownStyle = ComboBoxStyle.DropDownList, .Height = 28, .TabIndex = 13, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
 
-            btnRegister = New Button With {
-                .Text = " &Register OSG Document",
-                .Height = 42,
-                .TabIndex = 14,
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 12, 0, 12),
-                .Image = AppAssets.GetIcon("plus", 18, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(8, 0, 8, 0)
-            }
-            btnRegister.FlatAppearance.BorderSize = 0
+            btnRegister = CivicCalmTheme.CreateIconButton("&Register OSG Document", "plus", 18, backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(0, 12, 0, 12), tabIndex:=14)
             AddHandler btnRegister.Click, AddressOf OnRegisterDocument
 
             ' Six equal columns let related fields share a row: a full-width field spans six, a
@@ -182,7 +150,7 @@ Namespace BTA_OSG
             Dim AddWide = Sub(ctrl As Control)
                                openLabel = -1
                                EnsureOpen()
-                               ctrl.Dock = DockStyle.Fill
+                               ctrl.Dock = If(TypeOf ctrl Is Button, DockStyle.None, DockStyle.Fill)
                                pnlFormFlow.Controls.Add(ctrl, 0, openLabel)
                                pnlFormFlow.SetColumnSpan(ctrl, 6)
                                openLabel = -1
@@ -224,28 +192,15 @@ Namespace BTA_OSG
                 .BackColor = CivicCalmTheme.ColorSurface,
                 .Padding = New Padding(0, 0, 0, 8)
             }
-            btnViewRegistryDetail = New Button With {
-                .Text = " &View Details && History",
-                .Size = New Size(220, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 0, 8, 0),
-                .Image = AppAssets.GetIcon("eye", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnViewRegistryDetail.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnViewRegistryDetail = CivicCalmTheme.CreateIconButton("&View Details && History", "eye", margin:=New Padding(0, 0, 8, 0))
             AddHandler btnViewRegistryDetail.Click, Sub() OpenSelectedDocumentDetail(dgvRegistry)
             flwToolbar.Controls.Add(btnViewRegistryDetail)
 
             Dim btnPrintRegistrySlip As New Button With {
-                .Text = " &Print Routing Slip",
-                .Size = New Size(180, 34),
+                .Text = "&Print Routing Slip",
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                .MinimumSize = New Size(0, 34),
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,
                 .FlatStyle = FlatStyle.Flat,

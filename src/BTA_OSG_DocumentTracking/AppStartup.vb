@@ -5,7 +5,7 @@ Option Strict On
 
 Namespace BTA_OSG
     Public Class AppStartup
-        Public Shared ConnectionFactory As IDbConnectionFactory
+        Public Shared ConnectionFactory As SqlConnectionFactory
         Public Shared Settings As AppSettings
         
         ' Repositories

@@ -108,40 +108,10 @@ Namespace BTA_OSG
                 .WrapContents = False
             }
 
-            btnCancel = New Button With {
-                .Text = " &Cancel",
-                .Size = New Size(95, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 6, 0, 0),
-                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnCancel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnCancel = CivicCalmTheme.CreateIconButton("&Cancel", "x", 14, margin:=New Padding(8, 6, 0, 0))
             AddHandler btnCancel.Click, Sub() Me.DialogResult = DialogResult.Cancel
 
-            btnSubmit = New Button With {
-                .Text = " &Issue Revision Order",
-                .Size = New Size(185, 34),
-                .BackColor = CivicCalmTheme.ColorDanger,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 0, 0),
-                .Image = AppAssets.GetIcon("arrow-clockwise", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnSubmit.FlatAppearance.BorderSize = 0
+            btnSubmit = CivicCalmTheme.CreateIconButton("&Issue Revision Order", "arrow-clockwise", backColor:=CivicCalmTheme.ColorDanger, margin:=New Padding(0, 6, 0, 0))
             AddHandler btnSubmit.Click, AddressOf OnSubmit
 
             flwButtons.Controls.AddRange(New Control() {btnCancel, btnSubmit})

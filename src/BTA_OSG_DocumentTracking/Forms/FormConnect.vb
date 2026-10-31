@@ -196,44 +196,12 @@ Namespace BTA_OSG
                 .WrapContents = False,
                 .Padding = New Padding(0, 10, 0, 0)
             }
-            btnConnect = New Button With {
-                .Text = " &Connect",
-                .Size = New Size(150, 34),
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .TabIndex = 1,
-                .Image = AppAssets.GetIcon("check", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnConnect.FlatAppearance.BorderSize = 0
+            btnConnect = CivicCalmTheme.CreateIconButton("&Connect", "check", backColor:=CivicCalmTheme.ColorPrimary, tabIndex:=1)
             AddHandler btnConnect.Click, AddressOf OnConnect
 
             ' Hidden until a probe fails against this machine's own SQL Server: on a
             ' seat the button never appears, so nobody is asked to administer a server.
-            btnPrepare = New Button With {
-                .Text = " Set &up this server",
-                .Size = New Size(180, 34),
-                .Visible = False,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(10, 0, 0, 0),
-                .TabIndex = 2,
-                .Image = AppAssets.GetIcon("gear", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnPrepare.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnPrepare = CivicCalmTheme.CreateIconButton("Set &up this server", "gear", margin:=New Padding(10, 0, 0, 0), tabIndex:=2, visible:=False)
             AddHandler btnPrepare.Click, AddressOf OnPrepareServer
             pnlActions.Controls.Add(btnConnect)
             pnlActions.Controls.Add(btnPrepare)
@@ -294,22 +262,7 @@ Namespace BTA_OSG
                 .WrapContents = False,
                 .Padding = New Padding(0, 12, 0, 6)
             }
-            btnClose = New Button With {
-                .Text = " C&lose",
-                .Size = New Size(100, 32),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .TabIndex = 30,
-                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnClose.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnClose = CivicCalmTheme.CreateIconButton("C&lose", "x", 14, tabIndex:=30)
             AddHandler btnClose.Click, Sub()
                                            Me.DialogResult = DialogResult.Cancel
                                            Me.Close()

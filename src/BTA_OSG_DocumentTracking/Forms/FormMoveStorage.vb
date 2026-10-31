@@ -63,43 +63,13 @@ Namespace BTA_OSG
                 .WrapContents = False
             }
 
-            btnCancel = New Button With {
-                .Text = " &Cancel",
-                .Size = New Size(95, 34),
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 6, 0, 0),
-                .Image = AppAssets.GetIcon("x", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnCancel.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnCancel = CivicCalmTheme.CreateIconButton("&Cancel", "x", 14, margin:=New Padding(8, 6, 0, 0))
             AddHandler btnCancel.Click, Sub()
                                             Me.DialogResult = DialogResult.Cancel
                                             Me.Close()
                                         End Sub
 
-            btnSave = New Button With {
-                .Text = " &Transfer Storage",
-                .Size = New Size(165, 34),
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 6, 0, 0),
-                .Image = AppAssets.GetIcon("archive", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnSave.FlatAppearance.BorderSize = 0
+            btnSave = CivicCalmTheme.CreateIconButton("&Transfer Storage", "archive", backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(0, 6, 0, 0))
             AddHandler btnSave.Click, AddressOf OnSave
 
             flwButtons.Controls.AddRange(New Control() {btnCancel, btnSave})

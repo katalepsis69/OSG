@@ -18,11 +18,13 @@ Namespace BTA_OSG
                 .Padding = New Padding(0)
             }
             tblDirectives.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 100.0F))
-            tblDirectives.RowStyles.Add(New RowStyle(SizeType.Absolute, 116.0F))
+            tblDirectives.RowStyles.Add(New RowStyle(SizeType.AutoSize))
             tblDirectives.RowStyles.Add(New RowStyle(SizeType.Percent, 100.0F))
 
             Dim pnlTopCard As New Panel With {
                 .Dock = DockStyle.Fill,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 .Margin = New Padding(0, 0, 0, 12),
                 .BackColor = CivicCalmTheme.ColorSurface,
                 .Padding = New Padding(16)
@@ -31,14 +33,18 @@ Namespace BTA_OSG
 
             Dim tblDir As New TableLayoutPanel With {
                 .Dock = DockStyle.Fill,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 .ColumnCount = 5,
                 .RowCount = 2
             }
-            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 25.0F))
+            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 28.0F))
+            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 26.0F))
             tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 22.0F))
-            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 18.0F))
-            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 20.0F))
-            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 15.0F))
+            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.Percent, 24.0F))
+            tblDir.ColumnStyles.Add(New ColumnStyle(SizeType.AutoSize))
+            tblDir.RowStyles.Add(New RowStyle(SizeType.AutoSize))
+            tblDir.RowStyles.Add(New RowStyle(SizeType.AutoSize))
 
             cmbDirDocs = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .DropDownWidth = 420, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
             cmbDirective = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
@@ -48,21 +54,7 @@ Namespace BTA_OSG
             cmbDirAssign = New ComboBox With {.Dock = DockStyle.Fill, .DropDownStyle = ComboBoxStyle.DropDownList, .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk}
             txtDirNotes = New TextBox With {.Name = "txtDirNotes", .Dock = DockStyle.Fill, .Text = "", .BackColor = CivicCalmTheme.ColorSurface, .ForeColor = CivicCalmTheme.ColorInk, .BorderStyle = BorderStyle.FixedSingle}
 
-            btnApplyDirective = New Button With {
-                .Text = " Lo&g Action Directive",
-                .Dock = DockStyle.Fill,
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Image = AppAssets.GetIcon("sparkle", 16, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnApplyDirective.FlatAppearance.BorderSize = 0
+            btnApplyDirective = CivicCalmTheme.CreateIconButton("Lo&g Action Directive", "sparkle", backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(8, 0, 0, 0))
             AddHandler btnApplyDirective.Click, AddressOf OnApplyDirective
 
             tblDir.Controls.Add(New Label With {.Text = "Select Document:", .UseMnemonic = False, .Font = CivicCalmTheme.FontFieldLabel, .ForeColor = CivicCalmTheme.ColorInkMuted, .Dock = DockStyle.Fill}, 0, 0)

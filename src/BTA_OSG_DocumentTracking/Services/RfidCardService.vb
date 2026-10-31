@@ -6,10 +6,10 @@ Imports Microsoft.Data.SqlClient
 
 Namespace BTA_OSG
     Public Class RfidCardService
-        Private ReadOnly _connFactory As IDbConnectionFactory
+        Private ReadOnly _connFactory As SqlConnectionFactory
         Private ReadOnly _auditService As AuditService
 
-        Public Sub New(connFactory As IDbConnectionFactory, auditService As AuditService)
+        Public Sub New(connFactory As SqlConnectionFactory, auditService As AuditService)
             _connFactory = connFactory
             _auditService = auditService
         End Sub

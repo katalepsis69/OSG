@@ -502,9 +502,9 @@ Namespace BTA_OSG
             pnlSidebar = New Panel With {
                 .Name = "pnlSidebar",
                 .Dock = DockStyle.Left,
-                .Width = 246,
+                .Width = 196,
                 .BackColor = CivicCalmTheme.ColorSurface,
-                .Padding = New Padding(12)
+                .Padding = New Padding(10)
             }
 
             pnlBrand = New Panel With {
@@ -558,9 +558,9 @@ Namespace BTA_OSG
                 navIconNames.Add(navIcons(i))
                 Dim btn As New Button With {
                     .Name = "btnNav_" & navItems(i).Replace(" "c, "_"c),
-                    .Text = "  " & navItems(i),
-                    .Size = New Size(218, 44),
-                    .Margin = New Padding(0, 0, 0, 6),
+                    .Text = navItems(i),
+                    .Size = New Size(172, 38),
+                    .Margin = New Padding(0, 0, 0, 4),
                     .FlatStyle = FlatStyle.Flat,
                     .Font = CivicCalmTheme.FontBody,
                     .TextAlign = ContentAlignment.MiddleLeft,
@@ -591,14 +591,14 @@ Namespace BTA_OSG
             Dim pnlSidebarFooter As New Panel With {
                 .Name = "pnlSidebarFooter",
                 .Dock = DockStyle.Bottom,
-                .Height = 50,
+                .Height = 44,
                 .Padding = New Padding(0, 6, 0, 0),
                 .BackColor = CivicCalmTheme.ColorSurface
             }
 
             btnCheckUpdate = New Button With {
                 .Name = "btnNav_WhatsNew",
-                .Text = "  What's New",
+                .Text = "What's New",
                 .Dock = DockStyle.Fill,
                 .FlatStyle = FlatStyle.Flat,
                 .Font = CivicCalmTheme.FontBody,
@@ -618,7 +618,7 @@ Namespace BTA_OSG
             AddHandler btnCheckUpdate.Click, Async Sub()
                 btnCheckUpdate.Enabled = False
                 Dim origText = btnCheckUpdate.Text
-                btnCheckUpdate.Text = "  Checking..."
+                btnCheckUpdate.Text = "Checking..."
                 Try
                     Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
                         btnCheckUpdate.Text = origText
@@ -774,40 +774,10 @@ Namespace BTA_OSG
                 .BackColor = CivicCalmTheme.ColorSurface
             }
 
-            btnLogout = New Button With {
-                .Text = " &Logout",
-                .Size = New Size(105, 36),
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontBody,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(8, 14, 0, 0),
-                .Image = AppAssets.GetIcon("sign-out", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(6, 0, 6, 0)
-            }
-            btnLogout.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnLogout = CivicCalmTheme.CreateIconButton("&Logout", "sign-out", margin:=New Padding(8, 14, 0, 0))
             AddHandler btnLogout.Click, Sub() AuthenticateUser("")
 
-            btnScanRFID = New Button With {
-                .Text = " &Tap RFID Smart Card",
-                .Size = New Size(205, 36),
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 14, 0, 0),
-                .Image = AppAssets.GetIcon("identification-card", 18, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(8, 0, 8, 0)
-            }
-            btnScanRFID.FlatAppearance.BorderSize = 0
+            btnScanRFID = CivicCalmTheme.CreateIconButton("&Tap RFID Smart Card", "identification-card", 18, backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(0, 14, 0, 0))
             AddHandler btnScanRFID.Click, Sub() ShowRFIDLoginDialog()
 
             pnlAuthActions.Controls.AddRange(New Control() {btnLogout, btnScanRFID})

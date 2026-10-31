@@ -121,66 +121,18 @@ Namespace BTA_OSG
                 .Margin = New Padding(0, 2, 0, 2)
             }
 
-            btnAddUser = New Button With {
-                .Text = " Sa&ve User && RFID Smart Card",
-                .Size = New Size(320, 42),
-                .TabIndex = 8,
-                .BackColor = CivicCalmTheme.ColorPrimary,
-                .ForeColor = Color.White,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontFieldLabel,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 14, 0, 0),
-                .Image = AppAssets.GetIcon("floppy-disk", 18, Color.White),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(8, 0, 8, 0)
-            }
-            btnAddUser.FlatAppearance.BorderSize = 0
+            btnAddUser = CivicCalmTheme.CreateIconButton("Sa&ve User && RFID Smart Card", "floppy-disk", 18, backColor:=CivicCalmTheme.ColorPrimary, margin:=New Padding(0, 14, 0, 0), tabIndex:=8)
             AddHandler btnAddUser.Click, AddressOf OnAddUser
 
             ' The in-app unlock the office docs describe: a badge that failed its tap
             ' threshold stays locked in tbl_Users across restarts, so without this the
             ' remedy is hand-editing SQL on the server.
-            btnUnlockUser = New Button With {
-                .Text = " &Unlock Selected Account",
-                .Size = New Size(320, 38),
-                .TabIndex = 9,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontBody,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 8, 0, 0),
-                .Image = AppAssets.GetIcon("lock-key", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(8, 0, 8, 0)
-            }
-            btnUnlockUser.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnUnlockUser = CivicCalmTheme.CreateIconButton("&Unlock Selected Account", "lock-key", margin:=New Padding(0, 8, 0, 0), tabIndex:=9)
             AddHandler btnUnlockUser.Click, AddressOf OnUnlockSelectedUser
 
             ' Lost-badge recovery: revocation used to exist only as a service method with no
             ' UI, so a badge reported lost stayed valid everywhere until someone edited SQL.
-            btnRevokeCard = New Button With {
-                .Text = " Revoke Selected &Badge",
-                .Size = New Size(320, 38),
-                .TabIndex = 10,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Font = CivicCalmTheme.FontBody,
-                .Cursor = Cursors.Hand,
-                .Margin = New Padding(0, 8, 0, 0),
-                .Image = AppAssets.GetIcon("x", 16, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(8, 0, 8, 0)
-            }
-            btnRevokeCard.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            btnRevokeCard = CivicCalmTheme.CreateIconButton("Revoke Selected &Badge", "x", margin:=New Padding(0, 8, 0, 0), tabIndex:=10)
             AddHandler btnRevokeCard.Click, AddressOf OnRevokeSelectedCard
 
             pnlFormFlow.Controls.Add(lblHeader)
@@ -202,8 +154,10 @@ Namespace BTA_OSG
             pnlFormFlow.Controls.Add(btnRevokeCard)
 
             Dim btnSetupWizard As New Button With {
-                .Text = " Reconfigure Station Set&up...",
-                .Size = New Size(CInt(Dpi(320.0F)), CInt(Dpi(38.0F))),
+                .Text = "Reconfigure Station Set&up...",
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                .MinimumSize = New Size(0, CInt(Dpi(36.0F))),
                 .TabIndex = 11,
                 .BackColor = CivicCalmTheme.ColorWell,
                 .ForeColor = CivicCalmTheme.ColorInk,

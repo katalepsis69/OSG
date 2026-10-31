@@ -7,13 +7,13 @@ Imports Microsoft.Data.SqlClient
 
 Namespace BTA_OSG
     Public Class DocumentRepository
-        Private ReadOnly _connectionFactory As IDbConnectionFactory
+        Private ReadOnly _connectionFactory As SqlConnectionFactory
 
-        Public Sub New(connectionFactory As IDbConnectionFactory)
+        Public Sub New(connectionFactory As SqlConnectionFactory)
             _connectionFactory = connectionFactory
         End Sub
 
-        Public ReadOnly Property ConnectionFactory As IDbConnectionFactory
+        Public ReadOnly Property ConnectionFactory As SqlConnectionFactory
             Get
                 Return _connectionFactory
             End Get

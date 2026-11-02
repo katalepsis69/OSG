@@ -105,12 +105,15 @@ Namespace BTA_OSG
             btnRequestRevision = CivicCalmTheme.CreateIconButton("Request Re&vision", "x", backColor:=CivicCalmTheme.ColorDanger, margin:=New Padding(4, 2, 0, 2))
             AddHandler btnRequestRevision.Click, AddressOf OnRequestRevision
 
+            btnVoid = CivicCalmTheme.CreateIconButton("Voi&d Document", "x", 14, backColor:=CivicCalmTheme.ColorDanger, margin:=New Padding(4, 2, 0, 2))
+            AddHandler btnVoid.Click, AddressOf OnVoidDocument
+
             btnRoutingSlip = CivicCalmTheme.CreateIconButton("&Print Routing Slip", "printer", margin:=New Padding(4, 2, 0, 2))
             AddHandler btnRoutingSlip.Click, AddressOf OnPrintRoutingSlip
 
             Me.CancelButton = btnClose
 
-            pnlActions.Controls.AddRange(New Control() {btnClose, btnRoutingSlip, btnLaunchPdf, btnMove, btnRoute, btnRelease, btnApprove, btnResubmit, btnRequestRevision})
+            pnlActions.Controls.AddRange(New Control() {btnClose, btnRoutingSlip, btnLaunchPdf, btnMove, btnRoute, btnRelease, btnApprove, btnResubmit, btnRequestRevision, btnVoid})
             Return pnlActions
         End Function
 

@@ -323,17 +323,26 @@ Namespace BTA_OSG
             End If
         End Sub
 
-        Public Sub SoftDelete(docId As Integer, deletedBy As Integer, reason As String)
+        Public Function SoftDelete(docId As Integer, deletedBy As Integer, reason As String, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing) As Integer
+            If transaction IsNot Nothing Then
+                Return ExecuteSoftDelete(transaction.Connection, transaction, docId, deletedBy, reason)
+            End If
             Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Documents SET IsDeleted = 1, DeletedByUserID = @deletedBy, DeletedAtUTC = SYSUTCDATETIME(), DeletionReason = @reason WHERE DocumentID = @id"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@deletedBy", deletedBy)
-                    cmd.Parameters.AddWithValue("@reason", If(reason IsNot Nothing, CType(reason, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@id", docId)
-                    cmd.ExecuteNonQuery()
-                End Using
+                Return ExecuteSoftDelete(conn, Nothing, docId, deletedBy, reason)
             End Using
-        End Sub
+        End Function
+
+        Private Shared Function ExecuteSoftDelete(conn As Microsoft.Data.SqlClient.SqlConnection, tx As Microsoft.Data.SqlClient.SqlTransaction, docId As Integer, deletedBy As Integer, reason As String) As Integer
+            ' IsDeleted = 0 makes a repeated void a no-op instead of restamping the audit time.
+            Dim sql = "UPDATE tbl_Documents SET IsDeleted = 1, DeletedByUserID = @deletedBy, DeletedAtUTC = SYSUTCDATETIME(), DeletionReason = @reason WHERE DocumentID = @id AND IsDeleted = 0"
+            Using cmd = New SqlCommand(sql, conn)
+                cmd.Transaction = tx
+                cmd.Parameters.AddWithValue("@deletedBy", deletedBy)
+                cmd.Parameters.AddWithValue("@reason", If(reason IsNot Nothing, CType(reason, Object), DBNull.Value))
+                cmd.Parameters.AddWithValue("@id", docId)
+                Return cmd.ExecuteNonQuery()
+            End Using
+        End Function
 
         Public Function GetAssignments(docId As Integer) As List(Of DocumentAssignment)
             Dim list As New List(Of DocumentAssignment)()

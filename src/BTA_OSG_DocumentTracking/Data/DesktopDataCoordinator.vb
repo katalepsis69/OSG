@@ -11,23 +11,20 @@ Namespace BTA_OSG
     ''' and the local embedded database cache, ensuring complete offline capability
     ''' while syncing transparently to SQL Server whenever connected.
     ''' </summary>
-    Public Class DesktopDataCoordinator
-        ' The connection state at startup only. Writes and outbox replay gate on
-        ' IsDatabaseConnected below, so a seat that booted while the server was down recovers
-        ' instead of staying on the cache for the rest of the day.
-        Private ReadOnly _isDatabaseConnected As Boolean
+    Partial Public Class DesktopDataCoordinator
+        ' Live reachability, not the startup probe. The poller refreshes it on every pull and
+        ' a failed write drops it immediately, so an outage costs one connect timeout instead
+        ' of one per action for the rest of the session.
+        Private _sqlAvailable As Boolean
 
         Public ReadOnly Property IsDatabaseConnected As Boolean
             Get
-                ' The startup probe can report offline while the host was only briefly busy;
-                ' once any snapshot pull has confirmed the host live again, the write paths
-                ' recover instead of staying stranded offline for the whole session.
-                Return _isDatabaseConnected OrElse Program.IsDatabaseConnected
+                Return _sqlAvailable
             End Get
         End Property
 
         Public Sub New(isDatabaseConnected As Boolean)
-            _isDatabaseConnected = isDatabaseConnected
+            _sqlAvailable = isDatabaseConnected
         End Sub
 
         ''' <summary>
@@ -158,6 +155,7 @@ Namespace BTA_OSG
             Catch ex As Exception
                 ' The fallback itself must reach the operator: a silent drop here looks like a
                 ' successful registration while the row only ever lived in the local cache.
+                _sqlAvailable = False
                 System.Diagnostics.Trace.WriteLine("SQL Server Document Register error (falling back to embedded cache): " & ex.Message)
                 Program.ReportOperatorWarning("Registration was saved to this workstation's offline store because the office server refused the write (" & ex.Message & "). It retries automatically; if this repeats, run Station Setup.")
                 Return Nothing
@@ -646,12 +644,14 @@ Namespace BTA_OSG
                     Dim notes As String
                     Dim issuedBy As Integer?
                     Dim code As String
+                    Dim issuedAtUtc As DateTime
                     SyncLock EmbeddedDB.SyncRoot
                         docId = CInt(row("DocumentID"))
                         directiveText = row("SGDirective").ToString()
                         notes = row("Notes").ToString()
                         issuedBy = ReplayUserId(row, "IssuedByUserID")
                         code = If(row.Table.Columns.Contains("DirectiveCode") AndAlso Not IsDBNull(row("DirectiveCode")), row("DirectiveCode").ToString(), "")
+                        issuedAtUtc = CachedEventUtc(row, "Timestamp")
                     End SyncLock
                     ' The parent document must already exist in SQL: inserting against the
                     ' local id would attach the directive to whatever document holds that id
@@ -681,7 +681,7 @@ Namespace BTA_OSG
                         .DirectiveTypeID = directiveTypeId,
                         .DirectiveText = directiveText,
                         .IssuedByUserID = issuedBy.Value,
-                        .IssuedAtUTC = DateTime.UtcNow,
+                        .IssuedAtUTC = issuedAtUtc,
                         .IsActive = True,
                         .Remarks = notes
                     }
@@ -734,12 +734,14 @@ Namespace BTA_OSG
                         Dim toOffice As String
                         Dim remarks As String
                         Dim routedBy As Integer?
+                        Dim routedAtUtc As DateTime
                         SyncLock EmbeddedDB.SyncRoot
                             docId = CInt(row("DocumentID"))
                             fromOffice = row("FromOffice").ToString()
                             toOffice = row("ToOffice").ToString()
                             remarks = row("Remarks").ToString()
                             routedBy = ReplayUserId(row, "RoutedByUserID")
+                            routedAtUtc = CachedEventUtc(row, "Timestamp")
                         End SyncLock
                         If Not ParentDocumentReady(docId) Then Continue For
                         If Not routedBy.HasValue Then
@@ -760,7 +762,7 @@ Namespace BTA_OSG
                             .ToOffice = toOffice,
                             .RoutingRemarks = remarks,
                             .RoutedByUserID = routedBy.Value,
-                            .RoutedAtUTC = DateTime.UtcNow
+                            .RoutedAtUTC = routedAtUtc
                         }
                         AppStartup.RoutingRepo.Insert(logEntry)
                     End If
@@ -794,10 +796,12 @@ Namespace BTA_OSG
                         Dim docId As Integer
                         Dim toLoc As String
                         Dim movedBy As Integer?
+                        Dim movedAtUtc As DateTime
                         SyncLock EmbeddedDB.SyncRoot
                             docId = CInt(row("DocumentID"))
                             toLoc = row("ToLocation").ToString()
                             movedBy = ReplayUserId(row, "MovedByUserID")
+                            movedAtUtc = CachedEventUtc(row, "Timestamp")
                         End SyncLock
                         If Not ParentDocumentReady(docId) Then Continue For
                         If Not movedBy.HasValue Then
@@ -811,7 +815,7 @@ Namespace BTA_OSG
 
                         Dim locationId = AppStartup.StorageRepo.GetOrCreateByKey(cab, shelf, box)
 
-                        AppStartup.StorageService.MoveDocument(docId, locationId, movedBy.Value, reason)
+                        AppStartup.StorageService.MoveDocument(docId, locationId, movedBy.Value, reason, movedAtUtc:=movedAtUtc)
                     End If
                     SyncLock EmbeddedDB.SyncRoot
                         row("PendingSync") = False
@@ -822,6 +826,17 @@ Namespace BTA_OSG
                 End Try
             Next
             Return uploadedCount
+        End Function
+
+        ' Offline log rows stamp the wall clock (EmbeddedDB uses DateTime.Now); SQL stores UTC.
+        ' Replay carries the moment the action happened instead of the moment the seat synced.
+        Friend Shared Function CachedEventUtc(row As DataRow, columnName As String) As DateTime
+            Dim parsed As DateTime
+            If row IsNot Nothing AndAlso row.Table.Columns.Contains(columnName) AndAlso
+               Not IsDBNull(row(columnName)) AndAlso DateTime.TryParse(row(columnName).ToString(), parsed) Then
+                Return DateTime.SpecifyKind(parsed, DateTimeKind.Local).ToUniversalTime()
+            End If
+            Return DateTime.UtcNow
         End Function
 
         Private Function ReplayPendingAuditTrail() As Integer
@@ -840,8 +855,7 @@ Namespace BTA_OSG
                     Dim originalType As String
                     Dim actor As String
                     Dim auditId As String
-                    Dim eventAt As DateTime? = Nothing
-                    Dim parsedAt As DateTime
+                    Dim eventAt As DateTime
                     SyncLock EmbeddedDB.SyncRoot
                         actionDesc = row("ActionDescription").ToString()
                         userId = ReplayUserId(row, "UserID")
@@ -853,9 +867,7 @@ Namespace BTA_OSG
                         ' The cache Timestamp is the wall-clock moment the action happened
                         ' (LogAudit writes local time); replaying DateTime.UtcNow would show
                         ' the sync batch hour in the forensic timeline instead.
-                        If row.Table.Columns.Contains("Timestamp") AndAlso DateTime.TryParse(row("Timestamp").ToString(), parsedAt) Then
-                            eventAt = DateTime.SpecifyKind(parsedAt, DateTimeKind.Local).ToUniversalTime()
-                        End If
+                        eventAt = CachedEventUtc(row, "Timestamp")
                     End SyncLock
                     AppStartup.AuditRepo.Insert(New AuditEntry With {
                         .UserID = userId,
@@ -866,7 +878,7 @@ Namespace BTA_OSG
                         .NewValuesJson = actionDesc,
                         .Success = True,
                         .MachineName = Environment.MachineName,
-                        .EventAtUTC = If(eventAt.HasValue, eventAt.Value, DateTime.UtcNow)
+                        .EventAtUTC = eventAt
                     })
                     SyncLock EmbeddedDB.SyncRoot
                         row("PendingSync") = False
@@ -1219,6 +1231,9 @@ Namespace BTA_OSG
             Catch ex As GuardRefusedException
                 Throw
             Catch ex As Exception
+                ' Drop to the cache immediately: the next action must not pay the same connect
+                ' timeout again. The next successful pull restores SQL writes.
+                _sqlAvailable = False
                 System.Diagnostics.Trace.WriteLine("SQL Server " & label & " error (falling back to embedded cache): " & ex.Message)
                 Program.ReportOperatorWarning("SQL write fell back to offline cache (" & label & "): " & ex.Message)
                 Return False
@@ -1265,6 +1280,7 @@ Namespace BTA_OSG
                 Using conn As New Microsoft.Data.SqlClient.SqlConnection(builder.ConnectionString)
                     conn.Open()
                     Program.IsDatabaseConnected = True
+                    _sqlAvailable = True
                     Try
                         UpsertWorkstationHeartbeat(conn)
                     Catch ex As Exception
@@ -1285,6 +1301,7 @@ Namespace BTA_OSG
                                     End SyncLock
                                     table.Load(reader)
                                     If table.Rows.Count > 0 Then
+                                        NormalizeMirroredTimes(name, table)
                                         result(name) = table
                                     End If
                                 End Using
@@ -1296,11 +1313,34 @@ Namespace BTA_OSG
                 End Using
             Catch ex As Exception
                 Program.IsDatabaseConnected = False
+                _sqlAvailable = False
                 System.Diagnostics.Trace.WriteLine("SQL snapshot connection failed: " & ex.Message)
                 Return Nothing
             End Try
             Return result
         End Function
+
+        ' SQL stores these four logs in UTC; the cache, grids, detail timeline, and printed
+        ' slip all show wall-clock time. Convert once at the mirror boundary so offline and
+        ' mirrored rows share one basis. Heartbeat stays UTC: its staleness check compares it
+        ' with DateTime.UtcNow.
+        Friend Shared Sub NormalizeMirroredTimes(tableName As String, table As DataTable)
+            If table Is Nothing Then Return
+            Select Case tableName
+                Case "Directives", "RoutingLogs", "Movements", "AuditTrail"
+                Case Else
+                    Return
+            End Select
+            Const columnName As String = "Timestamp"
+            If Not table.Columns.Contains(columnName) Then Return
+            For Each row As DataRow In table.Rows
+                If IsDBNull(row(columnName)) Then Continue For
+                Dim parsed As DateTime
+                If DateTime.TryParse(row(columnName).ToString(), parsed) Then
+                    row(columnName) = DateTime.SpecifyKind(parsed, DateTimeKind.Utc).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+                End If
+            Next
+        End Sub
 
         ''' <summary>
         ''' One row per seat in tbl_WorkstationHeartbeat, refreshed on every snapshot pull so
@@ -1387,17 +1427,24 @@ Namespace BTA_OSG
                            "  WHERE ur.UserID = u.UserID AND ur.IsActive = 1 AND rr.IsActive = 1 ORDER BY ur.UserRoleID DESC) ro " &
                            "WHERE u.IsActive = 1 ORDER BY u.UserID"
                 Case "Directives"
+                    ' A voided document's operational history stays in SQL and the audit trail;
+                    ' the active grids must not keep showing directives for a row the registry
+                    ' no longer lists.
                     Return "SELECT ad.DirectiveID, ad.DocumentID, ISNULL(ad.DirectiveText, '') AS SGDirective, " &
                            "ISNULL(u.FullName, '') AS AssignedTo, ISNULL(ad.Remarks, '') AS Notes, " &
                            "ISNULL(u.FullName, 'SYSTEM') AS LogUser, CONVERT(varchar(19), ad.IssuedAtUTC, 120) AS Timestamp " &
-                           "FROM dbo.tbl_ActionDirectives ad LEFT JOIN dbo.tbl_Users u ON u.UserID = ad.IssuedByUserID " &
+                           "FROM dbo.tbl_ActionDirectives ad " &
+                           "JOIN dbo.tbl_Documents doc ON doc.DocumentID = ad.DocumentID AND doc.IsDeleted = 0 " &
+                           "LEFT JOIN dbo.tbl_Users u ON u.UserID = ad.IssuedByUserID " &
                            "ORDER BY ad.DirectiveID"
                 Case "RoutingLogs"
                     Return "SELECT r.RoutingLogID AS RoutingID, r.DocumentID, ISNULL(r.FromOffice, '') AS FromOffice, " &
                            "ISNULL(r.ToOffice, '') AS ToOffice, ISNULL(u.FullName, 'SYSTEM') AS RoutedBy, " &
                            "ISNULL(st.StatusCode, '') AS ActionTaken, ISNULL(r.RoutingRemarks, '') AS Remarks, " &
                            "CONVERT(varchar(19), r.RoutedAtUTC, 120) AS Timestamp " &
-                           "FROM dbo.tbl_RoutingLogs r LEFT JOIN dbo.tbl_Users u ON u.UserID = r.RoutedByUserID " &
+                           "FROM dbo.tbl_RoutingLogs r " &
+                           "JOIN dbo.tbl_Documents doc ON doc.DocumentID = r.DocumentID AND doc.IsDeleted = 0 " &
+                           "LEFT JOIN dbo.tbl_Users u ON u.UserID = r.RoutedByUserID " &
                            "LEFT JOIN dbo.tbl_DocumentStatuses st ON st.StatusID = r.ToStatusID " &
                            "ORDER BY r.RoutingLogID"
                 Case "Movements"
@@ -1405,7 +1452,9 @@ Namespace BTA_OSG
                            "ISNULL(sl.CabinetID, '') + '|' + ISNULL(sl.ShelfNo, '') + '|' + ISNULL(sl.BoxCode, '') AS ToLocation, " &
                            "ISNULL(u.FullName, 'SYSTEM') AS MovedBy, ISNULL(m.MovementReason, '') AS Reason, " &
                            "CONVERT(varchar(19), m.MovedAtUTC, 120) AS Timestamp " &
-                           "FROM dbo.tbl_DocumentMovements m LEFT JOIN dbo.tbl_Users u ON u.UserID = m.MovedByUserID " &
+                           "FROM dbo.tbl_DocumentMovements m " &
+                           "JOIN dbo.tbl_Documents doc ON doc.DocumentID = m.DocumentID AND doc.IsDeleted = 0 " &
+                           "LEFT JOIN dbo.tbl_Users u ON u.UserID = m.MovedByUserID " &
                            "LEFT JOIN dbo.tbl_StorageLocations sl ON sl.StorageLocationID = m.StorageLocationID " &
                            "ORDER BY m.MovementID"
                 Case "AuditTrail"
@@ -1413,7 +1462,10 @@ Namespace BTA_OSG
                     Return "SELECT CONVERT(INT, a.AuditID) AS AuditID, " &
                            "ISNULL(a.FullNameSnapshot, ISNULL(a.UsernameSnapshot, 'SYSTEM')) AS UserName, " &
                            "a.ActionType + CASE WHEN a.EntityType IS NULL THEN '' ELSE ' ' + a.EntityType END + " &
-                           "CASE WHEN a.EntityID IS NULL THEN '' ELSE ' #' + a.EntityID END AS ActionDescription, " &
+                           "CASE WHEN a.EntityID IS NULL THEN '' ELSE ' #' + a.EntityID END + " &
+                           "CASE WHEN a.ActionType = 'DOCUMENT_VOIDED' AND a.DocumentCode IS NOT NULL THEN ' [' + a.DocumentCode + ']' ELSE '' END + " &
+                           "CASE WHEN a.ActionType = 'DOCUMENT_VOIDED' AND ISJSON(a.NewValuesJson) = 1 " &
+                           "THEN ' | ' + ISNULL(JSON_VALUE(a.NewValuesJson, '$.VoidReason'), '') ELSE '' END AS ActionDescription, " &
                            "CONVERT(varchar(19), a.EventAtUTC, 120) AS Timestamp " &
                            "FROM dbo.tbl_AuditTrail a " &
                            "WHERE a.AuditID > (SELECT ISNULL(MAX(AuditID), 0) FROM dbo.tbl_AuditTrail) - 1000 " &

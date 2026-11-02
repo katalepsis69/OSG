@@ -16,12 +16,12 @@ Namespace BTA_OSG
             _auditService = auditService
         End Sub
 
-        Public Function MoveDocument(docId As Integer, storageLocationId As Integer, movedByUserId As Integer, reason As String, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing) As DocumentMovement
+        Public Function MoveDocument(docId As Integer, storageLocationId As Integer, movedByUserId As Integer, reason As String, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing, Optional movedAtUtc As DateTime? = Nothing) As DocumentMovement
             Dim movement As New DocumentMovement With {
                 .DocumentID = docId,
                 .StorageLocationID = storageLocationId,
                 .MovedByUserID = movedByUserId,
-                .MovedAtUTC = DateTime.UtcNow,
+                .MovedAtUTC = If(movedAtUtc.HasValue, movedAtUtc.Value, DateTime.UtcNow),
                 .MovementReason = reason
             }
 

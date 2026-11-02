@@ -20,29 +20,86 @@ Namespace BTA_OSG
         ' Set when WriteXml fails (disk full, file locked): callers that only fire-and-forget
         ' mutations can surface it instead of the offline work silently stopping persisting.
         Public Shared LastPersistenceError As String = ""
+
+        ' Set when the cache could not be read. FormMain surfaces this once the status banner
+        ' exists; the unreadable file itself is kept aside for recovery.
+        Public Shared LastLoadError As String = ""
+
         Public Shared Event PersistenceFailed(message As String)
 
         Public Shared Sub Initialize()
-            DataSet.Clear()
-            DataSet.Tables.Clear()
+            LastLoadError = ""
+            If TryLoadCache(DbPath) Then Return
 
-            CreateTables()
+            ' The main file is unreadable. Keep it for recovery instead of letting the first
+            ' Save() overwrite the only copy of the seat's offline work. A first run has no
+            ' file to quarantine and must stay silent.
+            Dim hadUnreadableMain = File.Exists(DbPath)
+            Dim quarantinePath As String = Nothing
+            If hadUnreadableMain Then quarantinePath = QuarantineUnreadableCache()
 
-            If File.Exists(DbPath) Then
-                Try
-                    ' IgnoreSchema loads the persisted rows into the freshly created (current)
-                    ' schema: columns the file predates take their defaults, columns the file
-                    ' has that the code dropped are ignored. This is what makes offline work
-                    ' survive a restart instead of the cache being write-only.
-                    DataSet.ReadXml(DbPath, XmlReadMode.IgnoreSchema)
-                    ResyncAutoIncrementCounters()
-                    Return
-                Catch ex As Exception
-                    System.Diagnostics.Trace.TraceError("EmbeddedDB cache load failed (starting empty): " & ex.Message)
-                End Try
+            If TryLoadCache(DbPath & ".bak") Then
+                If hadUnreadableMain Then
+                    LastLoadError = BuildLoadWarning(quarantinePath) & " The previous saved copy was restored."
+                End If
+                Save()
+                Return
+            End If
+
+            If hadUnreadableMain Then
+                LastLoadError = BuildLoadWarning(quarantinePath) & " This seat is starting with an empty cache."
             End If
             Save()
         End Sub
+
+        Private Shared Function TryLoadCache(path As String) As Boolean
+            ' A failed ReadXml leaves partially loaded rows behind, so every attempt starts
+            ' from the current schema rather than inheriting the previous attempt's debris.
+            DataSet.Clear()
+            DataSet.Tables.Clear()
+            CreateTables()
+
+            If Not File.Exists(path) Then Return False
+            Try
+                ' IgnoreSchema loads the persisted rows into the freshly created (current)
+                ' schema: columns the file predates take their defaults, columns the file
+                ' has that the code dropped are ignored. This is what makes offline work
+                ' survive a restart instead of the cache being write-only.
+                DataSet.ReadXml(path, XmlReadMode.IgnoreSchema)
+                ResyncAutoIncrementCounters()
+                Return True
+            Catch ex As Exception
+                System.Diagnostics.Trace.TraceError("EmbeddedDB cache load failed (" & path & "): " & ex.Message)
+                DataSet.Clear()
+                DataSet.Tables.Clear()
+                CreateTables()
+                Return False
+            End Try
+        End Function
+
+        Private Shared Function QuarantineUnreadableCache() As String
+            Dim stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss")
+            Dim target = DbPath & ".corrupt-" & stamp
+            Dim bump As Integer = 1
+            While File.Exists(target)
+                target = DbPath & ".corrupt-" & stamp & "-" & bump.ToString()
+                bump += 1
+            End While
+            Try
+                File.Move(DbPath, target)
+                Return target
+            Catch ex As Exception
+                System.Diagnostics.Trace.TraceError("EmbeddedDB could not move the unreadable cache aside: " & ex.Message)
+                Return Nothing
+            End Try
+        End Function
+
+        Private Shared Function BuildLoadWarning(quarantinePath As String) As String
+            If String.IsNullOrEmpty(quarantinePath) Then
+                Return "The local cache could not be read and could not be moved aside; it may be overwritten."
+            End If
+            Return "The local cache could not be read. The unreadable file was kept as " & Path.GetFileName(quarantinePath) & "."
+        End Function
 
         ' ReadXml loads explicit PK values without advancing the AutoIncrement counters, so a
         ' fresh row could collide with a loaded one. Point each identity column past the max.
@@ -94,12 +151,25 @@ Namespace BTA_OSG
                 ' merge for the whole write.
                 persistCopy = DataSet.Copy()
             End SyncLock
+            ' Write-then-replace: a crash or power cut mid-write must not truncate the live
+            ' cache. The previous generation is kept as .bak so a corrupt main file still
+            ' has one recoverable copy on the next start.
+            Dim tmpPath = DbPath & ".tmp"
             Try
                 SyncLock _saveLock
-                    persistCopy.WriteXml(DbPath, XmlWriteMode.WriteSchema)
+                    persistCopy.WriteXml(tmpPath, XmlWriteMode.WriteSchema)
+                    If File.Exists(DbPath) Then
+                        File.Replace(tmpPath, DbPath, DbPath & ".bak")
+                    Else
+                        File.Move(tmpPath, DbPath)
+                    End If
                 End SyncLock
                 LastPersistenceError = ""
             Catch ex As Exception
+                Try
+                    If File.Exists(tmpPath) Then File.Delete(tmpPath)
+                Catch
+                End Try
                 ' A silently lost flush would strand PendingSync rows in the outbox with
                 ' no evidence anywhere, so the failure must reach the trace log AND the
                 ' operator surface (FormMain listens for PersistenceFailed).
@@ -153,10 +223,14 @@ Namespace BTA_OSG
                     Dim doomed As New List(Of DataRow)()
                     For Each row As DataRow In target.Rows
                         If Not IsPendingRow(target, row) AndAlso Not incoming.Contains(row(pk)) Then
-                            ' Protect initial seeded local documents (IDs 1-4) from deletion if incoming is a partial set
+                            ' Protect initial seeded local documents (IDs 1-4) from deletion if
+                            ' incoming is a partial set. A mirrored row carries RowVersion; a
+                            ' seeded local row does not, so a real voided document with an early
+                            ' identity is not immortalised on the seat.
                             If tableName.Equals("Documents", StringComparison.OrdinalIgnoreCase) Then
                                 Dim idVal = If(pk.ColumnName = "DocumentID", Convert.ToInt32(row(pk)), 0)
-                                If idVal <= 4 AndAlso Not incoming.Contains(row(pk)) Then Continue For
+                                Dim neverMirrored = row.Table.Columns.Contains("RowVersion") AndAlso IsDBNull(row("RowVersion"))
+                                If idVal <= 4 AndAlso Not incoming.Contains(row(pk)) AndAlso neverMirrored Then Continue For
                             End If
                             doomed.Add(row)
                         End If
@@ -425,14 +499,65 @@ Namespace BTA_OSG
 
         Private Shared _terminalFailedTaps As Integer = 0
         Private Shared _terminalLockoutUntilUTC As DateTime = DateTime.MinValue
+        Private Shared ReadOnly _lockoutFileLock As New Object()
+
+        ' Closing and reopening the app must not be a free bypass of the five-tap rule, so
+        ' the lockout expiry is persisted. LocalAppData survives a portable install being
+        ' replaced during an update, which the exe folder does not.
+        Friend Shared LockoutFilePath As String = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "BTA_OSG_DocumentTracking", "terminal-lockout.txt")
 
         Public Shared Function IsTerminalLockedOut() As Boolean
-            Return DateTime.UtcNow < _terminalLockoutUntilUTC
+            Dim storedUntil = ReadStoredLockoutUntilUtc()
+            Dim effectiveUntil = If(storedUntil > _terminalLockoutUntilUTC, storedUntil, _terminalLockoutUntilUTC)
+            Return DateTime.UtcNow < effectiveUntil
         End Function
 
         Public Shared Sub ResetTerminalLockout()
             System.Threading.Interlocked.Exchange(_terminalFailedTaps, 0)
             _terminalLockoutUntilUTC = DateTime.MinValue
+            ClearStoredLockout()
+        End Sub
+
+        Private Shared Function ReadStoredLockoutUntilUtc() As DateTime
+            Try
+                SyncLock _lockoutFileLock
+                    If File.Exists(LockoutFilePath) Then
+                        Dim raw = File.ReadAllText(LockoutFilePath).Trim()
+                        Dim parsed As DateTime
+                        If DateTime.TryParse(raw, Globalization.CultureInfo.InvariantCulture,
+                                             Globalization.DateTimeStyles.RoundtripKind, parsed) Then
+                            Return parsed.ToUniversalTime()
+                        End If
+                    End If
+                End SyncLock
+            Catch ex As Exception
+                System.Diagnostics.Trace.TraceWarning("Terminal lockout state unreadable: " & ex.Message)
+            End Try
+            Return DateTime.MinValue
+        End Function
+
+        Private Shared Sub StoreLockoutUntilUtc(untilUtc As DateTime)
+            Try
+                SyncLock _lockoutFileLock
+                    Directory.CreateDirectory(Path.GetDirectoryName(LockoutFilePath))
+                    File.WriteAllText(LockoutFilePath, untilUtc.ToString("o", Globalization.CultureInfo.InvariantCulture))
+                End SyncLock
+            Catch ex As Exception
+                ' An unwritable state file weakens the restart gate but must not block login.
+                System.Diagnostics.Trace.TraceWarning("Terminal lockout could not be persisted: " & ex.Message)
+            End Try
+        End Sub
+
+        Private Shared Sub ClearStoredLockout()
+            Try
+                SyncLock _lockoutFileLock
+                    If File.Exists(LockoutFilePath) Then File.Delete(LockoutFilePath)
+                End SyncLock
+            Catch ex As Exception
+                System.Diagnostics.Trace.TraceWarning("Terminal lockout file could not be cleared: " & ex.Message)
+            End Try
         End Sub
 
         ''' <summary>
@@ -497,11 +622,13 @@ Namespace BTA_OSG
                     Sha256Hex(cleanUid).Replace("'", "''"), cleanUid.Replace("'", "''")))
                 If rows.Length > 0 Then
                     System.Threading.Interlocked.Exchange(_terminalFailedTaps, 0)
+                    ClearStoredLockout()
                     Return rows(0)
                 End If
             End SyncLock
             If System.Threading.Interlocked.Increment(_terminalFailedTaps) >= TerminalLockoutThreshold Then
                 _terminalLockoutUntilUTC = DateTime.UtcNow.AddMinutes(5)
+                StoreLockoutUntilUtc(_terminalLockoutUntilUTC)
             End If
             Return Nothing
         End Function

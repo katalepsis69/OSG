@@ -39,6 +39,7 @@ Namespace BTA_OSG
         Private _switchingFromDemo As Boolean = False
         Private _startedPortal As Boolean = False
         Private _startedAnalytics As Boolean = True
+        Private _startedSyncInterval As Integer = 0
 
         Private lblStatus As Label
         Private txtPassword As TextBox
@@ -394,6 +395,7 @@ Namespace BTA_OSG
             Dim s = AppSettings.Instance
             _startedPortal = s.PortalSettings.PortalEnabled
             _startedAnalytics = s.AnalyticsEnabled
+            _startedSyncInterval = s.DatabaseSettings.EffectiveSyncIntervalSeconds()
             txtScansFolder.Text = s.PdfLinkSettings.ScansFolder
 
             ' The saved address is offered whether or not the station is currently using it:
@@ -702,8 +704,9 @@ Namespace BTA_OSG
         Private Sub ShowSavedMessage(server As String)
             Dim s = AppSettings.Instance
             Dim restart = ""
-            If s.PortalSettings.PortalEnabled <> _startedPortal OrElse s.AnalyticsEnabled <> _startedAnalytics Then
-                restart = vbCrLf & vbCrLf & "Restart the application to apply the portal and Data Analytics changes."
+            Dim syncIntervalChanged = s.DatabaseSettings.EffectiveSyncIntervalSeconds() <> _startedSyncInterval
+            If s.PortalSettings.PortalEnabled <> _startedPortal OrElse s.AnalyticsEnabled <> _startedAnalytics OrElse syncIntervalChanged Then
+                restart = vbCrLf & vbCrLf & "Restart the application to apply the sync interval, portal, and Data Analytics changes."
             End If
 
             Dim headline As String

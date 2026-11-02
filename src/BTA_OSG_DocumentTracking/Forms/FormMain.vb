@@ -41,6 +41,10 @@ Namespace BTA_OSG
         ' One SQL snapshot pull at a time: a slow host skips ticks instead of queueing them.
         Private _sqlSyncInFlight As Integer
 
+        ' Same guard for the portal bridge: its default timeout matches the poll floor, so an
+        ' unreachable bridge would otherwise stack a fresh fetch every cycle.
+        Private _portalPollInFlight As Integer
+
         ' Bind-once state: grids keep their DataView across sync ticks and the in-place
         ' mirror merge updates them through row events instead of full rebinds. The view is
         ' recreated only when the session or the dashboard filters change.
@@ -181,16 +185,24 @@ Namespace BTA_OSG
             ' to the sync timer tick, not to a 5s stall in front of the login dialog. The grid
             ' refresh runs here so the dashboard balances against the real client size.
             AddHandler Me.Shown, Async Sub()
-                                     ' A dropped settings layer (unreadable DPAPI blob, malformed JSON)
-                                     ' fail-opens to the shipped defaults: the operator must be told
-                                     ' or the seat can silently point at the wrong server.
-                                     If AppSettings.Instance.IgnoredConfigLayers.Count > 0 Then
-                                         ShowOperatorWarning("Warning: " & AppSettings.Instance.IgnoredConfigLayers(0) & ". Saved settings were ignored; check Station Setup.")
-                                     End If
                                      If Program.IsDatabaseConnected Then Await RunSqlSyncAsync()
                                      RefreshActiveTabGrid()
                                      If AppSettings.Instance.PortalSettings.PortalEnabled Then OnPortalPollTick()
                                      ShowRFIDLoginDialog()
+
+                                     ' After the modal login: AuthenticateUser rewrites the status
+                                     ' line on success, so a warning set before the dialog is lost.
+                                     ' A dropped settings layer (unreadable DPAPI blob, malformed
+                                     ' JSON) fail-opens to the shipped defaults, and the operator
+                                     ' must be told or the seat silently points at the wrong server.
+                                     If AppSettings.Instance.IgnoredConfigLayers.Count > 0 Then
+                                         ShowOperatorWarning("Warning: " & AppSettings.Instance.IgnoredConfigLayers(0) & ". Saved settings were ignored; check Station Setup.")
+                                     End If
+                                     ' The cache warning outranks the settings warning: it names
+                                     ' where the unreadable file was kept.
+                                     If EmbeddedDB.LastLoadError.Length > 0 Then
+                                         ShowOperatorWarning("WARNING: " & EmbeddedDB.LastLoadError)
+                                     End If
                                  End Sub
         End Sub
 
@@ -202,6 +214,7 @@ Namespace BTA_OSG
             Me.StartPosition = FormStartPosition.CenterScreen
             Me.Font = CivicCalmTheme.FontBody
             Me.BackColor = CivicCalmTheme.ColorCanvas
+            ApplySavedWindowBounds()
 
             epValidation = New ErrorProvider With {
                 .BlinkStyle = ErrorBlinkStyle.NeverBlink
@@ -336,6 +349,7 @@ Namespace BTA_OSG
         Private Sub OnPortalPollTick()
             If Me.IsDisposed OrElse Not Me.IsHandleCreated Then Return
             If AppStartup.PortalBridgeClient Is Nothing OrElse Not AppSettings.Instance.PortalSettings.PortalEnabled Then Return
+            If System.Threading.Interlocked.CompareExchange(_portalPollInFlight, 1, 0) <> 0 Then Return
             Task.Run(Async Function()
                          Try
                              Dim items = Await AppStartup.PortalBridgeClient.FetchExternalQueueAsync().ConfigureAwait(False)
@@ -356,6 +370,8 @@ Namespace BTA_OSG
                                                     lblStatusMessage.Text = "Portal polling failed: " & ex.Message
                                                 End If
                                             End Sub)
+                         Finally
+                             System.Threading.Interlocked.Exchange(_portalPollInFlight, 0)
                          End Try
                      End Function)
         End Sub
@@ -473,6 +489,7 @@ Namespace BTA_OSG
         End Sub
 
         Protected Overrides Sub OnFormClosing(e As FormClosingEventArgs)
+            SaveWindowBounds()
             ' Flush deferred embedded-store writes (mutations batch via EmbeddedDB.MarkDirty).
             EmbeddedDB.Save()
             If tmrPortalPoll IsNot Nothing Then

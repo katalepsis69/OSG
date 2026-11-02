@@ -29,6 +29,7 @@ Namespace BTA_OSG
         Private pnlPunchlistBanner As Panel
         Private lblPunchlistContent As Label
 
+        Private btnVoid As Button
         Private btnRequestRevision As Button
         Private btnResubmit As Button
         Private btnApprove As Button

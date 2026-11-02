@@ -9,6 +9,16 @@ Imports System.Text
 Imports System.Text.Json
 
 Namespace BTA_OSG
+    Public Class WindowSettings
+        ' HasBounds distinguishes "never saved" from a legitimate position at 0,0.
+        Public Property HasBounds As Boolean = False
+        Public Property Left As Integer
+        Public Property Top As Integer
+        Public Property Width As Integer = 1380
+        Public Property Height As Integer = 850
+        Public Property Maximized As Boolean = False
+    End Class
+
     Public Class AppSettingsRoot
         Public Property IsConfigured As Boolean = False
         Public Property AnalyticsEnabled As Boolean = True
@@ -17,6 +27,7 @@ Namespace BTA_OSG
         Public Property PdfLink As PdfLinkSettings
         Public Property Session As SessionSettings
         Public Property Portal As PortalSettings
+        Public Property Window As WindowSettings
     End Class
 
     Public Class AppSettings
@@ -30,6 +41,7 @@ Namespace BTA_OSG
         Public Property PdfLinkSettings As PdfLinkSettings
         Public Property SessionSettings As SessionSettings
         Public Property PortalSettings As PortalSettings
+        Public Property WindowSettings As WindowSettings
 
         ' Config layers dropped while loading, so a station that silently falls back to the wrong
         ' server can be told which file it lost.
@@ -41,6 +53,7 @@ Namespace BTA_OSG
             PdfLinkSettings = New PdfLinkSettings()
             SessionSettings = New SessionSettings()
             PortalSettings = New PortalSettings()
+            WindowSettings = New WindowSettings()
         End Sub
 
         Public Shared ReadOnly Property Instance As AppSettings
@@ -121,6 +134,7 @@ Namespace BTA_OSG
                         If root.PdfLink IsNot Nothing Then settings.PdfLinkSettings = root.PdfLink
                         If root.Session IsNot Nothing Then settings.SessionSettings = root.Session
                         If root.Portal IsNot Nothing Then settings.PortalSettings = root.Portal
+                        If root.Window IsNot Nothing Then settings.WindowSettings = root.Window
                     Catch ex As Exception
                         ' One malformed layer must not discard the layers after it: a stray
                         ' backslash used to kill the loop, silently dropping the station's own
@@ -145,7 +159,8 @@ Namespace BTA_OSG
                     .Rfid = settings.RfidSettings,
                     .PdfLink = settings.PdfLinkSettings,
                     .Session = settings.SessionSettings,
-                    .Portal = settings.PortalSettings
+                    .Portal = settings.PortalSettings,
+                    .Window = settings.WindowSettings
                 }
                 Dim options As New JsonSerializerOptions With {.WriteIndented = True}
                 Dim json = ProtectJson(JsonSerializer.Serialize(root, options))

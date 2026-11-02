@@ -14,7 +14,7 @@
     <Version>2.9</Version>
     <AssemblyVersion>2.9.0</AssemblyVersion>
     <FileVersion>2.9.0</FileVersion>
-    <InformationalVersion>2.9+2026-10-31T04:42:34Z</InformationalVersion>
+    <InformationalVersion>2.9+2026-11-02T06:42:54Z</InformationalVersion>
     <Company>Bangsamoro Transition Authority</Company>
     <Product>BTA OSG Document Tracking &amp; Monitoring System</Product>
     <Description>Parliamentary Document Status Tracking and Monitoring System</Description>
@@ -130,6 +130,9 @@
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>BTA_OSG_DocumentTracking.Tests</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>BTA_OSG_Benchmarks</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
 

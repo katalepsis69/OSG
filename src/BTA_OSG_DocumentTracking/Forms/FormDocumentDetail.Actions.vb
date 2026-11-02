@@ -16,6 +16,7 @@ Namespace BTA_OSG
                 btnResubmit.Visible = False
                 btnApprove.Visible = False
                 btnRelease.Visible = False
+                btnVoid.Visible = False
                 btnRoute.Enabled = False
                 btnMove.Enabled = False
                 Return
@@ -55,6 +56,10 @@ Namespace BTA_OSG
             ' Sec Gen / Manager can request revision while the document is still in the
             ' active workflow; terminal states refuse server-side too, so the button goes.
             btnRequestRevision.Visible = isManager AndAlso Not DocumentStatus.IsTerminalStatus(status)
+
+            ' Void is narrower than release: only the two records-owner roles, and never a
+            ' document that already left the active workflow.
+            btnVoid.Visible = DesktopDataCoordinator.IsVoidAuthorized(role) AndAlso Not DocumentStatus.IsTerminalStatus(status)
 
             ' Sec Gen / Manager can approve if document is under review or received
             btnApprove.Visible = isManager AndAlso (status = "FOR_REVIEW" OrElse status.Contains("REVIEW") OrElse status = "RECEIVED")
@@ -184,6 +189,62 @@ Namespace BTA_OSG
                     MainFrm.RefreshActiveTabGrid()
                 End If
             End Using
+        End Sub
+
+        Private Sub OnVoidDocument(sender As Object, e As EventArgs)
+            Dim user = MainFrm.CurrentUser
+            If user Is Nothing Then
+                MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+            If Not EnsureDocRowLive() Then Return
+
+            ' Capture the session before any dialog: a timeout can log the seat out while a
+            ' modal prompt is pumping messages.
+            Dim staffName = user("FullName").ToString()
+            Dim staffRole = user("Role").ToString()
+            Dim staffUserId As Integer = 1
+            If user.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(user("UserID")) Then
+                staffUserId = Convert.ToInt32(user("UserID"))
+            End If
+            If Not DesktopDataCoordinator.IsVoidAuthorized(staffRole) Then
+                MessageBox.Show("Access Denied: only the Secretary-General or a System Administrator may void a document.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim code = DocRow("DocCode").ToString()
+            Dim reason As String = ""
+            Using dlg As New FormInputPrompt("Void Document", "Voiding removes " & code & " from the active registry. Enter the reason; it stays in the audit trail.", "", True)
+                If dlg.ShowDialog(Me) <> DialogResult.OK Then Return
+                reason = dlg.PromptValue.Trim()
+            End Using
+            If reason.Length < 5 Then
+                MessageBox.Show("Enter a reason of at least 5 characters.", "Reason Required", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+            If reason.Length > 255 Then
+                MessageBox.Show("Keep the reason under 255 characters.", "Reason Too Long", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            Dim confirm = MessageBox.Show(
+                "Void " & code & "?" & vbCrLf & vbCrLf &
+                reason & vbCrLf & vbCrLf &
+                "The document leaves the active registry. The void and its reason stay in the audit trail.",
+                "Confirm Void", MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2)
+            If confirm <> DialogResult.Yes Then Return
+
+            Dim voided As Boolean = Program.Coordinator IsNot Nothing AndAlso
+                                    Program.Coordinator.VoidDocument(DocID, reason, staffName, staffUserId, staffRole)
+            If Not voided Then
+                MessageBox.Show("The void did not complete. The document may already have left the active workflow, or this seat may be offline.",
+                                "Void Not Completed", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+
+            MainFrm.ReportStatus("Document " & code & " was voided. The reason is in the audit trail.")
+            Me.Close()
+            MainFrm.RefreshActiveTabGrid()
         End Sub
 
         Private Sub OnResubmit(sender As Object, e As EventArgs)

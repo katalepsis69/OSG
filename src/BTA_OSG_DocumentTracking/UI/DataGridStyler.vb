@@ -440,7 +440,7 @@ Namespace BTA_OSG
                             col.MinimumWidth = 260
                             col.FillWeight = 340
                         Case "Timestamp"
-                            ConfigureColumn(col, "Timestamp (UTC)")
+                            ConfigureColumn(col, "Timestamp (Local)")
                             col.MinimumWidth = 150
                             col.FillWeight = 130
                     End Select

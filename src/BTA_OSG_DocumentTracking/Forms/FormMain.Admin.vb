@@ -1,4 +1,4 @@
-Option Explicit On
+﻿Option Explicit On
 Option Strict On
 
 Imports System
@@ -321,7 +321,7 @@ Namespace BTA_OSG
         Private Sub OnAddUser(sender As Object, e As EventArgs)
             epValidation.Clear()
             If CurrentUser Is Nothing OrElse CurrentUser("Role").ToString() <> "System Administrator" Then
-                lblStatusMessage.Text = "Access Denied: System Administrator privileges required."
+                ReportRefusal("Access Denied: System Administrator privileges required.")
                 MessageBox.Show("System Administrator Privileges Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
@@ -334,14 +334,14 @@ Namespace BTA_OSG
 
             If String.IsNullOrWhiteSpace(cleanName) Then
                 epValidation.SetError(txtNewUserName, "Please enter Full Name.")
-                lblStatusMessage.Text = "Validation Error: Full Name is required."
+                ReportRefusal("Validation Error: Full Name is required.")
                 txtNewUserName.Focus()
                 Return
             End If
 
             If String.IsNullOrWhiteSpace(cleanUid) Then
                 epValidation.SetError(txtNewUserUID, "Please enter RFID Card UID.")
-                lblStatusMessage.Text = "Validation Error: RFID Card UID is required."
+                ReportRefusal("Validation Error: RFID Card UID is required.")
                 txtNewUserUID.Focus()
                 Return
             End If
@@ -368,10 +368,7 @@ Namespace BTA_OSG
                 ' Connected enrolment lands in tbl_Users, tbl_RfidCards, and tbl_UserRoles, so
                 ' the badge works on every workstation, not just this one.
                 Dim enrolledBy = CurrentUser("FullName").ToString()
-                Dim enrolledById As Integer = 1
-                If CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(CurrentUser("UserID")) Then
-                    enrolledById = Convert.ToInt32(CurrentUser("UserID"))
-                End If
+                Dim enrolledById As Integer = CurrentStaffUserId()
                 Program.Coordinator.RegisterUser(cleanName, savedRole, savedOffice, cleanUid, chkCanRoute.Checked, chkCanMove.Checked, chkCanSoftCopy.Checked, enrolledBy, enrolledById)
             Else
                 ' pendingSync:=True: the coordinator-less fallback must still replay, like

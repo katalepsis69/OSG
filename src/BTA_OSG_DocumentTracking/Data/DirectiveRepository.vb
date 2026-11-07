@@ -13,32 +13,6 @@ Namespace BTA_OSG
             _connectionFactory = connectionFactory
         End Sub
 
-        Public Function GetByDocumentId(docId As Integer) As List(Of ActionDirective)
-            Dim list As New List(Of ActionDirective)()
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_ActionDirectives WHERE DocumentID = @id"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@id", docId)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            list.Add(New ActionDirective With {
-                                .DirectiveID = Convert.ToInt32(reader("DirectiveID")),
-                                .DocumentID = Convert.ToInt32(reader("DocumentID")),
-                                .DirectiveTypeID = Convert.ToInt32(reader("DirectiveTypeID")),
-                                .DirectiveText = If(IsDBNull(reader("DirectiveText")), Nothing, Convert.ToString(reader("DirectiveText"))),
-                                .IssuedByUserID = Convert.ToInt32(reader("IssuedByUserID")),
-                                .IssuedAtUTC = Convert.ToDateTime(reader("IssuedAtUTC")),
-                                .IsActive = Convert.ToBoolean(reader("IsActive")),
-                                .SupersededByDirectiveID = If(IsDBNull(reader("SupersededByDirectiveID")), CType(Nothing, Integer?), Convert.ToInt32(reader("SupersededByDirectiveID"))),
-                                .Remarks = If(IsDBNull(reader("Remarks")), Nothing, Convert.ToString(reader("Remarks")))
-                            })
-                        End While
-                    End Using
-                End Using
-            End Using
-            Return list
-        End Function
-
         Public Function Insert(directive As ActionDirective, Optional transaction As SqlTransaction = Nothing) As Integer
             Dim sql = "INSERT INTO tbl_ActionDirectives (DocumentID, DirectiveTypeID, DirectiveText, IssuedByUserID, IssuedAtUTC, IsActive, Remarks) " &
                       "OUTPUT INSERTED.DirectiveID " &
@@ -66,17 +40,6 @@ Namespace BTA_OSG
             cmd.Parameters.AddWithValue("@IssuedAtUTC", directive.IssuedAtUTC)
             cmd.Parameters.AddWithValue("@IsActive", directive.IsActive)
             cmd.Parameters.AddWithValue("@Remarks", If(directive.Remarks IsNot Nothing, CType(directive.Remarks, Object), DBNull.Value))
-        End Sub
-
-        Public Sub Supersede(directiveId As Integer, newDirectiveId As Integer)
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_ActionDirectives SET IsActive = 0, SupersededByDirectiveID = @newId WHERE DirectiveID = @id"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@newId", newDirectiveId)
-                    cmd.Parameters.AddWithValue("@id", directiveId)
-                    cmd.ExecuteNonQuery()
-                End Using
-            End Using
         End Sub
     End Class
 End Namespace

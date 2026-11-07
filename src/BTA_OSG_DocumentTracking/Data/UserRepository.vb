@@ -215,16 +215,6 @@ Namespace BTA_OSG
             End Using
         End Sub
 
-        Public Sub Disable(userId As Integer)
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "UPDATE tbl_Users SET IsActive = 0 WHERE UserID = @id"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@id", userId)
-                    cmd.ExecuteNonQuery()
-                End Using
-            End Using
-        End Sub
-
         Private Function MapUser(reader As IDataReader) As User
             Return New User With {
                 .UserID = Convert.ToInt32(reader("UserID")),

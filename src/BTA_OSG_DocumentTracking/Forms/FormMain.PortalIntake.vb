@@ -175,18 +175,38 @@ Namespace BTA_OSG
             If Not btnPortalImportSelected.Enabled Then Return
             btnPortalImportSelected.Enabled = False
             Try
-                Dim submission As PortalSubmission = Nothing
-                If Not ValidateSelectedPortalSubmission(submission) Then Return
-                If Not ConfirmSubmissionImport(submission) Then Return
-                Await ExecuteSubmissionImportAsync(submission)
+                Dim submissions As New List(Of PortalSubmission)()
+                If Not CollectSelectedPortalSubmissions(submissions) Then Return
+                If submissions.Count = 1 Then
+                    If Not ConfirmSubmissionImport(submissions(0)) Then Return
+                    Await ExecuteSubmissionImportAsync(submissions(0))
+                Else
+                    If Not ConfirmBulkSubmissionImport(submissions) Then Return
+                    ' Report outcomes, not attempts: each import answers whether it
+                    ' registered a new document; per-item dialogs cover the exceptions.
+                    Dim imported As Integer = 0
+                    For Each submission In submissions
+                        If Await ExecuteSubmissionImportAsync(submission) Then imported += 1
+                    Next
+                    If imported = submissions.Count Then
+                        lblStatusMessage.Text = String.Format("Imported {0} external submission(s).", imported)
+                    Else
+                        lblStatusMessage.Text = String.Format("Imported {0} of {1} external submission(s); the rest were already in the registry.", imported, submissions.Count)
+                    End If
+                End If
             Finally
                 btnPortalImportSelected.Enabled = True
             End Try
         End Sub
 
-        Private Function ValidateSelectedPortalSubmission(ByRef submission As PortalSubmission) As Boolean
-            submission = Nothing
-            If dgvPortalQueue.CurrentRow Is Nothing OrElse dgvPortalQueue.CurrentRow.DataBoundItem Is Nothing Then
+        ''' <summary>
+        ''' Validates the role gate once, then collects every selected queue row. With
+        ''' MultiSelect the operator can import a whole day's submissions in one pass;
+        ''' the single-row case keeps the exact previous flow.
+        ''' </summary>
+        Private Function CollectSelectedPortalSubmissions(ByRef submissions As List(Of PortalSubmission)) As Boolean
+            submissions = New List(Of PortalSubmission)()
+            If dgvPortalQueue.SelectedRows.Count = 0 AndAlso dgvPortalQueue.CurrentRow Is Nothing Then
                 MessageBox.Show("Please select an external submission from the queue to import.", "Select Submission", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 Return False
             End If
@@ -213,8 +233,36 @@ Namespace BTA_OSG
                 Return False
             End If
 
-            submission = TryCast(dgvPortalQueue.CurrentRow.DataBoundItem, PortalSubmission)
-            Return submission IsNot Nothing
+            For Each row As DataGridViewRow In dgvPortalQueue.SelectedRows
+                Dim submission = TryCast(row.DataBoundItem, PortalSubmission)
+                If submission IsNot Nothing Then submissions.Add(submission)
+            Next
+            ' Fallback: a focused row without an explicit multi-selection (keyboard focus
+            ' move) must still import, exactly like the pre-multiselect flow did.
+            If submissions.Count = 0 AndAlso dgvPortalQueue.CurrentRow IsNot Nothing Then
+                Dim submission = TryCast(dgvPortalQueue.CurrentRow.DataBoundItem, PortalSubmission)
+                If submission IsNot Nothing Then submissions.Add(submission)
+            End If
+            If submissions.Count = 0 Then
+                MessageBox.Show("Please select an external submission from the queue to import.", "Select Submission", MessageBoxButtons.OK, MessageBoxIcon.Information)
+                Return False
+            End If
+            Return True
+        End Function
+
+        Private Function ConfirmBulkSubmissionImport(submissions As List(Of PortalSubmission)) As Boolean
+            Dim shown As New List(Of String)()
+            For Each submission In submissions
+                If shown.Count >= 6 Then Exit For
+                shown.Add(submission.ControlNumber & " : " & submission.DocumentTitle)
+            Next
+            If submissions.Count > 6 Then shown.Add(String.Format("...and {0} more.", submissions.Count - 6))
+            Dim confirm = MessageBox.Show(
+                String.Format("Import {0} external submissions into OSG Registry?" & vbCrLf & vbCrLf & "{1}", submissions.Count, String.Join(vbCrLf, shown)),
+                "Confirm Bulk External Import",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Question)
+            Return confirm = DialogResult.Yes
         End Function
 
         Private Function ConfirmSubmissionImport(submission As PortalSubmission) As Boolean
@@ -235,7 +283,9 @@ Namespace BTA_OSG
         ' RegisterImportedExternalDocument, so the app-level probe result acts as the circuit
         ' breaker: once SQL is known offline, imports register locally without paying stacked
         ' connect timeouts, and the one retry per app run executes off the UI thread.
-        Private Async Function ExecuteSubmissionImportAsync(submission As PortalSubmission) As Task
+        ' Returns True when this call registered a NEW document; False when the submission
+        ' was already in the registry (so the bulk summary reports outcomes, not attempts).
+        Private Async Function ExecuteSubmissionImportAsync(submission As PortalSubmission) As Task(Of Boolean)
             Dim alreadyRegistered As DataRow()
             SyncLock EmbeddedDB.SyncRoot
                 alreadyRegistered = EmbeddedDB.DataSet.Tables("Documents").Select("ExternalControlNumber = '" & submission.ControlNumber.Replace("'", "''") & "'")
@@ -243,13 +293,17 @@ Namespace BTA_OSG
             If alreadyRegistered.Length > 0 Then
                 MessageBox.Show($"Submission {submission.ControlNumber} is already in the registry as {alreadyRegistered(0)("DocCode")}.", "Already Imported", MessageBoxButtons.OK, MessageBoxIcon.Information)
                 RefreshPortalQueue()
-                Return
+                Return False
             End If
 
-            Dim userId As Integer = 1
-            If CurrentUser IsNot Nothing AndAlso CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(CurrentUser("UserID")) Then
-                userId = Convert.ToInt32(CurrentUser("UserID"))
+            ' The session can end (timeout tick) while the SQL registration below awaits,
+            ' so capture the staff identity once, null-checked, before any yield point.
+            Dim staffName As String = "Records Staff"
+            If CurrentUser IsNot Nothing Then
+                staffName = CurrentUser("FullName").ToString()
             End If
+
+            Dim userId As Integer = CurrentStaffUserId()
             Dim docCode = EmbeddedDB.GenerateDocCode(submission.Category)
             Dim origin = submission.RequesterName & " (" & submission.RequesterEmail & ")"
             Dim dest = "Office of the Secretary-General"
@@ -289,7 +343,7 @@ Namespace BTA_OSG
                 cab:="UNFILED", shelf:="", box:="",
                 url:="",
                 status:="RECEIVED",
-                assigned:=CurrentUser("FullName").ToString(),
+                assigned:=staffName,
                 flowDirection:="INCOMING",
                 assignedSection:=assignedSection,
                 lastAction:=lastAction,
@@ -298,12 +352,14 @@ Namespace BTA_OSG
                 createdByUserId:=userId,
                 requesterGender:=submission.RequesterGender)
 
-            Dim currentStaffName = If(CurrentUser IsNot Nothing, CurrentUser("FullName").ToString(), "Records Staff")
-            EmbeddedDB.LogAudit(currentStaffName, $"Imported External Portal Submission [{submission.ControlNumber}] as {docCode} (Routed to {assignedSection})", isOffline:=True, userId:=userId)
+            EmbeddedDB.LogAudit(staffName, $"Imported External Portal Submission [{submission.ControlNumber}] as {docCode} (Routed to {assignedSection})", isOffline:=True, userId:=userId)
 
             ' Acknowledged here rather than trusted from DocumentService's fire-and-forget so the
             ' result can be reported truthfully. The portal's ack is idempotent, so the extra call
             ' the SQL path makes is harmless.
+            ' This seat performed the import: its own sync echo must not ring the
+            ' "routed to you" chime back at the importing desk.
+            MarkDocumentAsOwn(docCode)
             Dim portalNotified As Boolean = False
             If AppStartup.PortalBridgeClient IsNot Nothing Then
                 Try
@@ -330,6 +386,7 @@ Namespace BTA_OSG
             ' OnPortalPollTick would duplicate the HTTP round trip.
             RefreshActiveTabGrid()
             RefreshPortalQueue()
+            Return True
         End Function
 
         Private Async Sub OnOpenPortalClicked(sender As Object, e As EventArgs)

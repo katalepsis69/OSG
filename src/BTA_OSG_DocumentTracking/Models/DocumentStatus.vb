@@ -26,15 +26,21 @@ Namespace BTA_OSG
             "RELEASED", "FILED", "COMPLETED", "ARCHIVED", "CANCELLED"
         }
 
+        ' The full status vocabulary a desk can filter a grid by: the registration default,
+        ' every routing target, and the voided end state. Derived from the two lists above
+        ' rather than restated, so a status added to routing becomes filterable with it.
+        Public Shared ReadOnly FilterableStatusCodes As String() = BuildFilterableStatusCodes()
+
+        Private Shared Function BuildFilterableStatusCodes() As String()
+            Dim codes As New List(Of String) From {"RECEIVED"}
+            codes.AddRange(RouteTargetStatusCodes)
+            codes.Add("CANCELLED")
+            Return codes.ToArray()
+        End Function
+
         Public Shared Function IsTerminalStatus(code As String) As Boolean
             Dim c = If(code, "").Trim().ToUpperInvariant()
             Return c.Length > 0 AndAlso Array.IndexOf(TerminalStatusCodes, c) >= 0
-        End Function
-
-        Public Shared Function IsValidStatus(code As String) As Boolean
-            If String.IsNullOrWhiteSpace(code) Then Return False
-            Dim c = code.Trim().ToUpperInvariant()
-            Return c = "RECEIVED" OrElse c = "FOR_REVIEW" OrElse c = "FOR_REVISION" OrElse c = "APPROVED" OrElse c = "RELEASED" OrElse c = "FILED"
         End Function
         ' Names match tbl_DocumentStatuses.StatusName; callers keep the raw code for filters and audit.
         Public Shared Function DisplayName(statusCode As String) As String

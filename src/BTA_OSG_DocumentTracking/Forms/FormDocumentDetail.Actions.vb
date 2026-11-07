@@ -139,9 +139,68 @@ Namespace BTA_OSG
             MessageBox.Show("This document's state changed on the server while you were viewing it. The view has been refreshed; check the current status before " & actionName & ".", "Document State Changed", MessageBoxButtons.OK, MessageBoxIcon.Information)
         End Sub
 
+        ''' <summary>
+        ''' The signed-in officer's identity for action attribution: the session row's
+        ''' name and user id (sentinel 1 when the mirrored row predates the column).
+        ''' Requires a live session; every caller checks MainFrm.CurrentUser first.
+        ''' </summary>
+        Private Function CurrentStaffIdentity() As (Name As String, UserId As Integer)
+            Return (MainFrm.CurrentUser("FullName").ToString(), MainFrm.CurrentStaffUserId())
+        End Function
+
+        ''' <summary>
+        ''' Connected-transition guard, in the canonical order: another seat may have moved
+        ''' the document past the status this dialog shows, or the shown status may not
+        ''' resolve to a seeded id (which would leave the server-side from-status guard
+        ''' open). When either fires the view is refreshed and the operator warned, and
+        ''' the caller returns without writing.
+        ''' </summary>
+        Private Function GuardTransitionState(verb As String) As Boolean
+            If DocumentStateMovedOnServer() Then
+                WarnStateMoved(verb)
+                Return True
+            End If
+            If StatusUnverifiableForConnectedWrite() Then
+                WarnStateMoved(verb)
+                Return True
+            End If
+            Return False
+        End Function
+
         Private Function GetCurrentRoutingLogsList() As List(Of RoutingLog)
             Return EmbeddedDB.GetRoutingLogsForDocument(DocID)
         End Function
+
+        ''' <summary>
+        ''' Directives used to be fire-and-forget: the assignee had no way to record they
+        ''' had seen one. The acknowledgement is an audit fact (Rule 4), not a status, so
+        ''' it writes a DIRECTIVE_ACK trail entry naming the directive; the button only
+        ''' arms for a directive assigned to the signed-in officer.
+        ''' </summary>
+        Private Sub UpdateAcknowledgeButtonState()
+            If btnAckDirective Is Nothing Then Return
+            btnAckDirective.Visible = False
+            If MainFrm.CurrentUser Is Nothing OrElse dgvDirectives.CurrentRow Is Nothing OrElse dgvDirectives.CurrentRow.Cells("AssignedTo") Is Nothing Then Return
+            Dim assignedTo = dgvDirectives.CurrentRow.Cells("AssignedTo").Value.ToString().Trim()
+            btnAckDirective.Visible = assignedTo.Length > 0 AndAlso assignedTo.Equals(MainFrm.CurrentUser("FullName").ToString().Trim(), StringComparison.OrdinalIgnoreCase)
+        End Sub
+
+        Private Sub OnAcknowledgeDirective(sender As Object, e As EventArgs)
+            If MainFrm.CurrentUser Is Nothing Then
+                MessageBox.Show("Authentication Required.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                Return
+            End If
+            ' The DocRow can be detached under the dialog by a sync tick, same as every
+            ' other action; the acknowledgement names the doc code in the audit entry.
+            If Not EnsureDocRowLive() Then Return
+            If dgvDirectives.CurrentRow Is Nothing OrElse dgvDirectives.CurrentRow.Cells("SGDirective") Is Nothing Then Return
+            Dim directiveText = dgvDirectives.CurrentRow.Cells("SGDirective").Value.ToString()
+            Dim assignedTo = dgvDirectives.CurrentRow.Cells("AssignedTo").Value.ToString()
+            EmbeddedDB.LogAudit(MainFrm.CurrentUser("FullName").ToString(),
+                                String.Format("Acknowledged directive '{0}' (assigned to {1}) on document [{2}].", directiveText, assignedTo, DocRow("DocCode")),
+                                actionType:="DIRECTIVE_ACK")
+            MainFrm.ReportStatus("Directive acknowledged. The confirmation is recorded in the audit trail.")
+        End Sub
 
         Private Function GetCurrentDirectivesList() As List(Of ActionDirective)
             Return EmbeddedDB.GetDirectivesForDocument(DocID)
@@ -168,16 +227,12 @@ Namespace BTA_OSG
                         WarnStateMoved("requesting a revision")
                         Return
                     End If
-                    Dim staffName = MainFrm.CurrentUser("FullName").ToString()
-                    Dim staffUserId As Integer = 1
-                    If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
-                        staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
-                    End If
+                    Dim staff = CurrentStaffIdentity()
                     Try
                         If Program.Coordinator IsNot Nothing Then
-                            Program.Coordinator.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staffName, staffUserId)
+                            Program.Coordinator.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staff.Name, staff.UserId)
                         Else
-                            EmbeddedDB.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staffName)
+                            EmbeddedDB.RequestRevision(DocID, dlg.PunchlistNotes, dlg.TargetSection, staff.Name)
                         End If
                     Catch ex As Exception
                         MessageBox.Show(ex.Message, "Revision Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -201,12 +256,8 @@ Namespace BTA_OSG
 
             ' Capture the session before any dialog: a timeout can log the seat out while a
             ' modal prompt is pumping messages.
-            Dim staffName = user("FullName").ToString()
+            Dim staff = CurrentStaffIdentity()
             Dim staffRole = user("Role").ToString()
-            Dim staffUserId As Integer = 1
-            If user.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(user("UserID")) Then
-                staffUserId = Convert.ToInt32(user("UserID"))
-            End If
             If Not DesktopDataCoordinator.IsVoidAuthorized(staffRole) Then
                 MessageBox.Show("Access Denied: only the Secretary-General or a System Administrator may void a document.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
@@ -235,7 +286,7 @@ Namespace BTA_OSG
             If confirm <> DialogResult.Yes Then Return
 
             Dim voided As Boolean = Program.Coordinator IsNot Nothing AndAlso
-                                    Program.Coordinator.VoidDocument(DocID, reason, staffName, staffUserId, staffRole)
+                                    Program.Coordinator.VoidDocument(DocID, reason, staff.Name, staff.UserId, staffRole)
             If Not voided Then
                 MessageBox.Show("The void did not complete. The document may already have left the active workflow, or this seat may be offline.",
                                 "Void Not Completed", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -266,16 +317,12 @@ Namespace BTA_OSG
                             WarnStateMoved("resubmitting")
                             Return
                         End If
-                        Dim staffName = MainFrm.CurrentUser("FullName").ToString()
-                        Dim staffUserId As Integer = 1
-                        If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
-                            staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
-                        End If
+                        Dim staff = CurrentStaffIdentity()
                         Try
                             If Program.Coordinator IsNot Nothing Then
-                                Program.Coordinator.ResubmitDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
+                                Program.Coordinator.ResubmitDocument(DocID, staff.Name, notes, staff.UserId, ExpectedFromStatusId())
                             Else
-                                EmbeddedDB.ResubmitDocument(DocID, staffName, notes)
+                                EmbeddedDB.ResubmitDocument(DocID, staff.Name, notes)
                             End If
                         Catch ex As Exception
                             MessageBox.Show(ex.Message, "Resubmit Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -299,7 +346,7 @@ Namespace BTA_OSG
 
             Dim confirm = MessageBox.Show("Approve document " & DocRow("DocCode").ToString() & " for official transmittal?", "Confirm Approval", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
             If confirm = DialogResult.Yes Then
-                Dim staffName = MainFrm.CurrentUser("FullName").ToString()
+                Dim staff = CurrentStaffIdentity()
                 ' Attribute the action to the actual role: OSG Chief and System Administrator
                 ' approvals must not be recorded as Secretary-General approvals.
                 Dim approverRole As String = "OSG Staff"
@@ -307,23 +354,12 @@ Namespace BTA_OSG
                     approverRole = MainFrm.CurrentUser("Role").ToString()
                 End If
                 Dim notes = "Approved by " & approverRole & "."
-                Dim staffUserId As Integer = 1
-                If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
-                    staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
-                End If
-                If DocumentStateMovedOnServer() Then
-                    WarnStateMoved("approving")
-                    Return
-                End If
-                If StatusUnverifiableForConnectedWrite() Then
-                    WarnStateMoved("approving")
-                    Return
-                End If
+                If GuardTransitionState("approving") Then Return
                 Try
                     If Program.Coordinator IsNot Nothing Then
-                        Program.Coordinator.ApproveDocument(DocID, staffName, notes, staffUserId, ExpectedFromStatusId())
+                        Program.Coordinator.ApproveDocument(DocID, staff.Name, notes, staff.UserId, ExpectedFromStatusId())
                     Else
-                        EmbeddedDB.ApproveDocument(DocID, staffName, notes)
+                        EmbeddedDB.ApproveDocument(DocID, staff.Name, notes)
                     End If
                 Catch ex As Exception
                     MessageBox.Show(ex.Message, "Approval Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -345,24 +381,13 @@ Namespace BTA_OSG
 
             Dim confirm = MessageBox.Show("Release document " & DocRow("DocCode").ToString() & " to destination office " & DocRow("DestinationOffice").ToString() & "?", "Confirm Release", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
             If confirm = DialogResult.Yes Then
-                Dim staffName = MainFrm.CurrentUser("FullName").ToString()
-                Dim staffUserId As Integer = 1
-                If MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
-                    staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
-                End If
-                If DocumentStateMovedOnServer() Then
-                    WarnStateMoved("releasing")
-                    Return
-                End If
-                If StatusUnverifiableForConnectedWrite() Then
-                    WarnStateMoved("releasing")
-                    Return
-                End If
+                Dim staff = CurrentStaffIdentity()
+                If GuardTransitionState("releasing") Then Return
                 Try
                     If Program.Coordinator IsNot Nothing Then
-                        Program.Coordinator.ReleaseDocument(DocID, staffName, "Released to destination office.", staffUserId, ExpectedFromStatusId())
+                        Program.Coordinator.ReleaseDocument(DocID, staff.Name, "Released to destination office.", staff.UserId, ExpectedFromStatusId())
                     Else
-                        EmbeddedDB.ReleaseDocument(DocID, staffName, "Released to destination office.")
+                        EmbeddedDB.ReleaseDocument(DocID, staff.Name, "Released to destination office.")
                     End If
                 Catch ex As Exception
                     MessageBox.Show(ex.Message, "Release Not Logged", MessageBoxButtons.OK, MessageBoxIcon.Warning)
@@ -387,12 +412,14 @@ Namespace BTA_OSG
             End If
             If Not EnsureDocRowLive() Then Return
 
-            Dim staffUserId As Integer = 1
-            If MainFrm.CurrentUser IsNot Nothing AndAlso MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
-                staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
-            End If
+            Dim staffUserId As Integer = MainFrm.CurrentStaffUserId()
 
-            Using dlg As New FormRouteDocument(DocID, DocRow("DestinationOffice").ToString(), MainFrm.CurrentUser("FullName").ToString(), staffUserId)
+            ' The From office is where the document sits NOW (its assigned section), not
+            ' where it is ultimately destined: prefilling from DestinationOffice recorded
+            ' wrong custody legs in the transit log.
+            Dim holdingOffice = DocRow("AssignedSection").ToString()
+            If String.IsNullOrWhiteSpace(holdingOffice) Then holdingOffice = DocRow("DestinationOffice").ToString()
+            Using dlg As New FormRouteDocument(DocID, holdingOffice, MainFrm.CurrentUser("FullName").ToString(), staffUserId, MainFrm.OfficeHistoryForRouting(), MainFrm.LastRoutedOfficeFor(DocID))
                 If dlg.ShowDialog(Me) = DialogResult.OK Then
                     ' Reload the row first: the coordinator path may have transitioned the
                     ' status server-side and pulled it back, and the portal must hear the
@@ -422,10 +449,7 @@ Namespace BTA_OSG
                 Return
             End If
 
-            Dim staffUserId As Integer = 1
-            If MainFrm.CurrentUser IsNot Nothing AndAlso MainFrm.CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(MainFrm.CurrentUser("UserID")) Then
-                staffUserId = Convert.ToInt32(MainFrm.CurrentUser("UserID"))
-            End If
+            Dim staffUserId As Integer = MainFrm.CurrentStaffUserId()
 
             Dim currentLoc = String.Format("{0}/{1}/{2}", DocRow("CabinetID"), DocRow("ShelfNo"), DocRow("BoxCode"))
             Using dlg As New FormMoveStorage(DocID, currentLoc, MainFrm.CurrentUser("FullName").ToString(), staffUserId)

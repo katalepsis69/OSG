@@ -283,7 +283,10 @@ Namespace BTA_OSG
         Return ParseUtcStamp(body.Substring(start + marker.Length, finish - start - marker.Length).Trim())
     End Function
 
-        Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form, Optional progress As IProgress(Of DownloadProgressInfo) = Nothing) As Task
+        ''' <param name="cancelToken">Wire the download's no-overall-timeout decision to a
+        ''' cancel affordance: the caller owns the token and can abort a stalled stream,
+        ''' which is the visible-and-cancellable contract for an unbounded read loop.</param>
+        Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form, Optional progress As IProgress(Of DownloadProgressInfo) = Nothing, Optional cancelToken As System.Threading.CancellationToken = Nothing) As Task
             Try
                 If String.IsNullOrWhiteSpace(downloadUrl) Then
                     Throw New InvalidOperationException("Download URL is empty.")
@@ -298,7 +301,7 @@ Namespace BTA_OSG
                 ' for the entire transfer and looked hung.
                 DownloadHttp.DefaultRequestHeaders.UserAgent.Clear()
                 DownloadHttp.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
-                Using response = Await DownloadHttp.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(False)
+                Using response = Await DownloadHttp.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancelToken).ConfigureAwait(False)
                     response.EnsureSuccessStatusCode()
                     Dim total As Long = If(response.Content.Headers.ContentLength.HasValue, response.Content.Headers.ContentLength.Value, -1)
                     Using source = Await response.Content.ReadAsStreamAsync().ConfigureAwait(False)
@@ -307,7 +310,7 @@ Namespace BTA_OSG
                             Dim written As Long = 0
                             Dim lastMark As Long = -1
                             While True
-                                Dim read = Await source.ReadAsync(buffer, 0, buffer.Length).ConfigureAwait(False)
+                                Dim read = Await source.ReadAsync(buffer, 0, buffer.Length, cancelToken).ConfigureAwait(False)
                                 If read = 0 Then Exit While
                                 target.Write(buffer, 0, read)
                                 written += read
@@ -367,6 +370,17 @@ Namespace BTA_OSG
 
                 Application.Exit()
                 Environment.Exit(0)
+            Catch cancelEx As OperationCanceledException
+                ' User-initiated cancel, not a failure: remove the partial temp exe and
+                ' leave the previous build untouched. The caller restores its own UI.
+                Try
+                    Dim tempExePath = Path.Combine(Path.GetTempPath(), "BTA_OSG_Update", "BTA_OSG_DocumentTracking.exe")
+                    If File.Exists(tempExePath) Then File.Delete(tempExePath)
+                Catch
+                End Try
+                If progress IsNot Nothing Then
+                    progress.Report(New DownloadProgressInfo With {.Percent = -1, .Label = "Download canceled."})
+                End If
             Catch ex As Exception
                 MessageBox.Show(ownerForm, "Failed to download and apply update: " & ex.Message, "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
             End Try

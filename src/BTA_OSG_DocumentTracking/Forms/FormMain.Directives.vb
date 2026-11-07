@@ -1,4 +1,4 @@
-Option Explicit On
+﻿Option Explicit On
 Option Strict On
 
 Imports System
@@ -107,13 +107,13 @@ Namespace BTA_OSG
             ' gated like approve/release: SG, System Administrator, or OSG Chief.
             Dim role = CurrentUser("Role").ToString()
             If role <> "Secretary-General" AndAlso role <> "System Administrator" AndAlso role <> "SYSADMIN" AndAlso role <> "OSG Chief" AndAlso role <> "OSG_CHIEF" Then
-                lblStatusMessage.Text = "Access Denied: Only the Secretary-General may issue action directives."
+                ReportRefusal("Access Denied: Only the Secretary-General may issue action directives.")
                 MessageBox.Show("Only the Secretary-General (or a System Administrator) may log action directives.", "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
                 Return
             End If
 
             If cmbDirDocs.SelectedItem Is Nothing Then
-                lblStatusMessage.Text = "Validation Error: Please select a document."
+                ReportRefusal("Validation Error: Please select a document.")
                 Return
             End If
 
@@ -123,24 +123,16 @@ Namespace BTA_OSG
             btnApplyDirective.Enabled = False
             Try
                 Dim docStr = cmbDirDocs.SelectedItem.ToString()
-                Dim docId As Integer = 0
-                Dim colonIdx = docStr.IndexOf(":"c)
-                If colonIdx > 0 Then
-                    Dim idPart = docStr.Substring(0, colonIdx).Replace("ID ", "").Trim()
-                    Integer.TryParse(idPart, docId)
-                End If
+                Dim docId As Integer = DocumentIdFromComboItem(docStr)
                 If docId <= 0 Then
-                    lblStatusMessage.Text = "Validation Error: Please select a valid document."
+                    ReportRefusal("Validation Error: Please select a valid document.")
                     Return
                 End If
 
                 Dim directive = cmbDirective.SelectedItem.ToString()
                 Dim assign = If(cmbDirAssign.SelectedItem IsNot Nothing, cmbDirAssign.SelectedItem.ToString(), "")
 
-                Dim currentUserId As Integer = 1
-                If CurrentUser IsNot Nothing AndAlso CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(CurrentUser("UserID")) Then
-                    currentUserId = Convert.ToInt32(CurrentUser("UserID"))
-                End If
+                Dim currentUserId As Integer = CurrentStaffUserId()
                 Dim currentUserName As String = If(CurrentUser IsNot Nothing, CurrentUser("FullName").ToString(), "System Staff")
 
                 If Program.Coordinator IsNot Nothing Then
@@ -157,5 +149,18 @@ Namespace BTA_OSG
                 btnApplyDirective.Enabled = True
             End Try
         End Sub
+
+        ''' <summary>
+        ''' The directives combo items are "ID {n}: [{code}] {title}" (built by
+        ''' RefreshDirectivesGrid); this parses the id part and returns 0 when the text
+        ''' does not match the format. The selection-restore path and ApplyDirective read
+        ''' the same fact through this one parser.
+        ''' </summary>
+        Private Shared Function DocumentIdFromComboItem(text As String) As Integer
+            Dim match = System.Text.RegularExpressions.Regex.Match(If(text, ""), "^ID (\d+):")
+            Dim id As Integer = 0
+            If match.Success Then Integer.TryParse(match.Groups(1).Value, id)
+            Return id
+        End Function
     End Class
 End Namespace

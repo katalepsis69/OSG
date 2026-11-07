@@ -42,9 +42,10 @@ Namespace BTA_OSG
         ''' reservation, the insert, and the audit entry all join it, so a caller wrapping
         ''' the whole registration workflow can roll back every write together.
         ''' preferredDocCode (the code minted offline) is reused when free and re-minted on
-        ''' a unique-key collision with another workstation's sequence.
+        ''' a unique-key collision with another workstation's sequence. requesterGender
+        ''' carries the portal-captured field so a replayed offline import keeps it.
         ''' </summary>
-        Public Function RegisterDocumentWithWorkflow(title As String, typeCode As String, flowDirection As String, originOffice As String, destOffice As String, targetDeadline As DateTime?, googleDriveUrl As String, remarks As String, registeredByUserId As Integer, Optional receivedDate As DateTime? = Nothing, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing, Optional externalControlNumber As String = "", Optional preferredDocCode As String = "") As Document
+        Public Function RegisterDocumentWithWorkflow(title As String, typeCode As String, flowDirection As String, originOffice As String, destOffice As String, targetDeadline As DateTime?, googleDriveUrl As String, remarks As String, registeredByUserId As Integer, Optional receivedDate As DateTime? = Nothing, Optional transaction As Microsoft.Data.SqlClient.SqlTransaction = Nothing, Optional externalControlNumber As String = "", Optional preferredDocCode As String = "", Optional requesterGender As String = "") As Document
             If String.IsNullOrWhiteSpace(title) Then Throw New ArgumentException("Title is required.")
             Dim prefix As String = If(String.IsNullOrWhiteSpace(typeCode), "DOC", typeCode.Trim().ToUpperInvariant())
             If prefix = "REG_COMM" Then prefix = "COMM"
@@ -74,7 +75,8 @@ Namespace BTA_OSG
                 .LastActionTaken = "Registered by Records Section and routed to " & assignedSec,
                 .RegisteredByUserID = registeredByUserId,
                 .RegisteredAtUTC = DateTime.UtcNow,
-                .ExternalControlNumber = externalControlNumber
+                .ExternalControlNumber = externalControlNumber,
+                .RequesterGender = requesterGender
             }
 
             If Not String.IsNullOrWhiteSpace(preferredDocCode) Then
@@ -115,10 +117,6 @@ Namespace BTA_OSG
                 If ex.Errors(i).Number = 2601 OrElse ex.Errors(i).Number = 2627 Then Return True
             Next
             Return False
-        End Function
-
-        Public Function GetDocument(docId As Integer) As Document
-            Return _docRepo.GetById(docId)
         End Function
 
         Public Shared Function MapToPublicStatus(statusCode As String) As String
@@ -245,34 +243,6 @@ Namespace BTA_OSG
             Return doc
         End Function
 
-        Public Async Function SyncPortalStatusAsync(docId As Integer, statusCode As String) As Task(Of Boolean)
-            If _portalBridge Is Nothing Then Return True
-            Try
-                Dim extCn As String = ""
-                Try
-                    Dim doc = _docRepo.GetById(docId)
-                    If doc IsNot Nothing Then extCn = doc.ExternalControlNumber
-                Catch
-                    ' Offline / fallback
-                End Try
-
-                If String.IsNullOrWhiteSpace(extCn) Then
-                    Dim rows = EmbeddedDB.DataSet.Tables("Documents").Select("DocumentID = " & docId)
-                    If rows.Length > 0 AndAlso rows(0).Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(rows(0)("ExternalControlNumber")) Then
-                        extCn = rows(0)("ExternalControlNumber").ToString()
-                    End If
-                End If
-
-                If Not String.IsNullOrWhiteSpace(extCn) Then
-                    Dim publicStatus = MapToPublicStatus(statusCode)
-                    Return Await _portalBridge.PushPublicStatusAsync(extCn, publicStatus).ConfigureAwait(False)
-                End If
-            Catch ex As Exception
-                ' Resilient isolation
-            End Try
-            Return True
-        End Function
-
         ''' <summary>
         ''' Safe, non-blocking fire-and-forget public portal status push conforming to the isolation invariant:
         ''' No portal network failure or outage may ever crash or block internal workflows.
@@ -290,5 +260,28 @@ Namespace BTA_OSG
                          End Try
                      End Function)
         End Sub
+
+        ''' <summary>
+        ''' The external control number a portal push is keyed on: the SQL row's value,
+        ''' falling back to the cache's Documents mirror when the repo cannot answer
+        ''' (offline, or the row is gone).
+        ''' </summary>
+        Friend Shared Function ResolveExternalControlNumber(docRepo As DocumentRepository, docId As Integer) As String
+            Dim extCn As String = ""
+            Try
+                Dim doc = docRepo.GetById(docId)
+                If doc IsNot Nothing Then extCn = doc.ExternalControlNumber
+            Catch
+                ' Offline fallback
+            End Try
+
+            If String.IsNullOrWhiteSpace(extCn) Then
+                Dim rows = EmbeddedDB.DataSet.Tables("Documents").Select("DocumentID = " & docId)
+                If rows.Length > 0 AndAlso rows(0).Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(rows(0)("ExternalControlNumber")) Then
+                    extCn = rows(0)("ExternalControlNumber").ToString()
+                End If
+            End If
+            Return extCn
+        End Function
     End Class
 End Namespace

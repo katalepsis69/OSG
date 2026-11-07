@@ -36,6 +36,8 @@ Namespace BTA_OSG
         Private pnlFooter As Panel
         Private flpFooter As FlowLayoutPanel
         Private prgDownload As ProgressBar
+        Private btnCancelDownload As Button
+        Private _downloadCts As System.Threading.CancellationTokenSource
 
         Private _hasUpdate As Boolean = False
         Private _latestVersion As String = ""
@@ -290,6 +292,8 @@ Namespace BTA_OSG
             AddHandler btnUpdateNow.Click, Async Sub()
                 btnUpdateNow.Enabled = False
                 If prgDownload IsNot Nothing Then prgDownload.Visible = True
+                _downloadCts = New System.Threading.CancellationTokenSource()
+                If btnCancelDownload IsNot Nothing Then btnCancelDownload.Visible = True
                 Dim reporter As New Progress(Of DownloadProgressInfo)(Sub(p)
                                                                           If Me.IsDisposed OrElse prgDownload Is Nothing Then Return
                                                                           If p.Percent >= 0 Then
@@ -300,16 +304,30 @@ Namespace BTA_OSG
                                                                           End If
                                                                           If Not String.IsNullOrEmpty(p.Label) Then btnUpdateNow.Text = p.Label
                                                                       End Sub)
-                Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me, reporter)
-                ' Success exits the process from the service; this restore is the failure path
-                ' (the service has already shown the error dialog by here).
+                Await AppUpdateService.DownloadAndApplyAsync(_downloadUrl, Me, reporter, _downloadCts.Token)
+                ' Success exits the process from the service; this restore is the failure and
+                ' cancel path (a failure has already shown its error dialog; a cancel has
+                ' reported "Download canceled." through the same progress line).
                 If Not Me.IsDisposed Then
                     If prgDownload IsNot Nothing Then prgDownload.Visible = False
+                    If btnCancelDownload IsNot Nothing Then btnCancelDownload.Visible = False
+                    If _downloadCts IsNot Nothing Then
+                        _downloadCts.Dispose()
+                        _downloadCts = Nothing
+                    End If
                     btnUpdateNow.Enabled = True
                     btnUpdateNow.Text = "&Update && Restart Now"
                 End If
             End Sub
             flpFooter.Controls.Add(btnUpdateNow)
+
+            ' The download client deliberately carries no overall timeout, so the only
+            ' escape from a stalled stream is this explicit cancel affordance.
+            btnCancelDownload = CivicCalmTheme.CreateIconButton("&Cancel Download", "x", 14, minHeight:=30, margin:=New Padding(6, 0, 0, 0), visible:=False)
+            AddHandler btnCancelDownload.Click, Sub()
+                                                    If _downloadCts IsNot Nothing Then _downloadCts.Cancel()
+                                                End Sub
+            flpFooter.Controls.Add(btnCancelDownload)
         End Sub
 
         ''' <summary>

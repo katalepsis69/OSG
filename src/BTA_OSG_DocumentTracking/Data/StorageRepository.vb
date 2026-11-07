@@ -13,52 +13,6 @@ Namespace BTA_OSG
             _connectionFactory = connectionFactory
         End Sub
 
-        Public Function GetAll() As List(Of StorageLocation)
-            Dim list As New List(Of StorageLocation)()
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT StorageLocationID, CabinetID, ShelfNo, BoxCode, Description, IsActive FROM tbl_StorageLocations"
-                Using cmd = New SqlCommand(sql, conn)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            list.Add(MapStorageLocation(reader))
-                        End While
-                    End Using
-                End Using
-            End Using
-            Return list
-        End Function
-
-        Public Function GetById(id As Integer) As StorageLocation
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT StorageLocationID, CabinetID, ShelfNo, BoxCode, Description, IsActive FROM tbl_StorageLocations WHERE StorageLocationID = @id"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@id", id)
-                    Using reader = cmd.ExecuteReader()
-                        If reader.Read() Then
-                            Return MapStorageLocation(reader)
-                        End If
-                    End Using
-                End Using
-            End Using
-            Return Nothing
-        End Function
-
-        Public Function Insert(loc As StorageLocation) As Integer
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "INSERT INTO tbl_StorageLocations (CabinetID, ShelfNo, BoxCode, Description, IsActive) " &
-                          "OUTPUT INSERTED.StorageLocationID " &
-                          "VALUES (@CabinetID, @ShelfNo, @BoxCode, @Description, @IsActive)"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@CabinetID", If(loc.CabinetID IsNot Nothing, CType(loc.CabinetID, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@ShelfNo", If(loc.ShelfNo IsNot Nothing, CType(loc.ShelfNo, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@BoxCode", If(loc.BoxCode IsNot Nothing, CType(loc.BoxCode, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@Description", If(loc.Description IsNot Nothing, CType(loc.Description, Object), DBNull.Value))
-                    cmd.Parameters.AddWithValue("@IsActive", loc.IsActive)
-                    Return Convert.ToInt32(cmd.ExecuteScalar())
-                End Using
-            End Using
-        End Function
-
         ''' <summary>
         ''' Resolves a landmark to its SQL location id, creating the row if it does not yet exist.
         ''' With a transaction supplied, both the lookup and the insert join it so the created

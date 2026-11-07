@@ -350,13 +350,15 @@ function format_pst_time(string $utcTimeStr): string {
             <p class="portal-sidebar-text">
                 For inquiries regarding tracking, routing verification, or document status:
             </p>
+            <!-- PLACEHOLDER CONTACT POINTS: not yet confirmed by the office. Do not
+                 publish to production until real channels replace them. -->
             <div class="portal-info-item">
                 <span class="portal-info-label">Email:</span>
-                osg.records@bta.gov.ph
+                osg.records@bta.gov.ph <small>(to be confirmed)</small>
             </div>
             <div class="portal-info-item">
                 <span class="portal-info-label">Trunkline:</span>
-                (064) 552-1234 loc. 104
+                (064) 552-1234 loc. 104 <small>(to be confirmed)</small>
             </div>
         </div>
     </aside>

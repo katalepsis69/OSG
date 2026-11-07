@@ -682,17 +682,23 @@ Namespace BTA_OSG
             s.PdfLinkSettings.ScansFolder = txtScansFolder.Text.Trim()
             If chkPortal.Checked Then
                 s.PortalSettings.BaseUrl = LocalPortalBaseUrl
-                ' An empty (or the published demo default) key would leave the intake API
-                ' open to whoever reads the repo, so a fresh 32-byte value generates here
-                ' and travels to the portal process through its environment automatically.
-                If String.IsNullOrWhiteSpace(s.PortalSettings.BridgeKey) OrElse String.Equals(s.PortalSettings.BridgeKey, PublishedDemoBridgeKey, StringComparison.OrdinalIgnoreCase) Then
-                    s.PortalSettings.BridgeKey = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
-                End If
+                EnsurePortalBridgeKey(s)
             End If
             AppSettings.Save(s)
             ShowSavedMessage(server)
             Me.DialogResult = DialogResult.OK
             Me.Close()
+        End Sub
+
+        ''' <summary>
+        ''' An empty (or the published demo default) key would leave the intake API open to
+        ''' whoever reads the repo, so a fresh 32-byte value generates here and travels to
+        ''' the portal process through its environment automatically.
+        ''' </summary>
+        Private Shared Sub EnsurePortalBridgeKey(settings As AppSettings)
+            If String.IsNullOrWhiteSpace(settings.PortalSettings.BridgeKey) OrElse String.Equals(settings.PortalSettings.BridgeKey, PublishedDemoBridgeKey, StringComparison.OrdinalIgnoreCase) Then
+                settings.PortalSettings.BridgeKey = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
+            End If
         End Sub
 
         ''' <summary>
@@ -734,9 +740,7 @@ Namespace BTA_OSG
             s.PortalSettings.PortalEnabled = True
             s.PortalSettings.BaseUrl = LocalPortalBaseUrl
             s.PdfLinkSettings.ScansFolder = txtScansFolder.Text.Trim()
-            If String.IsNullOrWhiteSpace(s.PortalSettings.BridgeKey) OrElse String.Equals(s.PortalSettings.BridgeKey, PublishedDemoBridgeKey, StringComparison.OrdinalIgnoreCase) Then
-                s.PortalSettings.BridgeKey = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32)).ToLowerInvariant()
-            End If
+            EnsurePortalBridgeKey(s)
             AppSettings.Save(s)
             ShowSavedMessage("")
             Me.DialogResult = DialogResult.OK

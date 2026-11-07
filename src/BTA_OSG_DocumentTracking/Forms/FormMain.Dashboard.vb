@@ -38,8 +38,8 @@ Namespace BTA_OSG
             ' The four cards are office-wide counts; only the grid below follows the section
             ' and category filters, so the labels state their scope.
             lblStatTotalDocs = CreateStatCard(pnlCards, 0, "TOTAL OSG DOCUMENTS (ALL)", "0", CivicCalmTheme.ColorPrimary)
-            lblStatDirectives = CreateStatCard(pnlCards, 1, "PENDING REVIEW (ALL)", "0", CivicCalmTheme.ColorInfo)
-            lblStatActiveRoute = CreateStatCard(pnlCards, 2, "ACTION REQD (REVISION, ALL)", "0", CivicCalmTheme.ColorDanger)
+            lblStatForReview = CreateStatCard(pnlCards, 1, "PENDING REVIEW (ALL)", "0", CivicCalmTheme.ColorInfo)
+            lblStatForRevision = CreateStatCard(pnlCards, 2, "ACTION REQD (REVISION, ALL)", "0", CivicCalmTheme.ColorDanger)
             lblStatVaultStorage = CreateStatCard(pnlCards, 3, "APPROVED / RELEASED (ALL)", "0", CivicCalmTheme.ColorAccentSG)
 
             Dim pnlGridCard As New Panel With {
@@ -61,9 +61,10 @@ Namespace BTA_OSG
 
             Dim pnlFilterBar As New FlowLayoutPanel With {
                 .Dock = DockStyle.Top,
-                .Height = 36,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
                 .FlowDirection = FlowDirection.LeftToRight,
-                .WrapContents = False,
+                .WrapContents = True,
                 .BackColor = CivicCalmTheme.ColorSurface,
                 .Padding = New Padding(0, 2, 0, 4)
             }
@@ -108,32 +109,58 @@ Namespace BTA_OSG
             cmbDashCategory.SelectedIndex = 0
             AddHandler cmbDashCategory.SelectedIndexChanged, Sub() RefreshActiveTabGrid()
 
+            Dim lblStatusFilter As New Label With {
+                .Text = "Status:",
+                .UseMnemonic = False,
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .ForeColor = CivicCalmTheme.ColorInkMuted,
+                .AutoSize = True,
+                .Margin = New Padding(16, 6, 4, 0)
+            }
+            cmbDashStatus = New ComboBox With {
+                .DropDownStyle = ComboBoxStyle.DropDownList,
+                .Width = CInt(Dpi(150.0F)),
+                .Height = 28,
+                .Font = CivicCalmTheme.FontBody,
+                .BackColor = CivicCalmTheme.ColorSurface,
+                .ForeColor = CivicCalmTheme.ColorInk
+            }
+            ' Codes come from DocumentStatus (single source of truth); the grid filter
+            ' maps the chosen display name back through the same module.
+            cmbDashStatus.Items.Add("All Statuses")
+            For Each code In DocumentStatus.FilterableStatusCodes
+                cmbDashStatus.Items.Add(DocumentStatus.DisplayName(code))
+            Next
+            cmbDashStatus.SelectedIndex = 0
+            AddHandler cmbDashStatus.SelectedIndexChanged, Sub() RefreshActiveTabGrid()
+
+            chkDashOnlyMine = New CheckBox With {
+                .Text = "Assigned to &Me",
+                .AutoSize = True,
+                .Font = CivicCalmTheme.FontFieldLabel,
+                .ForeColor = CivicCalmTheme.ColorInk,
+                .Margin = New Padding(16, 7, 0, 0)
+            }
+            AddHandler chkDashOnlyMine.CheckedChanged, Sub() RefreshActiveTabGrid()
+
             btnDashResetFilters = CivicCalmTheme.CreateIconButton("&Reset Filters", "arrow-clockwise", 14, margin:=New Padding(16, 1, 0, 0))
             AddHandler btnDashResetFilters.Click, Sub()
                                                       cmbDashSection.SelectedIndex = 0
                                                       cmbDashCategory.SelectedIndex = 0
+                                                      cmbDashStatus.SelectedIndex = 0
+                                                      chkDashOnlyMine.Checked = False
                                                   End Sub
 
-            Dim btnPrintDashSlip As New Button With {
-                .Text = "&Print Slip",
-                .AutoSize = True,
-                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
-                .MinimumSize = New Size(0, 28),
-                .Font = CivicCalmTheme.FontMicrocopy,
-                .BackColor = CivicCalmTheme.ColorWell,
-                .ForeColor = CivicCalmTheme.ColorInk,
-                .FlatStyle = FlatStyle.Flat,
-                .Margin = New Padding(8, 1, 0, 0),
-                .Image = AppAssets.GetIcon("printer", 14, CivicCalmTheme.ColorInk),
-                .ImageAlign = ContentAlignment.MiddleLeft,
-                .TextAlign = ContentAlignment.MiddleCenter,
-                .TextImageRelation = TextImageRelation.ImageBeforeText,
-                .Padding = New Padding(4, 0, 4, 0)
-            }
-            btnPrintDashSlip.FlatAppearance.BorderColor = CivicCalmTheme.ColorBorder
+            Dim btnQuickView = CivicCalmTheme.CreateIconButton("&Quick View", "eye", 14, minHeight:=28, margin:=New Padding(8, 1, 0, 0))
+            AddHandler btnQuickView.Click, Sub() OpenSelectedDocumentQuickView(dgvDashRecent)
+
+            Dim btnPrintDashSlip = CivicCalmTheme.CreateIconButton("&Print Slip", "printer", 14, minHeight:=28, margin:=New Padding(8, 1, 0, 0))
             AddHandler btnPrintDashSlip.Click, Sub() PrintSelectedDocumentRoutingSlip(dgvDashRecent)
 
-            pnlFilterBar.Controls.AddRange(New Control() {lblSecFilter, cmbDashSection, lblCatFilter, cmbDashCategory, btnDashResetFilters, btnPrintDashSlip})
+            btnRouteSelected = CivicCalmTheme.CreateIconButton("Route &Selection", "arrows-split", 14, minHeight:=28, margin:=New Padding(8, 1, 0, 0))
+            AddHandler btnRouteSelected.Click, Sub() RouteSelectedDocuments(dgvDashRecent)
+
+            pnlFilterBar.Controls.AddRange(New Control() {lblSecFilter, cmbDashSection, lblCatFilter, cmbDashCategory, lblStatusFilter, cmbDashStatus, chkDashOnlyMine, btnDashResetFilters, btnQuickView, btnPrintDashSlip, btnRouteSelected})
 
             dgvDashRecent = New DataGridView With {
                 .Dock = DockStyle.Fill,
@@ -142,6 +169,7 @@ Namespace BTA_OSG
             }
             DataGridStyler.ApplyCivicStyle(dgvDashRecent)
             AddHandler dgvDashRecent.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenSelectedDocumentDetail(dgvDashRecent)
+            AddHandler dgvDashRecent.KeyDown, Sub(s, e) HandleDocumentGridKeys(dgvDashRecent, e)
 
             lblDashWatermark = CreateGridWatermark(pnlGridCard)
 

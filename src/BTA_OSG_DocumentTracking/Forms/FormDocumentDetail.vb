@@ -38,6 +38,7 @@ Namespace BTA_OSG
         Private btnMove As Button
         Private btnLaunchPdf As Button
         Private btnClose As Button
+        Private btnAckDirective As Button
 
         Private tabDetail As TabControl
         Private tabOverview As TabPage
@@ -173,33 +174,12 @@ Namespace BTA_OSG
             ' a refresh after an action only re-renders it when that tab is already on screen.
             If tabDetail.SelectedTab Is tabPreview Then LoadPreviewTab()
 
-            Dim dvDir As New DataView(EmbeddedDB.DataSet.Tables("Directives"))
-            dvDir.RowFilter = "DocumentID = " & DocID
-            ' Same chronological guarantee as the transit logs tab: mirror fills and offline
-            ' replay can land rows out of sequence, and the stamp sorts as text.
-            dvDir.Sort = "Timestamp ASC, DirectiveID ASC"
-            dvDir.RowFilter = "DocumentID = " & DocID
-            dgvDirectives.DataSource = dvDir
-            DataGridStyler.FormatDirectiveColumns(dgvDirectives)
-            ShowGridState(dgvDirectives, lblDirectivesWatermark, "No SG directives have been issued for this document.")
-
-            Dim dvRoute As New DataView(EmbeddedDB.DataSet.Tables("RoutingLogs"))
-            dvRoute.RowFilter = "DocumentID = " & DocID
-            ' The tab promises a chronological trail, but DataTable row order is fill order
-            ' (mirror merges and offline replay can both land out of sequence). The stamp is
-            ' written as "yyyy-MM-dd HH:mm:ss", so a string sort is a chronological sort.
-            dvRoute.Sort = "Timestamp ASC, RoutingID ASC"
-            dgvRouting.DataSource = dvRoute
-            DataGridStyler.FormatRoutingColumns(dgvRouting)
-            ShowGridState(dgvRouting, lblRoutingWatermark, "No transmittal logs yet. Route the document to begin its custody trail.")
-
-            Dim dvMove As New DataView(EmbeddedDB.DataSet.Tables("Movements"))
-            dvMove.RowFilter = "DocumentID = " & DocID
-            dvMove.Sort = "Timestamp ASC, MovementID ASC"
-            dvMove.RowFilter = "DocumentID = " & DocID
-            dgvMovements.DataSource = dvMove
-            DataGridStyler.FormatMovementColumns(dgvMovements)
-            ShowGridState(dgvMovements, lblMovementsWatermark, "The storage landmark has not moved since registration.")
+            BindChildGrid(dgvDirectives, lblDirectivesWatermark, "Directives", "DirectiveID", "DocumentID",
+                          AddressOf DataGridStyler.FormatDirectiveColumns, "No SG directives have been issued for this document.")
+            BindChildGrid(dgvRouting, lblRoutingWatermark, "RoutingLogs", "RoutingID", "DocumentID",
+                          AddressOf DataGridStyler.FormatRoutingColumns, "No transmittal logs yet. Route the document to begin its custody trail.")
+            BindChildGrid(dgvMovements, lblMovementsWatermark, "Movements", "MovementID", "DocumentID",
+                          AddressOf DataGridStyler.FormatMovementColumns, "The storage landmark has not moved since registration.")
 
             ' Calculate Step-by-Step Pipeline
             Dim currentDoc = GetCurrentDocumentObject()
@@ -224,6 +204,22 @@ Namespace BTA_OSG
 
             lblProgressBadge.Text = String.Format("{0}% Complete", pct)
             PopulateStepsGrid(steps)
+        End Sub
+
+        ''' <summary>
+        ''' Binds one child grid (directives, routing logs, movements) to this document's
+        ''' rows, formats it, and swaps in the watermark when the grid is empty.
+        ''' </summary>
+        Private Sub BindChildGrid(dgv As DataGridView, watermark As Label, tableName As String, sortColumn As String, idColumn As String, formatter As Action(Of DataGridView), emptyMessage As String)
+            Dim dv As New DataView(EmbeddedDB.DataSet.Tables(tableName))
+            ' Chronological-sort guarantee shared by all three child grids: mirror merges and
+            ' offline replay can land rows out of sequence, and the stamp is written as
+            ' "yyyy-MM-dd HH:mm:ss", so a string sort is a chronological sort.
+            dv.RowFilter = idColumn & " = " & DocID
+            dv.Sort = "Timestamp ASC, " & sortColumn & " ASC"
+            dgv.DataSource = dv
+            formatter(dgv)
+            ShowGridState(dgv, watermark, emptyMessage)
         End Sub
 
         ' The embedded browser pays its navigation cost only when the operator actually opens

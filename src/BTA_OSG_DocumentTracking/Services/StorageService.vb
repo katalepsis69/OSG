@@ -57,12 +57,5 @@ Namespace BTA_OSG
             Return movement
         End Function
 
-        Public Function GetMovementHistory(docId As Integer) As List(Of DocumentMovement)
-            Return _storageRepo.GetMovements(docId)
-        End Function
-
-        Public Function GetAllLocations() As List(Of StorageLocation)
-            Return _storageRepo.GetAll()
-        End Function
     End Class
 End Namespace

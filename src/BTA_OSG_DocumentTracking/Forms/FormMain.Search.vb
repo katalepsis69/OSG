@@ -1,4 +1,4 @@
-Option Explicit On
+﻿Option Explicit On
 Option Strict On
 
 Imports System
@@ -100,6 +100,7 @@ Namespace BTA_OSG
             }
             DataGridStyler.ApplyCivicStyle(dgvSearch)
             AddHandler dgvSearch.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenSelectedDocumentDetail(dgvSearch)
+            AddHandler dgvSearch.KeyDown, Sub(s, e) HandleDocumentGridKeys(dgvSearch, e)
 
             lblSearchWatermark = CreateGridWatermark(pnlGridCard)
 
@@ -144,7 +145,9 @@ Namespace BTA_OSG
                     Dim safeQ = EscapeRowFilter(rawQuery)
                     ' The DataView from GetVisibleDocuments is created per call, so setting its
                     ' RowFilter here cannot leak the filter into the dashboard or registry grids.
-                    visibleView.RowFilter = String.Format("DocCode LIKE '%{0}%' OR Title LIKE '%{0}%' OR DocType LIKE '%{0}%' OR CabinetID LIKE '%{0}%' OR OriginatingOffice LIKE '%{0}%' OR DestinationOffice LIKE '%{0}%' OR AssignedStaff LIKE '%{0}%'", safeQ)
+                    ' Storage landmarks and the external portal control number are searchable
+                    ' because storage clerks and portal submitters look documents up by them.
+                    visibleView.RowFilter = String.Format("DocCode LIKE '%{0}%' OR Title LIKE '%{0}%' OR DocType LIKE '%{0}%' OR CabinetID LIKE '%{0}%' OR ShelfNo LIKE '%{0}%' OR BoxCode LIKE '%{0}%' OR ExternalControlNumber LIKE '%{0}%' OR OriginatingOffice LIKE '%{0}%' OR DestinationOffice LIKE '%{0}%' OR AssignedStaff LIKE '%{0}%'", safeQ)
                     dgvSearch.DataSource = visibleView
                     lblStatusMessage.Text = String.Format("Search complete for '{0}'.", rawQuery)
                 Catch ex As Exception
@@ -164,7 +167,7 @@ Namespace BTA_OSG
 
         Private Sub OnOpenPDF(sender As Object, e As EventArgs)
             If dgvSearch.CurrentRow Is Nothing Then
-                lblStatusMessage.Text = "Please select a document row from the grid first."
+                ReportStatus("Please select a document row from the grid first.")
                 Return
             End If
 
@@ -174,7 +177,7 @@ Namespace BTA_OSG
                 canSoftCopy = Convert.ToBoolean(CurrentUser("CanSoftCopy"))
             End If
             If Not canSoftCopy Then
-                lblStatusMessage.Text = "Access Denied: Current user does not have permission to view or launch soft-copy attachments."
+                ReportRefusal("Access Denied: Current user does not have permission to view or launch soft-copy attachments.")
                 Return
             End If
 

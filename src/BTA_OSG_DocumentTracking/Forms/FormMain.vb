@@ -1,4 +1,4 @@
-Option Explicit On
+﻿Option Explicit On
 Option Strict On
 
 Imports System
@@ -53,6 +53,20 @@ Namespace BTA_OSG
         Private _auditView As DataView
         Private tmrResizeRefresh As Timer
 
+        ' "New documents routed to me" signal: the sync diff feeds a nav badge plus one
+        ' chime. _ownDocIds holds document ids this seat itself created (registration,
+        ' portal import) so acting on a document never announces it back at you.
+        Private _pendingNewForMe As Integer
+        Private _lastMyDocIds As HashSet(Of Integer)
+        Private ReadOnly _ownDocIds As New HashSet(Of Integer)()
+
+        ' Transient confirmations: the clock timer watches the status text; when a neutral
+        ' (ink-colored) message sits unchanged past the window it returns to the ready line.
+        ' Warnings and refusals keep their color and never auto-expire by design.
+        Private _lastStatusText As String = ""
+        Private _statusShownAtUtc As DateTime = DateTime.UtcNow
+        Private _readyStatusText As String = "Ready"
+
         ' Header Controls
         Private lblTitle As Label
         Private lblUserBadge As Label
@@ -92,12 +106,15 @@ Namespace BTA_OSG
 
         ' Dashboard Controls
         Private lblStatTotalDocs As Label
-        Private lblStatDirectives As Label
-        Private lblStatActiveRoute As Label
+        Private lblStatForReview As Label
+        Private lblStatForRevision As Label
         Private lblStatVaultStorage As Label
         Private cmbDashSection As ComboBox
         Private cmbDashCategory As ComboBox
+        Private cmbDashStatus As ComboBox
+        Private chkDashOnlyMine As CheckBox
         Private btnDashResetFilters As Button
+        Private btnRouteSelected As Button
         Private dgvDashRecent As DataGridView
         Private lblDashWatermark As Label
 
@@ -120,6 +137,7 @@ Namespace BTA_OSG
         Private dgvRegistry As DataGridView
         Private lblRegistryWatermark As Label
         Private btnViewRegistryDetail As Button
+        Private btnRouteRegistrySelected As Button
 
         ' Directives Controls
         Private cmbDirDocs As ComboBox
@@ -240,6 +258,7 @@ Namespace BTA_OSG
             SetupAdminView()
             SetupAuditView()
             SetupPortalIntakeView()
+            ApplySavedDashboardUiState()
 
             ' Buffer every container once so maximize/restore repaints atomically instead of
             ' flashing through half-painted panels and borders.
@@ -313,6 +332,7 @@ Namespace BTA_OSG
 
             stsFooter.Items.AddRange(New ToolStripItem() {lblStatusMessage, lblStatusCount, lblDbState, lblVersion, lblStatusClock})
             Me.Controls.Add(stsFooter)
+            _readyStatusText = "Ready " & dbBadge
 
             tmrClock = New Timer With {
                 .Interval = 1000,
@@ -325,6 +345,7 @@ Namespace BTA_OSG
                                           If lblDbState IsNot Nothing AndAlso Not Me.IsDisposed Then
                                               lblDbState.Text = If(Program.IsDatabaseConnected, "[ DB: SQL Server Connected ]", "[ DB: Offline Embedded Cache ]")
                                           End If
+                                          ExpireTransientStatus()
                                           EnforceSessionTimeout()
                                       End Sub
 
@@ -367,7 +388,7 @@ Namespace BTA_OSG
                              Me.BeginInvoke(Sub()
                                                 If Not Me.IsDisposed AndAlso Me.IsHandleCreated AndAlso lblPortalStatus IsNot Nothing Then
                                                     lblPortalStatus.Text = "Portal Bridge: Offline / Unreachable"
-                                                    lblStatusMessage.Text = "Portal polling failed: " & ex.Message
+                                                    ShowOperatorWarning("Portal polling failed: " & ex.Message)
                                                 End If
                                             End Sub)
                          Finally
@@ -393,7 +414,9 @@ Namespace BTA_OSG
                 If snapshot Is Nothing OrElse Me.IsDisposed Then Return
                 ApplySqlMirror(snapshot)
             Catch ex As Exception
-                System.Diagnostics.Trace.WriteLine("SQL mirror sync failed: " & ex.Message)
+                ' Trace alone reaches nobody in a WinExe: route the failure through the
+                ' operator banner sink so a silently-stale seat is at least announced.
+                Program.ReportOperatorWarning("SQL mirror sync failed: " & ex.Message)
             Finally
                 System.Threading.Interlocked.Exchange(_sqlSyncInFlight, 0)
             End Try
@@ -411,6 +434,7 @@ Namespace BTA_OSG
             ' A heartbeat-only tick may still matter to the Admin tab, whose seat grid
             ' recomputes staleness at bind time.
             changedTables.Remove("Heartbeat")
+            NotifyNewDocumentsForMe()
             If changedTables.Count = 0 Then
                 If activeNavIndex = 5 Then RefreshActiveTabGrid()
                 Return
@@ -422,25 +446,58 @@ Namespace BTA_OSG
         End Sub
 
         ''' <summary>
-        ''' The configured inactivity timeout is enforced here: the clock timer checks real
-        ''' user input (UiActivityMonitor) every second and ends the session when the desk
-        ''' has been idle past the limit. Until this existed the TimeoutMinutes setting had
-        ''' no caller and sessions lived until manual logout.
+        ''' Diff the "documents assigned to me" set against the previous sync tick. New ids
+        ''' this seat did not create itself raise the Document Registry nav badge, one
+        ''' chime, and a status line; opening the Dashboard or Registry clears the badge.
         ''' </summary>
-        Private Sub EnforceSessionTimeout()
-            If CurrentUser Is Nothing OrElse Me.IsDisposed Then Return
-            Dim timeoutMinutes = AppSettings.Instance.SessionSettings.TimeoutMinutes
-            If timeoutMinutes <= 0 Then Return
-            If UiActivityMonitor.Instance.IdleSeconds < timeoutMinutes * 60 Then Return
+        Private Sub NotifyNewDocumentsForMe()
+            If CurrentUser Is Nothing OrElse Me.IsDisposed Then
+                _lastMyDocIds = Nothing
+                Return
+            End If
+            Dim myName = CurrentUser("FullName").ToString()
+            Dim currentIds As New HashSet(Of Integer)()
+            SyncLock EmbeddedDB.SyncRoot
+                Dim dt = EmbeddedDB.DataSet.Tables("Documents")
+                If dt Is Nothing OrElse Not dt.Columns.Contains("AssignedStaff") Then Return
+                For Each row As DataRow In dt.Select(String.Format("AssignedStaff = '{0}'", myName.Replace("'", "''")))
+                    currentIds.Add(Convert.ToInt32(row("DocumentID")))
+                Next
+            End SyncLock
 
-            Dim who As String = "Unknown Staff"
-            Try
-                who = CurrentUser("FullName").ToString()
-            Catch
-            End Try
-            EmbeddedDB.LogAudit(who, String.Format("Session ended automatically after {0} minutes of inactivity.", timeoutMinutes), userId:=0, actionType:="SESSION_TIMEOUT")
-            AuthenticateUser("")
-            lblStatusMessage.Text = String.Format("Session timed out after {0} minutes of inactivity. Tap your RFID card to sign in again.", timeoutMinutes)
+            If _lastMyDocIds IsNot Nothing Then
+                Dim fresh As New List(Of Integer)()
+                For Each id In currentIds
+                    If Not _lastMyDocIds.Contains(id) AndAlso Not _ownDocIds.Contains(id) Then fresh.Add(id)
+                Next
+                If fresh.Count > 0 Then
+                    _pendingNewForMe += fresh.Count
+                    UpdateRegistryNavBadge()
+                    ReportStatus(String.Format("{0} new document(s) routed to you. Open the Document Registry to see them.", fresh.Count))
+                    System.Media.SystemSounds.Asterisk.Play()
+                End If
+            End If
+            _lastMyDocIds = currentIds
+        End Sub
+
+        Private Sub UpdateRegistryNavBadge()
+            If navButtons Is Nothing OrElse navButtons.Count <= 2 Then Return
+            Dim btn = navButtons(2)
+            If _pendingNewForMe > 0 Then
+                btn.Text = String.Format("Document Registry ({0} new)", _pendingNewForMe)
+                tipNav.SetToolTip(btn, String.Format("Document Registry ({0} new document(s) routed to you)", _pendingNewForMe))
+            Else
+                btn.Text = "Document Registry"
+                tipNav.SetToolTip(btn, Nothing)
+            End If
+        End Sub
+
+        Private Sub MarkDocumentAsOwn(docCode As String)
+            If String.IsNullOrWhiteSpace(docCode) Then Return
+            SyncLock EmbeddedDB.SyncRoot
+                Dim rows = EmbeddedDB.DataSet.Tables("Documents").Select(String.Format("DocCode = '{0}'", docCode.Replace("'", "''")))
+                If rows.Length > 0 Then _ownDocIds.Add(Convert.ToInt32(rows(0)("DocumentID")))
+            End SyncLock
         End Sub
 
         Private Sub ShowOperatorWarningThreadSafe(message As String)
@@ -457,39 +514,34 @@ Namespace BTA_OSG
             lblStatusMessage.ForeColor = CivicCalmTheme.ColorWarning
         End Sub
 
+        ''' <summary>
+        ''' DESIGN 6.1 transient confirmations: any neutral-colored status text that sits
+        ''' unchanged for a while returns to the ready line. The write sites stay untouched
+        ''' (the clock compares the label text each tick); warnings and access refusals
+        ''' carry warning/danger colors and are exempt, because they name live problems.
+        ''' </summary>
+        Private Sub ExpireTransientStatus()
+            If lblStatusMessage Is Nothing OrElse Me.IsDisposed Then Return
+            Dim text = lblStatusMessage.Text
+            If text <> _lastStatusText Then
+                _lastStatusText = text
+                _statusShownAtUtc = DateTime.UtcNow
+                Return
+            End If
+            If text.Length = 0 OrElse text = _readyStatusText Then Return
+            If lblStatusMessage.ForeColor <> CivicCalmTheme.ColorInk Then Return
+            If (DateTime.UtcNow - _statusShownAtUtc).TotalSeconds < 8 Then Return
+            lblStatusMessage.Text = _readyStatusText
+            _lastStatusText = _readyStatusText
+        End Sub
+
         Private Sub OnCacheSaveFailed(message As String)
             ShowOperatorWarningThreadSafe("WARNING: local offline cache could not be saved (" & message & "). Recent offline work is at risk until this is resolved.")
         End Sub
 
-        ''' <summary>
-        ''' The session row is captured at login, while the mirror moves Users rows from
-        ''' cache-local ids onto SQL identities. Re-point it at the mirrored row for the same
-        ''' badge so UserID stays the SQL identity every write path puts into a foreign key.
-        ''' When the mirrored table no longer carries the badge (disabled account) the held
-        ''' row is detached and every later read throws RowNotInTableException, so the
-        ''' session drops to the logged-out state that every CurrentUser call site checks
-        ''' for. The drop is now announced on the status banner: offline enrolments replay
-        ''' to SQL before the pull, so a vanished badge means the account was disabled.
-        ''' </summary>
-        Private Sub RebindCurrentUser()
-            If CurrentUser Is Nothing Then Return
-            If Not CurrentUser.Table.Columns.Contains("RFID_UID") Then Return
-            Dim uid = CurrentUser("RFID_UID").ToString()
-            If String.IsNullOrWhiteSpace(uid) Then Return
-            Dim match = EmbeddedDB.DataSet.Tables("Users").Select(String.Format("RFID_UID = '{0}' AND IsActive = True", uid.Replace("'", "''")))
-            If match.Length > 0 Then
-                CurrentUser = match(0)
-            Else
-                System.Diagnostics.Trace.WriteLine("Session badge " & uid & " is not in the mirrored user list; ending the session view.")
-                CurrentUser = Nothing
-                lblUserBadge.Text = "[ RFID Logged Out: Access Restricted ]"
-                lblUserBadge.ForeColor = CivicCalmTheme.ColorDanger
-                lblStatusMessage.Text = "Session ended: your badge is no longer active in the user registry."
-            End If
-        End Sub
-
         Protected Overrides Sub OnFormClosing(e As FormClosingEventArgs)
             SaveWindowBounds()
+            SaveDashboardUiState()
             ' Flush deferred embedded-store writes (mutations batch via EmbeddedDB.MarkDirty).
             EmbeddedDB.Save()
             If tmrPortalPoll IsNot Nothing Then
@@ -670,6 +722,11 @@ Namespace BTA_OSG
                 Return
             End If
             activeNavIndex = index
+            ' The operator is now looking at the documents the badge was pointing at.
+            If index = 0 OrElse index = 2 Then
+                _pendingNewForMe = 0
+                UpdateRegistryNavBadge()
+            End If
             For i As Integer = 0 To navButtons.Count - 1
                 If i = index Then
                     navButtons(i).BackColor = CivicCalmTheme.ColorPrimarySoft
@@ -806,134 +863,35 @@ Namespace BTA_OSG
             Me.Controls.Add(pnlHeader)
         End Sub
 
-        Private Sub ShowRFIDLoginDialog()
-            Using dlg As New FormLogin()
-                If dlg.ShowDialog(Me) = DialogResult.OK AndAlso Not String.IsNullOrEmpty(dlg.ScannedUID) Then
-                    AuthenticateUser(dlg.ScannedUID, dlg.PickedOnScreen)
-                End If
-            End Using
-        End Sub
-
-        Public Sub AuthenticateUser(uid As String, Optional simulated As Boolean = False)
-            If String.IsNullOrEmpty(uid) Then
-                If CurrentUser IsNot Nothing Then
-                    Dim who As String = ""
-                    Try
-                        who = CurrentUser("FullName").ToString()
-                    Catch
-                    End Try
-                    EmbeddedDB.LogAudit(who, "User logged out.", actionType:="LOGOUT")
-                End If
-                CurrentUser = Nothing
-                lblUserBadge.Text = "[ RFID Logged Out: Access Restricted ]"
-                lblUserBadge.ForeColor = CivicCalmTheme.ColorDanger
-                lblStatusMessage.Text = "User logged out."
-                If cmbDashSection IsNot Nothing Then
-                    cmbDashSection.Enabled = True
-                    cmbDashSection.SelectedIndex = 0
-                End If
-            Else
-                Dim maskedUid As String = If(uid.Length > 4, "****" & uid.Substring(uid.Length - 4), uid)
-                Dim user = EmbeddedDB.AuthenticateRFID(uid)
-                If user IsNot Nothing Then
-                    ' The mirror carries IsLocked: a locked account must not unlock itself by
-                    ' tapping, and the success path below clears the SQL-side counter, which
-                    ' would reset the lock along with it. Refuse here instead.
-                    If user.Table.Columns.Contains("IsLocked") AndAlso Not IsDBNull(user("IsLocked")) AndAlso Convert.ToBoolean(user("IsLocked")) Then
-                        EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Blocked: account is locked [Card: " & maskedUid & "]", actionType:="LOGIN_LOCKED")
-                        lblStatusMessage.Text = "Access Denied: this account is locked after repeated failed badge reads. Ask a System Administrator to unlock it."
-                        lblStatusMessage.ForeColor = CivicCalmTheme.ColorDanger
-                        Return
-                    End If
-                    CurrentUser = user
-                    Dim role = user("Role").ToString()
-                    Dim office = If(user.Table.Columns.Contains("Office") AndAlso Not IsDBNull(user("Office")), user("Office").ToString(), "")
-                    Dim effectiveDesk = If(Not String.IsNullOrWhiteSpace(office), office, role)
-                    Dim isGlobal As Boolean = (role = "Secretary-General" OrElse role = "System Administrator" OrElse role = "OSG Chief")
-                    Dim displayRole = If(Not String.IsNullOrWhiteSpace(office) AndAlso Not office.Equals(role, StringComparison.OrdinalIgnoreCase), String.Format("{0} - {1}", role.ToUpperInvariant(), office.ToUpperInvariant()), role.ToUpperInvariant())
-                    lblUserBadge.Text = String.Format("AUTHENTICATED: {0} [{1}] : {2}", user("FullName").ToString().ToUpperInvariant(), displayRole, If(isGlobal, "GLOBAL ACCESS", "SECTION DESK VIEW"))
-                    lblUserBadge.ForeColor = CivicCalmTheme.ColorPrimary
-                    lblStatusMessage.Text = "Authenticated: " & user("FullName").ToString()
-                    lblStatusMessage.ForeColor = CivicCalmTheme.ColorInk
-                    EmbeddedDB.LogAudit(user("FullName").ToString(), If(simulated,
-                        "On-screen badge selection authenticated [Card: " & maskedUid & "] (no reader tap)",
-                        "RFID Badge Tap Authenticated [Card: " & maskedUid & "]"), actionType:="LOGIN_SUCCESS")
-
-                    ' Successful tap clears the SQL-side failed tap counter so the per-user
-                    ' lockout (tbl_Users.FailedTapCount) tracks live state, not stale counts.
-                    If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
-                        Try
-                            Dim userId = If(user.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(user("UserID")), Convert.ToInt32(user("UserID")), 0)
-                            If userId > 0 Then AppStartup.UserRepo.ResetFailedTaps(userId)
-                        Catch
-                        End Try
-                    End If
-
-                    If cmbDashSection IsNot Nothing Then
-                        If isGlobal Then
-                            cmbDashSection.Enabled = True
-                        Else
-                            If effectiveDesk.EndsWith("Section", StringComparison.OrdinalIgnoreCase) OrElse effectiveDesk.Equals("Secretariat", StringComparison.OrdinalIgnoreCase) Then
-                                Dim idx = cmbDashSection.Items.IndexOf(effectiveDesk)
-                                If idx >= 0 Then
-                                    cmbDashSection.SelectedIndex = idx
-                                End If
-                            End If
-                            cmbDashSection.Enabled = False
-                        End If
-                    End If
-                Else
-                    ' A cache miss with a live SQL host means one of two things: a truly
-                    ' unknown card, or a badge the server knows but this seat's Users mirror
-                    ' predates. GetByCardPublicID only matches active badges, so a hit here is
-                    ' the stale-mirror case: the owner must not be punished for the seat's
-                    ' lag. Refresh the mirror and invite a second tap instead of counting a
-                    ' failed tap against the account.
-                    Dim staleMirrorResolved As Boolean = False
-                    If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
-                        Try
-                            Dim knownUser = AppStartup.UserRepo.GetByCardPublicID(uid.Trim().ToUpperInvariant())
-                            If knownUser IsNot Nothing Then
-                                If Program.Coordinator IsNot Nothing Then Program.Coordinator.RefreshFromServer("Users")
-                                EmbeddedDB.LogAudit("SYSTEM", "Badge recognized on the server; this seat's staff mirror was stale and has been refreshed [Card: " & maskedUid & "]", actionType:="MIRROR_REFRESH")
-                                lblStatusMessage.Text = "This badge is valid on the server; the seat's staff list was stale and has been refreshed. Tap the badge again."
-                                lblStatusMessage.ForeColor = CivicCalmTheme.ColorWarning
-                                staleMirrorResolved = True
-                            End If
-                        Catch
-                        End Try
-                    End If
-                    If Not staleMirrorResolved Then
-                        If EmbeddedDB.IsTerminalLockedOut() Then
-                            lblStatusMessage.Text = "Security Lockout: Terminal locked for 5 minutes due to 5 consecutive failed card reads."
-                            MessageBox.Show("Terminal has been temporarily locked out due to 5 consecutive failed RFID smart card badge reads. Please notify the System Administrator or wait 5 minutes.", "Security Lockout", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                        Else
-                            lblStatusMessage.Text = "Access Denied: Unrecognized RFID card [" & maskedUid & "]"
-                            MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & maskedUid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                        End If
-                    End If
-                End If
-            End If
-            PopulateStaffDropdowns()
-            RefreshActiveTabGrid()
-        End Sub
-
         Public Sub PopulateStaffDropdowns()
             Dim prevStaff = If(cmbAssignedStaff.SelectedItem, "").ToString()
             Dim prevDirAssign = If(cmbDirAssign.SelectedItem, "").ToString()
+
+            ' The replay worker mutates the Users table under the store lock; snapshot the
+            ' names under the same lock so the UI enumeration cannot race a row insertion.
+            Dim staffNames As New List(Of String)()
+            SyncLock EmbeddedDB.SyncRoot
+                For Each row As DataRow In EmbeddedDB.DataSet.Tables("Users").Rows
+                    staffNames.Add(row("FullName").ToString())
+                Next
+            End SyncLock
 
             cmbAssignedStaff.BeginUpdate()
             cmbDirAssign.BeginUpdate()
             Try
                 cmbAssignedStaff.Items.Clear()
                 cmbDirAssign.Items.Clear()
-                For Each row As DataRow In EmbeddedDB.DataSet.Tables("Users").Rows
-                    Dim name = row("FullName").ToString()
+                For Each name As String In staffNames
                     cmbAssignedStaff.Items.Add(name)
                     cmbDirAssign.Items.Add(name)
                 Next
 
                 Dim staffIdx = If(Not String.IsNullOrEmpty(prevStaff), cmbAssignedStaff.Items.IndexOf(prevStaff), -1)
+                If staffIdx < 0 AndAlso CurrentUser IsNot Nothing Then
+                    ' Batch registration keeps retyping the same office; the assignee is the
+                    ' one thing that should default to the person at the keyboard.
+                    staffIdx = cmbAssignedStaff.Items.IndexOf(CurrentUser("FullName").ToString())
+                End If
                 If staffIdx >= 0 Then
                     cmbAssignedStaff.SelectedIndex = staffIdx
                 ElseIf cmbAssignedStaff.Items.Count > 0 Then
@@ -977,8 +935,28 @@ Namespace BTA_OSG
             Return lbl
         End Function
 
+        ''' <summary>
+        ''' Neutral status confirmations: ink-colored (they expire back to the ready line
+        ''' via ExpireTransientStatus) and the expiry clock restarts even when the text is
+        ''' unchanged, so a repeated message never dies on its predecessor's clock.
+        ''' </summary>
         Public Sub ReportStatus(message As String)
             lblStatusMessage.Text = message
+            lblStatusMessage.ForeColor = CivicCalmTheme.ColorInk
+            _lastStatusText = message
+            _statusShownAtUtc = DateTime.UtcNow
+        End Sub
+
+        ''' <summary>
+        ''' Access refusals and validation rejections: danger-colored and never
+        ''' auto-expired, per the transient-status contract (warnings and refusals keep
+        ''' their color until the next writer replaces them).
+        ''' </summary>
+        Public Sub ReportRefusal(message As String)
+            lblStatusMessage.Text = message
+            lblStatusMessage.ForeColor = CivicCalmTheme.ColorDanger
+            _lastStatusText = message
+            _statusShownAtUtc = DateTime.UtcNow
         End Sub
 
         ''' <summary>
@@ -1008,7 +986,7 @@ Namespace BTA_OSG
 
         Public Sub OpenSelectedDocumentDetail(dgv As DataGridView)
             If dgv Is Nothing OrElse dgv.CurrentRow Is Nothing OrElse dgv.CurrentRow.Cells("DocumentID").Value Is Nothing OrElse IsDBNull(dgv.CurrentRow.Cells("DocumentID").Value) Then
-                lblStatusMessage.Text = "Please select a document row from the grid first."
+                ReportStatus("Please select a document row from the grid first.")
                 Return
             End If
 
@@ -1017,7 +995,7 @@ Namespace BTA_OSG
             ' re-filters it; the dialog constructor would dispose itself and ShowDialog
             ' would throw on a dead object.
             If EmbeddedDB.GetDocumentByID(docId) Is Nothing Then
-                lblStatusMessage.Text = "This document is no longer available. Refresh the grid and try again."
+                ReportStatus("This document is no longer available. Refresh the grid and try again.")
                 Return
             End If
             Using dlg As New FormDocumentDetail(docId, Me)
@@ -1028,7 +1006,7 @@ Namespace BTA_OSG
 
         Public Sub PrintSelectedDocumentRoutingSlip(dgv As DataGridView)
             If dgv Is Nothing OrElse dgv.CurrentRow Is Nothing OrElse dgv.CurrentRow.Cells("DocumentID").Value Is Nothing OrElse IsDBNull(dgv.CurrentRow.Cells("DocumentID").Value) Then
-                lblStatusMessage.Text = "Please select a document row from the grid first to print routing slip."
+                ReportStatus("Please select a document row from the grid first to print routing slip.")
                 Return
             End If
 
@@ -1049,6 +1027,8 @@ Namespace BTA_OSG
 
             Dim selSec As String = If(cmbDashSection IsNot Nothing AndAlso cmbDashSection.SelectedItem IsNot Nothing, cmbDashSection.SelectedItem.ToString(), "")
             Dim selCat As String = If(cmbDashCategory IsNot Nothing AndAlso cmbDashCategory.SelectedItem IsNot Nothing, cmbDashCategory.SelectedItem.ToString(), "")
+            Dim selStatusCode As String = SelectedDashboardStatusCode()
+            Dim mineOnly As Boolean = chkDashOnlyMine IsNot Nothing AndAlso chkDashOnlyMine.Checked AndAlso CurrentUser IsNot Nothing
             ' Reuse one view across sync ticks: the mirror merge updates the underlying table
             ' in place, so a bound view stays current without a rebuild. Recreate only when
             ' the session or the dashboard filters change.
@@ -1057,9 +1037,9 @@ Namespace BTA_OSG
                 Dim office = If(CurrentUser.Table.Columns.Contains("Office") AndAlso Not IsDBNull(CurrentUser("Office")), CurrentUser("Office").ToString(), "")
                 sessionKey = CurrentUser("FullName").ToString() & "|" & CurrentUser("Role").ToString() & "|" & office
             End If
-            Dim viewKey = sessionKey & "|" & selSec & "|" & selCat
+            Dim viewKey = sessionKey & "|" & selSec & "|" & selCat & "|" & selStatusCode & "|" & mineOnly.ToString()
             If _activeDocsView Is Nothing OrElse viewKey <> _activeDocsViewKey Then
-                _activeDocsView = EmbeddedDB.GetVisibleDocuments(CurrentUser, selSec, selCat)
+                _activeDocsView = EmbeddedDB.GetVisibleDocuments(CurrentUser, selSec, selCat, If(mineOnly, CurrentUser("FullName").ToString(), ""), selStatusCode)
                 _activeDocsViewKey = viewKey
             End If
             Dim visibleDocs = _activeDocsView
@@ -1119,8 +1099,8 @@ Namespace BTA_OSG
             End SyncLock
 
             lblStatTotalDocs.Text = allDocs.Rows.Count.ToString()
-            lblStatDirectives.Text = forReviewCount.ToString()
-            lblStatActiveRoute.Text = forRevisionCount.ToString()
+            lblStatForReview.Text = forReviewCount.ToString()
+            lblStatForRevision.Text = forRevisionCount.ToString()
             lblStatVaultStorage.Text = approvedReleasedCount.ToString()
             BindGridWithState(dgvDashRecent, lblDashWatermark, visibleDocs, AddressOf DataGridStyler.FormatDocumentColumns, "")
         End Sub
@@ -1133,9 +1113,7 @@ Namespace BTA_OSG
         Private Sub RefreshDirectivesGrid(visibleDocs As DataView)
             Dim previousDocId As Integer = 0
             If cmbDirDocs.SelectedItem IsNot Nothing Then
-                Dim selectedStr = cmbDirDocs.SelectedItem.ToString()
-                Dim match = System.Text.RegularExpressions.Regex.Match(selectedStr, "^ID (\d+):")
-                If match.Success Then Integer.TryParse(match.Groups(1).Value, previousDocId)
+                previousDocId = DocumentIdFromComboItem(cmbDirDocs.SelectedItem.ToString())
             End If
 
             cmbDirDocs.BeginUpdate()
@@ -1216,9 +1194,25 @@ Namespace BTA_OSG
         End Sub
 
         Protected Overrides Function ProcessCmdKey(ByRef msg As Message, keyData As Keys) As Boolean
+            ' Ctrl+1..8 jumps straight to the sidebar views in their visual order. Gated
+            ' views stay out (the switch itself re-checks privilege), and feature-gated
+            ' buttons only respond while they are visible.
+            If (keyData And Keys.Control) = Keys.Control AndAlso keyData >= (Keys.Control Or Keys.D1) AndAlso keyData <= (Keys.Control Or Keys.D8) Then
+                Dim navIndex = CInt(keyData And Keys.KeyCode) - CInt(Keys.D1)
+                If navIndex >= 0 AndAlso navIndex < navButtons.Count AndAlso navButtons(navIndex).Visible Then
+                    SwitchNavView(navIndex)
+                    Return True
+                End If
+            End If
             If keyData = (Keys.Alt Or Keys.C) Then
-                ClearActiveViewFilters()
-                Return True
+                ' Only claim Alt+C while the active view actually has filters: command keys
+                ' resolve before mnemonics, so an unconditional claim deadens every &C
+                ' control on views without filters (the Portal's Cloudflare Tunnel among them).
+                Select Case activeNavIndex
+                    Case 0, 1, 2, 4, 6
+                        ClearActiveViewFilters()
+                        Return True
+                End Select
             End If
             If keyData = (Keys.Alt Or Keys.R) AndAlso activeViewRetry IsNot Nothing Then
                 ' Only claim Alt+R while a view actually has a retry to run: command keys
@@ -1250,6 +1244,20 @@ Namespace BTA_OSG
             End Select
             lblStatusMessage.Text = "Filters cleared for the current view."
         End Sub
+
+        ''' <summary>
+        ''' Resolves the dashboard status combo back to its canonical status code, "" for
+        ''' the all-statuses entry. Display names map through DocumentStatus, never a
+        ''' second code list.
+        ''' </summary>
+        Private Function SelectedDashboardStatusCode() As String
+            If cmbDashStatus Is Nothing OrElse cmbDashStatus.SelectedItem Is Nothing Then Return ""
+            Dim selectedName = cmbDashStatus.SelectedItem.ToString()
+            For Each code In DocumentStatus.FilterableStatusCodes
+                If DocumentStatus.DisplayName(code).Equals(selectedName, StringComparison.OrdinalIgnoreCase) Then Return code
+            Next
+            Return ""
+        End Function
 
         Protected Overrides Sub Dispose(disposing As Boolean)
             If disposing Then

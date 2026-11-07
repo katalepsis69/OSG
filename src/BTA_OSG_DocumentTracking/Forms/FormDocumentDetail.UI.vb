@@ -175,7 +175,24 @@ Namespace BTA_OSG
             dgvDirectives = CreateDetailGrid()
             dgvMovements = CreateDetailGrid()
 
+            ' The acknowledge strip sits under the directives grid: the assignee confirms
+            ' they have seen the directive and the confirmation lands in the audit trail.
+            Dim flwDirActions As New FlowLayoutPanel With {
+                .Dock = DockStyle.Bottom,
+                .FlowDirection = FlowDirection.LeftToRight,
+                .WrapContents = False,
+                .AutoSize = True,
+                .AutoSizeMode = AutoSizeMode.GrowAndShrink,
+                .BackColor = CivicCalmTheme.ColorSurface,
+                .Padding = New Padding(12, 6, 12, 6)
+            }
+            btnAckDirective = CivicCalmTheme.CreateIconButton("&Acknowledge Directive", "check", 16, minHeight:=32)
+            AddHandler btnAckDirective.Click, AddressOf OnAcknowledgeDirective
+            AddHandler dgvDirectives.SelectionChanged, Sub() UpdateAcknowledgeButtonState()
+            flwDirActions.Controls.Add(btnAckDirective)
+
             tabDirectives.Controls.Add(dgvDirectives)
+            tabDirectives.Controls.Add(flwDirActions)
             lblDirectivesWatermark = CreateWatermarkLabel()
             tabDirectives.Controls.Add(lblDirectivesWatermark)
             SetupRoutingTab()
@@ -525,51 +542,7 @@ Namespace BTA_OSG
 
             dgvSteps.DataSource = dt
             ShowGridState(dgvSteps, lblStepsWatermark, "Pipeline steps appear here once the document is registered.")
-
-            If dgvSteps.Columns.Contains("StepNo") Then
-                dgvSteps.Columns("StepNo").HeaderText = "Step"
-                dgvSteps.Columns("StepNo").MinimumWidth = 60
-                dgvSteps.Columns("StepNo").FillWeight = 40
-                dgvSteps.Columns("StepNo").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-            End If
-            If dgvSteps.Columns.Contains("Stage") Then
-                dgvSteps.Columns("Stage").HeaderText = "Stage / Station"
-                dgvSteps.Columns("Stage").MinimumWidth = 190
-                dgvSteps.Columns("Stage").FillWeight = 140
-                dgvSteps.Columns("Stage").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-            End If
-            If dgvSteps.Columns.Contains("ResponsibleOffice") Then
-                dgvSteps.Columns("ResponsibleOffice").HeaderText = "Designated Desk"
-                dgvSteps.Columns("ResponsibleOffice").MinimumWidth = 160
-                dgvSteps.Columns("ResponsibleOffice").FillWeight = 120
-                dgvSteps.Columns("ResponsibleOffice").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-            End If
-            If dgvSteps.Columns.Contains("ActionRequired") Then
-                dgvSteps.Columns("ActionRequired").HeaderText = "Action Required"
-                dgvSteps.Columns("ActionRequired").MinimumWidth = 240
-                dgvSteps.Columns("ActionRequired").FillWeight = 260
-                dgvSteps.Columns("ActionRequired").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-                dgvSteps.Columns("ActionRequired").DefaultCellStyle.WrapMode = DataGridViewTriState.True
-            End If
-            If dgvSteps.Columns.Contains("Status") Then
-                dgvSteps.Columns("Status").HeaderText = "Progress Status"
-                dgvSteps.Columns("Status").MinimumWidth = 160
-                dgvSteps.Columns("Status").FillWeight = 130
-                dgvSteps.Columns("Status").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-            End If
-            If dgvSteps.Columns.Contains("CompletedAt") Then
-                dgvSteps.Columns("CompletedAt").HeaderText = "Completed Date"
-                dgvSteps.Columns("CompletedAt").MinimumWidth = 130
-                dgvSteps.Columns("CompletedAt").FillWeight = 100
-                dgvSteps.Columns("CompletedAt").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-            End If
-            If dgvSteps.Columns.Contains("Remarks") Then
-                dgvSteps.Columns("Remarks").HeaderText = "Notes / Custody Remarks"
-                dgvSteps.Columns("Remarks").MinimumWidth = 160
-                dgvSteps.Columns("Remarks").FillWeight = 150
-                dgvSteps.Columns("Remarks").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
-                dgvSteps.Columns("Remarks").DefaultCellStyle.WrapMode = DataGridViewTriState.True
-            End If
+            DataGridStyler.FormatStepsColumns(dgvSteps)
 
             For Each row As DataGridViewRow In dgvSteps.Rows
                 If row.Cells("Status").Value IsNot Nothing Then

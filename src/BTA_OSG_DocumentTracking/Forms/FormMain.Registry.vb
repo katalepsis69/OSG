@@ -1,4 +1,4 @@
-Option Explicit On
+﻿Option Explicit On
 Option Strict On
 
 Imports System
@@ -170,7 +170,21 @@ Namespace BTA_OSG
             AddField("Digital Soft Copy Reference:", txtGDrive, 6)
             AddWide(btnAttachScan)
             AddField("Assigned Staff Officer:", cmbAssignedStaff, 6)
-            AddWide(btnRegister)
+            Dim flwRegisterRow As New FlowLayoutPanel With {
+                .Dock = DockStyle.Fill,
+                .FlowDirection = FlowDirection.LeftToRight,
+                .WrapContents = False,
+                .BackColor = CivicCalmTheme.ColorSurface,
+                .Margin = New Padding(0)
+            }
+            Dim btnClearForm = CivicCalmTheme.CreateIconButton("&Clear Form", "x", 14, minHeight:=34, margin:=New Padding(0, 12, 8, 12))
+            AddHandler btnClearForm.Click, Sub() ClearRegistrationInputs(True)
+            flwRegisterRow.Controls.Add(btnClearForm)
+            btnRegister.Margin = New Padding(0, 12, 0, 12)
+            btnRegister.AutoSize = True
+            btnRegister.AutoSizeMode = AutoSizeMode.GrowAndShrink
+            flwRegisterRow.Controls.Add(btnRegister)
+            AddWide(flwRegisterRow)
 
             pnlFormScroll.Controls.Add(pnlFormFlow)
             pnlFormCard.Controls.Add(pnlFormScroll)
@@ -195,6 +209,10 @@ Namespace BTA_OSG
             btnViewRegistryDetail = CivicCalmTheme.CreateIconButton("&View Details && History", "eye", margin:=New Padding(0, 0, 8, 0))
             AddHandler btnViewRegistryDetail.Click, Sub() OpenSelectedDocumentDetail(dgvRegistry)
             flwToolbar.Controls.Add(btnViewRegistryDetail)
+
+            btnRouteRegistrySelected = CivicCalmTheme.CreateIconButton("Route &Selection", "arrows-split", 16, minHeight:=34, margin:=New Padding(0, 0, 8, 0))
+            AddHandler btnRouteRegistrySelected.Click, Sub() RouteSelectedDocuments(dgvRegistry)
+            flwToolbar.Controls.Add(btnRouteRegistrySelected)
 
             Dim btnPrintRegistrySlip As New Button With {
                 .Text = "&Print Routing Slip",
@@ -224,6 +242,7 @@ Namespace BTA_OSG
             }
             DataGridStyler.ApplyCivicStyle(dgvRegistry)
             AddHandler dgvRegistry.CellDoubleClick, Sub(s, e) If e.RowIndex >= 0 Then OpenSelectedDocumentDetail(dgvRegistry)
+            AddHandler dgvRegistry.KeyDown, Sub(s, e) HandleDocumentGridKeys(dgvRegistry, e)
 
             lblRegistryWatermark = CreateGridWatermark(pnlGridCard)
 
@@ -374,7 +393,7 @@ Namespace BTA_OSG
 
             If String.IsNullOrWhiteSpace(txtTitle.Text) Then
                 epValidation.SetError(txtTitle, "Please enter Document Title.")
-                lblStatusMessage.Text = "Validation Error: Document Title is required."
+                ReportRefusal("Validation Error: Document Title is required.")
                 txtTitle.Focus()
                 Return False
             End If
@@ -384,7 +403,7 @@ Namespace BTA_OSG
                 epValidation.SetError(dtpDeadline, deadlineError)
                 lblDeadlineHint.Text = "Target deadline cannot be in the past."
                 lblDeadlineHint.ForeColor = CivicCalmTheme.ColorDanger
-                lblStatusMessage.Text = "Validation Error: " & deadlineError
+                ReportRefusal("Validation Error: " & deadlineError)
                 dtpDeadline.Focus()
                 Return False
             End If
@@ -402,17 +421,22 @@ Namespace BTA_OSG
             Return True
         End Function
 
-        Private Sub ClearRegistrationInputs()
+        ''' <param name="fullReset">True from the Clear Form button: also blanks the storage
+        ''' landmarks. The post-registration reset keeps Origin/Destination/Cabinet/Shelf/Box
+        ''' so a batch clerk registering same-office documents types the title and nothing else.</param>
+        Private Sub ClearRegistrationInputs(Optional fullReset As Boolean = False)
             txtTitle.Text = ""
-            cmbOrigin.Text = ""
-            cmbDest.Text = ""
-            cmbCabinet.Text = ""
-            cmbShelf.Text = ""
-            cmbBox.Text = ""
             txtGDrive.Text = ""
-            If cmbDocType.Items.Count > 0 Then cmbDocType.SelectedIndex = 0
-            If cmbFlowDirection.Items.Count > 0 Then cmbFlowDirection.SelectedIndex = 0
-            If cmbDeadlinePreset.Items.Count > 1 Then cmbDeadlinePreset.SelectedIndex = 1
+            If fullReset Then
+                cmbOrigin.Text = ""
+                cmbDest.Text = ""
+                cmbCabinet.Text = ""
+                cmbShelf.Text = ""
+                cmbBox.Text = ""
+                If cmbDocType.Items.Count > 0 Then cmbDocType.SelectedIndex = 0
+                If cmbFlowDirection.Items.Count > 0 Then cmbFlowDirection.SelectedIndex = 0
+                If cmbDeadlinePreset.Items.Count > 1 Then cmbDeadlinePreset.SelectedIndex = 1
+            End If
             epValidation.Clear()
             txtTitle.Focus()
         End Sub
@@ -442,14 +466,16 @@ Namespace BTA_OSG
             Dim code = EmbeddedDB.GenerateDocCode(docType)
             Dim assigned = If(cmbAssignedStaff.SelectedItem IsNot Nothing, cmbAssignedStaff.SelectedItem.ToString(), "")
             Dim assignedSec = DocumentService.GetDefaultSectionForCategory(docType)
+            ' Constraint the column name hides: TargetDeadlineUTC stores shop-local wall
+            ' time exactly as the operator picked it (dtpDeadline is local), and every
+            ' reader (grid tint, quick view, detail display) compares it against
+            ' DateTime.Now. Converting this to real UTC is an atomic schema-and-readers
+            ' change, deliberately not done inline; the portal never reads this column.
             Dim targetDeadline = dtpDeadline.Value.ToString("yyyy-MM-dd HH:mm:ss")
             Dim initialStatus = If(docType.Equals("Finance", StringComparison.OrdinalIgnoreCase), "RECEIVED", "FOR_REVIEW")
             Dim lastAction = "Registered by Records Section and auto-routed to " & assignedSec
 
-            Dim currentUserId As Integer = 1
-            If CurrentUser IsNot Nothing AndAlso CurrentUser.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(CurrentUser("UserID")) Then
-                currentUserId = Convert.ToInt32(CurrentUser("UserID"))
-            End If
+            Dim currentUserId As Integer = CurrentStaffUserId()
             Dim currentUserName As String = If(CurrentUser IsNot Nothing, CurrentUser("FullName").ToString(), "System Staff")
 
             If Program.Coordinator IsNot Nothing Then
@@ -463,6 +489,9 @@ Namespace BTA_OSG
             End If
 
             lblStatusMessage.Text = String.Format("Document Registered: {0} [{1}] routed to {2}", code, txtTitle.Text.Trim(), assignedSec)
+            ' This seat created the document: its own sync echo must not ring the
+            ' "routed to you" chime back at the registering desk.
+            MarkDocumentAsOwn(code)
             ClearRegistrationInputs()
             RefreshActiveTabGrid()
         End Sub

@@ -19,6 +19,16 @@ Namespace BTA_OSG
         Public Property Maximized As Boolean = False
     End Class
 
+    ' Operator filters that survive a restart. Values are stored raw and only applied
+    ' when they still match a live list entry, so a renamed section desk fails open
+    ' to the default filter instead of blanking the grid.
+    Public Class UiStateSettings
+        Public Property DashboardSection As String = ""
+        Public Property DashboardCategory As String = ""
+        Public Property DashboardStatus As String = ""
+        Public Property DashboardOnlyMine As Boolean = False
+    End Class
+
     Public Class AppSettingsRoot
         Public Property IsConfigured As Boolean = False
         Public Property AnalyticsEnabled As Boolean = True
@@ -28,6 +38,7 @@ Namespace BTA_OSG
         Public Property Session As SessionSettings
         Public Property Portal As PortalSettings
         Public Property Window As WindowSettings
+        Public Property UiState As UiStateSettings
     End Class
 
     Public Class AppSettings
@@ -42,6 +53,7 @@ Namespace BTA_OSG
         Public Property SessionSettings As SessionSettings
         Public Property PortalSettings As PortalSettings
         Public Property WindowSettings As WindowSettings
+        Public Property UiStateSettings As UiStateSettings
 
         ' Config layers dropped while loading, so a station that silently falls back to the wrong
         ' server can be told which file it lost.
@@ -54,6 +66,7 @@ Namespace BTA_OSG
             SessionSettings = New SessionSettings()
             PortalSettings = New PortalSettings()
             WindowSettings = New WindowSettings()
+            UiStateSettings = New UiStateSettings()
         End Sub
 
         Public Shared ReadOnly Property Instance As AppSettings
@@ -135,6 +148,7 @@ Namespace BTA_OSG
                         If root.Session IsNot Nothing Then settings.SessionSettings = root.Session
                         If root.Portal IsNot Nothing Then settings.PortalSettings = root.Portal
                         If root.Window IsNot Nothing Then settings.WindowSettings = root.Window
+                        If root.UiState IsNot Nothing Then settings.UiStateSettings = root.UiState
                     Catch ex As Exception
                         ' One malformed layer must not discard the layers after it: a stray
                         ' backslash used to kill the loop, silently dropping the station's own
@@ -160,7 +174,8 @@ Namespace BTA_OSG
                     .PdfLink = settings.PdfLinkSettings,
                     .Session = settings.SessionSettings,
                     .Portal = settings.PortalSettings,
-                    .Window = settings.WindowSettings
+                    .Window = settings.WindowSettings,
+                    .UiState = settings.UiStateSettings
                 }
                 Dim options As New JsonSerializerOptions With {.WriteIndented = True}
                 Dim json = ProtectJson(JsonSerializer.Serialize(root, options))

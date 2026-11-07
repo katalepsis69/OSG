@@ -125,24 +125,7 @@ Namespace BTA_OSG
                 Dim payload = JsonSerializer.Serialize(New Dictionary(Of String, String) From {
                     {"control_number", controlNumber}
                 })
-
-                Using request = New HttpRequestMessage(HttpMethod.Post, requestUrl)
-                    AttachHeaders(request)
-                    request.Content = New StringContent(payload, Encoding.UTF8, "application/json")
-
-                    Using response = Await _httpClient.SendAsync(request).ConfigureAwait(False)
-                        If Not response.IsSuccessStatusCode Then
-                            LogWarning($"Import ack failed for {controlNumber} with HTTP {CInt(response.StatusCode)}.")
-                            Return False
-                        End If
-
-                        Dim json = Await response.Content.ReadAsStringAsync().ConfigureAwait(False)
-                        Using doc = JsonDocument.Parse(json)
-                            Dim root = doc.RootElement
-                            Return root.TryGetProperty("success", Nothing) AndAlso root.GetProperty("success").GetBoolean()
-                        End Using
-                    End Using
-                End Using
+                Return Await PostJsonForSuccessAsync(requestUrl, payload, $"Import ack failed for {controlNumber}").ConfigureAwait(False)
             Catch ex As Exception
                 LogWarning($"Exception acknowledging import for {controlNumber}: {ex.Message}")
                 Return False
@@ -163,24 +146,7 @@ Namespace BTA_OSG
                 Dim payload = JsonSerializer.Serialize(New Dictionary(Of String, Object) From {
                     {"control_numbers", controlNumbers.ToList()}
                 })
-
-                Using request = New HttpRequestMessage(HttpMethod.Post, requestUrl)
-                    AttachHeaders(request)
-                    request.Content = New StringContent(payload, Encoding.UTF8, "application/json")
-
-                    Using response = Await _httpClient.SendAsync(request).ConfigureAwait(False)
-                        If Not response.IsSuccessStatusCode Then
-                            LogWarning($"Batch import ack failed with HTTP {CInt(response.StatusCode)}.")
-                            Return False
-                        End If
-
-                        Dim json = Await response.Content.ReadAsStringAsync().ConfigureAwait(False)
-                        Using doc = JsonDocument.Parse(json)
-                            Dim root = doc.RootElement
-                            Return root.TryGetProperty("success", Nothing) AndAlso root.GetProperty("success").GetBoolean()
-                        End Using
-                    End Using
-                End Using
+                Return Await PostJsonForSuccessAsync(requestUrl, payload, "Batch import ack failed").ConfigureAwait(False)
             Catch ex As Exception
                 LogWarning($"Exception acknowledging batch import: {ex.Message}")
                 Return False
@@ -202,28 +168,37 @@ Namespace BTA_OSG
                     {"control_number", controlNumber},
                     {"public_status", publicStatus}
                 })
-
-                Using request = New HttpRequestMessage(HttpMethod.Post, requestUrl)
-                    AttachHeaders(request)
-                    request.Content = New StringContent(payload, Encoding.UTF8, "application/json")
-
-                    Using response = Await _httpClient.SendAsync(request).ConfigureAwait(False)
-                        If Not response.IsSuccessStatusCode Then
-                            LogWarning($"Status push failed for {controlNumber} ({publicStatus}) with HTTP {CInt(response.StatusCode)}.")
-                            Return False
-                        End If
-
-                        Dim json = Await response.Content.ReadAsStringAsync().ConfigureAwait(False)
-                        Using doc = JsonDocument.Parse(json)
-                            Dim root = doc.RootElement
-                            Return root.TryGetProperty("success", Nothing) AndAlso root.GetProperty("success").GetBoolean()
-                        End Using
-                    End Using
-                End Using
+                Return Await PostJsonForSuccessAsync(requestUrl, payload, $"Status push failed for {controlNumber} ({publicStatus})").ConfigureAwait(False)
             Catch ex As Exception
                 LogWarning($"Exception pushing public status for {controlNumber}: {ex.Message}")
                 Return False
             End Try
+        End Function
+
+        ''' <summary>
+        ''' One POST-and-check shared by the ack/push verbs: sends the JSON payload, logs
+        ''' failLog with the HTTP status on a non-success response, and reports whether the
+        ''' portal answered with "success": true. Transport, status, and parse failures all
+        ''' log and return False; nothing throws from here.
+        ''' </summary>
+        Private Async Function PostJsonForSuccessAsync(requestUrl As String, payload As String, failLog As String) As Task(Of Boolean)
+            Using request = New HttpRequestMessage(HttpMethod.Post, requestUrl)
+                AttachHeaders(request)
+                request.Content = New StringContent(payload, Encoding.UTF8, "application/json")
+
+                Using response = Await _httpClient.SendAsync(request).ConfigureAwait(False)
+                    If Not response.IsSuccessStatusCode Then
+                        LogWarning($"{failLog} with HTTP {CInt(response.StatusCode)}.")
+                        Return False
+                    End If
+
+                    Dim json = Await response.Content.ReadAsStringAsync().ConfigureAwait(False)
+                    Using doc = JsonDocument.Parse(json)
+                        Dim root = doc.RootElement
+                        Return root.TryGetProperty("success", Nothing) AndAlso root.GetProperty("success").GetBoolean()
+                    End Using
+                End Using
+            End Using
         End Function
 
         Private Sub AttachHeaders(request As HttpRequestMessage)

@@ -31,7 +31,10 @@ Namespace BTA_OSG
             dgv.ColumnHeadersHeight = 32
             dgv.RowTemplate.Height = 28
             dgv.SelectionMode = DataGridViewSelectionMode.FullRowSelect
-            dgv.MultiSelect = False
+            dgv.MultiSelect = True
+            ' Native Ctrl+C: selected rows (or the focused row) copy tab-separated with the
+            ' header row included, so pasting into Excel or an email needs no export code.
+            dgv.ClipboardCopyMode = DataGridViewClipboardCopyMode.EnableAlwaysIncludeHeaderText
             dgv.RowHeadersVisible = False
 
             ' Enable DoubleBuffered via reflection to prevent flicker during fast scrolling
@@ -92,8 +95,95 @@ Namespace BTA_OSG
                     FormatStatusCell(e)
                 Case "GDriveURL"
                     FormatSoftCopyCell(dgv, e)
+                Case "TargetDeadlineUTC"
+                    FormatDeadlineCell(dgv, e)
             End Select
         End Sub
+
+        ''' <summary>
+        ''' The captured target deadline only means something while the document can still
+        ''' move: terminal rows keep the plain text. Due-within-24h gets the amber warning
+        ''' pair, overdue gets the red danger pair; unparseable text stays as stored.
+        ''' </summary>
+        Private Shared Sub FormatDeadlineCell(dgv As DataGridView, e As DataGridViewCellFormattingEventArgs)
+            Dim raw As String = ""
+            If e.Value IsNot Nothing AndAlso Not Convert.IsDBNull(e.Value) Then
+                raw = e.Value.ToString().Trim()
+            End If
+            If raw = "" Then Return
+
+            Dim statusCell = dgv.Rows(e.RowIndex).Cells("CurrentStatus")
+            Dim docStatus = If(statusCell IsNot Nothing, Convert.ToString(statusCell.Value), "")
+
+            Dim backColor As Color = Nothing
+            Dim foreColor As Color = Nothing
+            If DeadlineTint(raw, docStatus, backColor, foreColor) Then
+                e.CellStyle.BackColor = backColor
+                e.CellStyle.ForeColor = foreColor
+                e.CellStyle.SelectionBackColor = backColor
+                e.CellStyle.SelectionForeColor = foreColor
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' The deadline tint decision, exposed separately from the grid event so the
+        ''' overdue / due-soon / terminal-plain rules stay headless-testable.
+        ''' Returns True when the caller should apply the pair.
+        ''' </summary>
+        Public Shared Function DeadlineTint(rawDeadline As String, statusCode As String, ByRef backColor As Color, ByRef foreColor As Color) As Boolean
+            If String.IsNullOrWhiteSpace(rawDeadline) Then Return False
+            Dim due As DateTime
+            If Not DateTime.TryParse(rawDeadline, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, due) Then Return False
+            If DocumentStatus.IsTerminalStatus(statusCode) Then Return False
+
+            If due < DateTime.Now Then
+                backColor = CivicCalmTheme.ColorDangerSoft
+                foreColor = CivicCalmTheme.ColorDanger
+            ElseIf due <= DateTime.Now.AddHours(24) Then
+                backColor = CivicCalmTheme.ColorStatusReceivedBg
+                foreColor = CivicCalmTheme.ColorStatusReceivedFg
+            Else
+                Return False
+            End If
+            Return True
+        End Function
+
+        ''' <summary>
+        ''' The one status-to-color-pair vocabulary. Grids (FormatStatusCell) and the
+        ''' quick view tint both consume these pairs, so a status color can never drift
+        ''' between surfaces. Returns False for codes outside the known set: the caller
+        ''' keeps its default styling instead.
+        ''' </summary>
+        Public Shared Function StatusColors(statusCode As String, ByRef backColor As Color, ByRef foreColor As Color) As Boolean
+            Dim code = If(statusCode, "").Trim().ToUpperInvariant()
+            If code = "" Then Return False
+
+            If code = "FOR_REVISION" OrElse code.Contains("REVISION") Then
+                backColor = CivicCalmTheme.ColorStatusRevisionBg
+                foreColor = CivicCalmTheme.ColorStatusRevisionFg
+            ElseIf code = "FOR_REVIEW" OrElse code.Contains("REVIEW") Then
+                backColor = CivicCalmTheme.ColorStatusReviewBg
+                foreColor = CivicCalmTheme.ColorStatusReviewFg
+            ElseIf code = "APPROVED" Then
+                backColor = CivicCalmTheme.ColorStatusApprovedBg
+                foreColor = CivicCalmTheme.ColorStatusApprovedFg
+            ElseIf code = "RELEASED" Then
+                backColor = CivicCalmTheme.ColorStatusReleasedBg
+                foreColor = CivicCalmTheme.ColorStatusReleasedFg
+            ElseIf code = "RECEIVED" OrElse code = "LOGGED" Then
+                backColor = CivicCalmTheme.ColorStatusReceivedBg
+                foreColor = CivicCalmTheme.ColorStatusReceivedFg
+            ElseIf code = "PENDING" OrElse code = "IN_TRANSIT" OrElse code = "IN TRANSIT" Then
+                backColor = CivicCalmTheme.ColorStatusPendingBg
+                foreColor = CivicCalmTheme.ColorStatusPendingFg
+            ElseIf code = "ARCHIVED" OrElse code = "FILED" Then
+                backColor = CivicCalmTheme.ColorStatusArchivedBg
+                foreColor = CivicCalmTheme.ColorStatusArchivedFg
+            Else
+                Return False
+            End If
+            Return True
+        End Function
 
         Private Shared Sub FormatStatusCell(e As DataGridViewCellFormattingEventArgs)
             Dim code As String = ""
@@ -102,24 +192,13 @@ Namespace BTA_OSG
             End If
             If code = "" Then Return
 
-            If code = "FOR_REVISION" OrElse code.Contains("REVISION") Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusRevisionBg, CivicCalmTheme.ColorStatusRevisionFg)
-            ElseIf code = "FOR_REVIEW" OrElse code.Contains("REVIEW") Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusReviewBg, CivicCalmTheme.ColorStatusReviewFg)
-            ElseIf code = "APPROVED" Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusApprovedBg, CivicCalmTheme.ColorStatusApprovedFg)
-            ElseIf code = "RELEASED" Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusReleasedBg, CivicCalmTheme.ColorStatusReleasedFg)
-            ElseIf code = "RECEIVED" OrElse code = "LOGGED" Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusReceivedBg, CivicCalmTheme.ColorStatusReceivedFg)
-            ElseIf code = "PENDING" OrElse code = "IN_TRANSIT" OrElse code = "IN TRANSIT" Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusPendingBg, CivicCalmTheme.ColorStatusPendingFg)
-            ElseIf code = "ARCHIVED" OrElse code = "FILED" Then
-                ApplyStatusBadge(e, CivicCalmTheme.ColorStatusArchivedBg, CivicCalmTheme.ColorStatusArchivedFg)
-            Else
+            Dim backColor As Color = Nothing
+            Dim foreColor As Color = Nothing
+            If Not StatusColors(code, backColor, foreColor) Then
                 ' Unrecognized status text stays exactly as stored rather than being rewritten.
                 Return
             End If
+            ApplyStatusBadge(e, backColor, foreColor)
 
             e.Value = DocumentStatus.DisplayName(code)
             e.FormattingApplied = True
@@ -537,6 +616,57 @@ Namespace BTA_OSG
             Finally
                 dgv.ResumeLayout()
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Header text and fill layout for the document detail's step-by-step pipeline grid.
+        ''' </summary>
+        Public Shared Sub FormatStepsColumns(dgv As DataGridView)
+            If dgv Is Nothing OrElse dgv.Columns.Count = 0 Then Return
+            If dgv.Columns.Contains("StepNo") Then
+                dgv.Columns("StepNo").HeaderText = "Step"
+                dgv.Columns("StepNo").MinimumWidth = 60
+                dgv.Columns("StepNo").FillWeight = 40
+                dgv.Columns("StepNo").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            End If
+            If dgv.Columns.Contains("Stage") Then
+                dgv.Columns("Stage").HeaderText = "Stage / Station"
+                dgv.Columns("Stage").MinimumWidth = 190
+                dgv.Columns("Stage").FillWeight = 140
+                dgv.Columns("Stage").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            End If
+            If dgv.Columns.Contains("ResponsibleOffice") Then
+                dgv.Columns("ResponsibleOffice").HeaderText = "Designated Desk"
+                dgv.Columns("ResponsibleOffice").MinimumWidth = 160
+                dgv.Columns("ResponsibleOffice").FillWeight = 120
+                dgv.Columns("ResponsibleOffice").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            End If
+            If dgv.Columns.Contains("ActionRequired") Then
+                dgv.Columns("ActionRequired").HeaderText = "Action Required"
+                dgv.Columns("ActionRequired").MinimumWidth = 240
+                dgv.Columns("ActionRequired").FillWeight = 260
+                dgv.Columns("ActionRequired").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                dgv.Columns("ActionRequired").DefaultCellStyle.WrapMode = DataGridViewTriState.True
+            End If
+            If dgv.Columns.Contains("Status") Then
+                dgv.Columns("Status").HeaderText = "Progress Status"
+                dgv.Columns("Status").MinimumWidth = 160
+                dgv.Columns("Status").FillWeight = 130
+                dgv.Columns("Status").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            End If
+            If dgv.Columns.Contains("CompletedAt") Then
+                dgv.Columns("CompletedAt").HeaderText = "Completed Date"
+                dgv.Columns("CompletedAt").MinimumWidth = 130
+                dgv.Columns("CompletedAt").FillWeight = 100
+                dgv.Columns("CompletedAt").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+            End If
+            If dgv.Columns.Contains("Remarks") Then
+                dgv.Columns("Remarks").HeaderText = "Notes / Custody Remarks"
+                dgv.Columns("Remarks").MinimumWidth = 160
+                dgv.Columns("Remarks").FillWeight = 150
+                dgv.Columns("Remarks").AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill
+                dgv.Columns("Remarks").DefaultCellStyle.WrapMode = DataGridViewTriState.True
+            End If
         End Sub
 
         Public Shared Sub FormatPortalQueueColumns(dgv As DataGridView)

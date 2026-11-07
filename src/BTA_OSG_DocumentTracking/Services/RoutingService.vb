@@ -180,21 +180,7 @@ Namespace BTA_OSG
         Private Sub NotifyPortalStatus(docId As Integer, statusCode As String)
             If _portalBridge Is Nothing Then Return
             Try
-                Dim extCn As String = ""
-                Try
-                    Dim doc = _docRepo.GetById(docId)
-                    If doc IsNot Nothing Then extCn = doc.ExternalControlNumber
-                Catch
-                    ' Offline fallback
-                End Try
-
-                If String.IsNullOrWhiteSpace(extCn) Then
-                    Dim rows = EmbeddedDB.DataSet.Tables("Documents").Select("DocumentID = " & docId)
-                    If rows.Length > 0 AndAlso rows(0).Table.Columns.Contains("ExternalControlNumber") AndAlso Not IsDBNull(rows(0)("ExternalControlNumber")) Then
-                        extCn = rows(0)("ExternalControlNumber").ToString()
-                    End If
-                End If
-
+                Dim extCn = DocumentService.ResolveExternalControlNumber(_docRepo, docId)
                 If Not String.IsNullOrWhiteSpace(extCn) Then
                     DocumentService.PushPortalStatusSafe(extCn, statusCode, _portalBridge)
                 End If
@@ -202,9 +188,5 @@ Namespace BTA_OSG
                 ' Resilient isolation
             End Try
         End Sub
-
-        Public Function GetRoutingHistory(docId As Integer) As List(Of RoutingLog)
-            Return _routingRepo.GetByDocumentId(docId)
-        End Function
     End Class
 End Namespace

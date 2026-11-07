@@ -294,7 +294,7 @@ Namespace BTA_OSG
         End Function
 
         Private Sub LogClaim(fullName As String, cardUid As String)
-            Dim masked = If(cardUid.Length > 4, "****" & cardUid.Substring(cardUid.Length - 4), cardUid)
+            Dim masked = EmbeddedDB.MaskUid(cardUid)
             Try
                 AppStartup.AuditService.LogEvent("ADMIN_CLAIMED", "User", Nothing, Nothing, Nothing,
                                                  "System Administrator " & fullName & " enrolled with card " & masked, True, Nothing)

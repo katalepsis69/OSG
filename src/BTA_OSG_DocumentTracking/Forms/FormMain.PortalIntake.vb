@@ -412,14 +412,13 @@ Namespace BTA_OSG
                     Catch
                     End Try
 
-                    Dim ans = MessageBox.Show(
-                        $"Cloudflare Tunnel is currently active!" & vbCrLf & vbCrLf &
-                        $"Public URL: {activeUrl}" & vbCrLf & vbCrLf &
-                        $"(The link has been copied to your clipboard.)" & vbCrLf & vbCrLf &
-                        $"Click YES to turn off the tunnel, or NO to keep it running.",
-                        "Cloudflare Tunnel Running",
-                        MessageBoxButtons.YesNo,
-                        MessageBoxIcon.Information)
+                    ' The QR dialog replaces the old Yes/No MessageBox: Stop Tunnel maps to
+                    ' DialogResult.Yes, Keep Running (also Escape) to No, so a stray key
+                    ' never kills a live tunnel.
+                    Dim ans As DialogResult
+                    Using dlg As New FormTunnelStatus(activeUrl, FormTunnelStatus.TunnelContext.AlreadyRunning)
+                        ans = dlg.ShowDialog(Me)
+                    End Using
 
                     If ans = DialogResult.Yes Then
                         PortalServerManager.StopTunnel()
@@ -450,14 +449,9 @@ Namespace BTA_OSG
                         lblPortalStatus.Text = $"Cloudflare: {tunnelUrl}"
                     End If
 
-                    MessageBox.Show(
-                        $"OSGPortal is now live on the Internet!" & vbCrLf & vbCrLf &
-                        $"Public Link:" & vbCrLf &
-                        $"{tunnelUrl}" & vbCrLf & vbCrLf &
-                        $"(The link has been copied to your clipboard. You can paste it into your phone's browser.)",
-                        "Cloudflare Tunnel Online",
-                        MessageBoxButtons.OK,
-                        MessageBoxIcon.Information)
+                    Using dlg As New FormTunnelStatus(tunnelUrl, FormTunnelStatus.TunnelContext.JustStarted)
+                        dlg.ShowDialog(Me)
+                    End Using
                 Else
                     If btnStartTunnel IsNot Nothing Then
                         btnStartTunnel.Text = "&Cloudflare Tunnel"

@@ -731,4 +731,38 @@ Public Class SqlProductionRouteTests
             "a non-status offline action replays with a NULL status and no regression of the document")
         Assert.AreEqual("FOR_REVIEW", StatusCodeOf(code))
     End Sub
+
+    <TestMethod>
+    Public Sub RevokedBadge_DisappearsFromMirrorAndStopsAuth()
+        ' Lost-badge recovery: revoking every active badge of an account must stop that
+        ' badge authenticating on every seat. The seat learns it through the Users
+        ' mirror, whose card subquery only carries IsActive = 1 AND RevokedAtUTC IS NULL,
+        ' so the next pull drops the card and AuthenticateRFID misses.
+        Dim stamp = DateTime.UtcNow.Ticks.ToString()
+        stamp = stamp.Substring(stamp.Length - 12)
+        Dim uid = "RVK" & stamp.Substring(0, 8)
+        Dim fullName = "E2E Revoked Staff " & stamp
+        EmbeddedDB.AddUser(uid, fullName, "Records Section", "Records Section", True, True, True, pendingSync:=True)
+
+        Dim coordinator As New DesktopDataCoordinator(True)
+        coordinator.SyncOfflineOutbox()
+
+        Dim userId = Convert.ToInt32(Scalar("SELECT UserID FROM tbl_Users WHERE FullName = @n", "@n", fullName))
+        Assert.IsTrue(userId > 0, "enrolment reached tbl_Users")
+
+        ' The badge authenticates while active, mirror-based like every seat.
+        coordinator.RefreshFromServer("Users")
+        Assert.IsNotNull(EmbeddedDB.AuthenticateRFID(uid), "the badge authenticates while active")
+
+        ' The Admin grid's lost-badge action on the account.
+        Dim revoked = AppStartup.CardService.RevokeActiveCardsForUser(userId, _officerId, "Test: reported lost")
+        Assert.IsTrue(revoked >= 1, "the active badge was revoked")
+
+        ' The next pull drops the card from the seat's Users mirror.
+        coordinator.RefreshFromServer("Users")
+        Assert.IsNull(EmbeddedDB.AuthenticateRFID(uid), "a revoked badge no longer authenticates")
+        Assert.AreEqual(1, Convert.ToInt32(Scalar(
+            "SELECT COUNT(*) FROM tbl_RfidCards WHERE UserID = @i AND CardPublicID = @c AND RevokedAtUTC IS NOT NULL",
+            "@i", userId, "@c", uid)), "revocation recorded on the card row")
+    End Sub
 End Class

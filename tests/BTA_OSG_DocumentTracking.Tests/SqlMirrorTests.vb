@@ -204,5 +204,32 @@ Namespace BTA_OSG.Tests
             Assert.AreEqual(1, movements.Length, "Movement must be remapped to newDocId")
             Assert.AreEqual(0, EmbeddedDB.DataSet.Tables("Movements").Select(String.Format("DocumentID = {0}", oldDocId)).Length)
         End Sub
+
+        <TestMethod>
+        Public Sub RouteDocument_Offline_TerminalStatus_IsRefused()
+            ' A filed, released, archived, or completed document has left the active
+            ' workflow: the offline router refuses to reopen it exactly as the connected
+            ' transaction does. The refusal must throw to the caller (so the UI reports
+            ' it instead of pretending the route landed) and CurrentStatus must survive.
+            EmbeddedDB.Initialize()
+            Dim stamp = DateTime.UtcNow.Ticks.ToString("N").Substring(0, 10).ToUpperInvariant()
+            Dim localId = EmbeddedDB.AddDocument("LOC-TERM-" & stamp, "Finance", "Terminal route refusal probe",
+                "Records Section", "Finance Section", "CAB-A", "S-1", "BOX-01", "", "RELEASED",
+                "Hassim A. Ibrahim", "INCOMING", "Finance Section", isOffline:=True, createdByUserId:=4)
+
+            Dim refused As Boolean = False
+            Try
+                EmbeddedDB.AddRoutingLog(localId, "Finance Section", "Office of the Secretary-General",
+                                         "Hassim A. Ibrahim", "ROUTED", "refusal probe")
+            Catch ex As InvalidOperationException
+                refused = True
+            End Try
+
+            Assert.IsTrue(refused, "routing a terminal document offline is refused")
+            Dim docRow = EmbeddedDB.DataSet.Tables("Documents").Rows.Find(localId)
+            Assert.IsNotNull(docRow)
+            Assert.AreEqual("RELEASED", docRow("CurrentStatus").ToString(),
+                            "the terminal status survives the refused route")
+        End Sub
     End Class
 End Namespace

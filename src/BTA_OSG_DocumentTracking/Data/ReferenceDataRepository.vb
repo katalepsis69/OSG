@@ -13,28 +13,6 @@ Namespace BTA_OSG
             _connectionFactory = connectionFactory
         End Sub
 
-        Public Function GetDocumentTypes() As List(Of DocumentType)
-            Dim list As New List(Of DocumentType)()
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT DocumentTypeID, TypeCode, TypeName, Prefix, IsActive, SortOrder FROM tbl_DocumentTypes WHERE IsActive = 1"
-                Using cmd = New SqlCommand(sql, conn)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            list.Add(New DocumentType With {
-                                .DocumentTypeID = Convert.ToInt32(reader("DocumentTypeID")),
-                                .TypeCode = Convert.ToString(reader("TypeCode")),
-                                .TypeName = Convert.ToString(reader("TypeName")),
-                                .Prefix = If(IsDBNull(reader("Prefix")), Nothing, Convert.ToString(reader("Prefix"))),
-                                .IsActive = Convert.ToBoolean(reader("IsActive")),
-                                .SortOrder = If(IsDBNull(reader("SortOrder")), 0, Convert.ToInt32(reader("SortOrder")))
-                            })
-                        End While
-                    End Using
-                End Using
-            End Using
-            Return list
-        End Function
-
         Public Function GetDocumentStatuses() As List(Of DocumentStatus)
             Dim list As New List(Of DocumentStatus)()
             Using conn = _connectionFactory.CreateConnection()
@@ -67,26 +45,6 @@ Namespace BTA_OSG
                                 .DirectiveCode = Convert.ToString(reader("DirectiveCode")),
                                 .DirectiveName = Convert.ToString(reader("DirectiveName")),
                                 .ResultStatusID = If(IsDBNull(reader("ResultStatusID")), CType(Nothing, Integer?), Convert.ToInt32(reader("ResultStatusID"))),
-                                .IsActive = Convert.ToBoolean(reader("IsActive"))
-                            })
-                        End While
-                    End Using
-                End Using
-            End Using
-            Return list
-        End Function
-
-        Public Function GetRoles() As List(Of Role)
-            Dim list As New List(Of Role)()
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT RoleID, RoleCode, RoleName, Description, IsActive FROM tbl_Roles WHERE IsActive = 1"
-                Using cmd = New SqlCommand(sql, conn)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            list.Add(New Role With {
-                                .RoleID = Convert.ToInt32(reader("RoleID")),
-                                .RoleName = Convert.ToString(reader("RoleName")),
-                                .Description = If(IsDBNull(reader("Description")), Nothing, Convert.ToString(reader("Description"))),
                                 .IsActive = Convert.ToBoolean(reader("IsActive"))
                             })
                         End While

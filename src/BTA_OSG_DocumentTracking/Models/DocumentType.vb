@@ -9,11 +9,5 @@ Namespace BTA_OSG
         Public Property Prefix As String
         Public Property IsActive As Boolean
         Public Property SortOrder As Integer
-
-        Public Shared Function IsValidCategory(code As String) As Boolean
-            If String.IsNullOrWhiteSpace(code) Then Return False
-            Dim c = code.Trim().ToUpperInvariant()
-            Return c = "REG_COMM" OrElse c = "LEG" OrElse c = "FIN" OrElse c = "TRAVEL"
-        End Function
     End Class
 End Namespace

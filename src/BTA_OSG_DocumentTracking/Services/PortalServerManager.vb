@@ -502,32 +502,7 @@ Namespace BTA_OSG
                 statusCallback?.Invoke("Cloudflare: Connecting secure tunnel...")
 
                 ' Query the metrics server on http://127.0.0.1:20241/quicktunnel or wait for output regex
-                Using client As New HttpClient() With {.Timeout = TimeSpan.FromSeconds(2)}
-                    For i As Integer = 1 To 25
-                        If Not String.IsNullOrEmpty(_activeTunnelUrl) Then
-                            Exit For
-                        End If
-
-                        Await Task.Delay(400).ConfigureAwait(False)
-
-                        Try
-                            Dim json = Await client.GetStringAsync("http://127.0.0.1:20241/quicktunnel").ConfigureAwait(False)
-                            If Not String.IsNullOrWhiteSpace(json) AndAlso json.Contains("hostname") Then
-                                Dim idx = json.IndexOf("""hostname"":""", StringComparison.OrdinalIgnoreCase)
-                                If idx >= 0 Then
-                                    Dim startIdx = idx + 12
-                                    Dim endIdx = json.IndexOf(""""c, startIdx)
-                                    If endIdx > startIdx Then
-                                        Dim host = json.Substring(startIdx, endIdx - startIdx)
-                                        _activeTunnelUrl = "https://" & host
-                                        Exit For
-                                    End If
-                                End If
-                            End If
-                        Catch
-                        End Try
-                    Next
-                End Using
+                Await PollTunnelUrlFromMetrics().ConfigureAwait(False)
 
                 If Not String.IsNullOrEmpty(_activeTunnelUrl) Then
                     statusCallback?.Invoke($"Cloudflare Live: {_activeTunnelUrl}")
@@ -540,6 +515,39 @@ Namespace BTA_OSG
                 statusCallback?.Invoke("Failed to launch Cloudflare Tunnel: " & ex.Message)
                 Return Nothing
             End Try
+        End Function
+
+        ''' <summary>Waits for the public hostname to land: poll the local quicktunnel
+        ''' metrics endpoint every 400 ms up to 25 tries, while the output regex handlers
+        ''' race the same shared _activeTunnelUrl from the process pipe. Whichever source
+        ''' fills it first wins; the loop just stops.</summary>
+        Private Shared Async Function PollTunnelUrlFromMetrics() As Task
+            Using client As New HttpClient() With {.Timeout = TimeSpan.FromSeconds(2)}
+                For i As Integer = 1 To 25
+                    If Not String.IsNullOrEmpty(_activeTunnelUrl) Then
+                        Exit For
+                    End If
+
+                    Await Task.Delay(400).ConfigureAwait(False)
+
+                    Try
+                        Dim json = Await client.GetStringAsync("http://127.0.0.1:20241/quicktunnel").ConfigureAwait(False)
+                        If Not String.IsNullOrWhiteSpace(json) AndAlso json.Contains("hostname") Then
+                            Dim idx = json.IndexOf("""hostname"":""", StringComparison.OrdinalIgnoreCase)
+                            If idx >= 0 Then
+                                Dim startIdx = idx + 12
+                                Dim endIdx = json.IndexOf(""""c, startIdx)
+                                If endIdx > startIdx Then
+                                    Dim host = json.Substring(startIdx, endIdx - startIdx)
+                                    _activeTunnelUrl = "https://" & host
+                                    Exit For
+                                End If
+                            End If
+                        End If
+                    Catch
+                    End Try
+                Next
+            End Using
         End Function
     End Class
 End Namespace

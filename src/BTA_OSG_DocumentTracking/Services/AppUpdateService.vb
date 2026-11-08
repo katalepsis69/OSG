@@ -286,7 +286,11 @@ Namespace BTA_OSG
         ''' <param name="cancelToken">Wire the download's no-overall-timeout decision to a
         ''' cancel affordance: the caller owns the token and can abort a stalled stream,
         ''' which is the visible-and-cancellable contract for an unbounded read loop.</param>
-        Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form, Optional progress As IProgress(Of DownloadProgressInfo) = Nothing, Optional cancelToken As System.Threading.CancellationToken = Nothing) As Task
+        ''' <returns>True when the apply script was started and the caller must exit so
+        ''' it can swap the exe; False on cancel or failure. The exit decision lives in
+        ''' the caller (which awaits on the UI thread) because every Await below resumes
+        ''' on a worker thread via ConfigureAwait(False).</returns>
+        Public Async Function DownloadAndApplyAsync(downloadUrl As String, ownerForm As Form, Optional progress As IProgress(Of DownloadProgressInfo) = Nothing, Optional cancelToken As System.Threading.CancellationToken = Nothing) As Task(Of Boolean)
             Try
                 If String.IsNullOrWhiteSpace(downloadUrl) Then
                     Throw New InvalidOperationException("Download URL is empty.")
@@ -296,80 +300,12 @@ Namespace BTA_OSG
                 Directory.CreateDirectory(tempDir)
                 Dim tempExe = Path.Combine(tempDir, "BTA_OSG_DocumentTracking.exe")
 
-                ' Stream straight to disk with real progress. The old code buffered the whole
-                ' exe in one invisible call, so the window sat frozen on "Downloading..."
-                ' for the entire transfer and looked hung.
-                DownloadHttp.DefaultRequestHeaders.UserAgent.Clear()
-                DownloadHttp.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
-                Using response = Await DownloadHttp.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancelToken).ConfigureAwait(False)
-                    response.EnsureSuccessStatusCode()
-                    Dim total As Long = If(response.Content.Headers.ContentLength.HasValue, response.Content.Headers.ContentLength.Value, -1)
-                    Using source = Await response.Content.ReadAsStreamAsync().ConfigureAwait(False)
-                        Using target As New FileStream(tempExe, FileMode.Create, FileAccess.Write)
-                            Dim buffer(81919) As Byte
-                            Dim written As Long = 0
-                            Dim lastMark As Long = -1
-                            While True
-                                Dim read = Await source.ReadAsync(buffer, 0, buffer.Length, cancelToken).ConfigureAwait(False)
-                                If read = 0 Then Exit While
-                                target.Write(buffer, 0, read)
-                                written += read
-                                If progress IsNot Nothing Then
-                                    If total > 0 Then
-                                        Dim percent = CInt(written * 100 \ total)
-                                        If percent <> lastMark Then
-                                            lastMark = percent
-                                            progress.Report(New DownloadProgressInfo With {
-                                                .Percent = percent,
-                                                .Label = String.Format("Downloading {0:0.0} of {1:0.0} MB ({2}%)", written / 1048576.0, total / 1048576.0, percent)})
-                                        End If
-                                    ElseIf written \ 4194304L <> lastMark Then
-                                        ' Server sent no length: report every ~4 MB, marquee bar.
-                                        lastMark = written \ 4194304L
-                                        progress.Report(New DownloadProgressInfo With {
-                                            .Percent = -1,
-                                            .Label = String.Format("Downloading {0:0.0} MB", written / 1048576.0)})
-                                    End If
-                                End If
-                            End While
-                        End Using
-                    End Using
-                End Using
+                Await StreamDownloadToAsync(downloadUrl, tempExe, progress, cancelToken)
+                ArmApplyScript(tempDir, tempExe)
 
-                Dim currentExe = Environment.ProcessPath
-                If String.IsNullOrEmpty(currentExe) Then
-                    currentExe = Application.ExecutablePath
-                End If
-                Dim currentPid = Environment.ProcessId
-                Dim scriptPath = Path.Combine(tempDir, "apply_update.cmd")
-                Dim safeCurrentExe = currentExe.Replace("'", "''")
-
-                Dim script = "@echo off" & vbCrLf &
-                             ":wait" & vbCrLf &
-                             $"tasklist /fi ""PID eq {currentPid}"" | findstr ""{currentPid}"" >nul" & vbCrLf &
-                             "if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)" & vbCrLf &
-                             "timeout /t 1 /nobreak >nul" & vbCrLf &
-                             ":copyloop" & vbCrLf &
-                             $"copy /y ""{tempExe}"" ""{currentExe}"" >nul" & vbCrLf &
-                             "if errorlevel 1 (" & vbCrLf &
-                             "    timeout /t 1 /nobreak >nul" & vbCrLf &
-                             "    goto copyloop" & vbCrLf &
-                             ")" & vbCrLf &
-                             $"powershell -NoProfile -Command ""Unblock-File '{safeCurrentExe}'"" >nul 2>&1" & vbCrLf &
-                             $"start """" ""{currentExe}""" & vbCrLf &
-                             "(goto) 2>nul & del ""%~f0"""
-
-                File.WriteAllText(scriptPath, script)
-
-                Process.Start(New ProcessStartInfo With {
-                    .FileName = "cmd.exe",
-                    .Arguments = $"/c ""{scriptPath}""",
-                    .CreateNoWindow = True,
-                    .UseShellExecute = False
-                })
-
-                Application.Exit()
-                Environment.Exit(0)
+                ' The caller exits on the UI thread once it sees True; a worker-thread
+                ' Application.Exit here violated the UI-thread rule for no gain.
+                Return True
             Catch cancelEx As OperationCanceledException
                 ' User-initiated cancel, not a failure: remove the partial temp exe and
                 ' leave the previous build untouched. The caller restores its own UI.
@@ -381,12 +317,104 @@ Namespace BTA_OSG
                 If progress IsNot Nothing Then
                     progress.Report(New DownloadProgressInfo With {.Percent = -1, .Label = "Download canceled."})
                 End If
+                Return False
             Catch ex As Exception
-                MessageBox.Show(ownerForm, "Failed to download and apply update: " & ex.Message, "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                ' Every Await above resumed on a worker thread (ConfigureAwait(False)),
+                ' so report through the caller-owned progress line and marshal the
+                ' dialog onto the owner's UI thread instead of showing it cross-thread.
+                If progress IsNot Nothing Then
+                    progress.Report(New DownloadProgressInfo With {.Percent = -1, .Label = "Update failed: " & ex.Message})
+                End If
+                If ownerForm IsNot Nothing AndAlso ownerForm.IsHandleCreated AndAlso Not ownerForm.IsDisposed Then
+                    ownerForm.Invoke(Sub()
+                                         MessageBox.Show(ownerForm, "Failed to download and apply update: " & ex.Message, "Update Error", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                                     End Sub)
+                End If
+                Return False
             End Try
         End Function
 
-        Public Async Function CheckAndApplyUpdateAsync(ownerForm As Form, manualCheck As Boolean, Optional onChecked As Action = Nothing) As Task
+        ''' <summary>Streams the update straight to disk with real progress. The old code
+        ''' buffered the whole exe in one invisible call, so the window sat frozen on
+        ''' "Downloading..." for the entire transfer and looked hung. Every Await here
+        ''' resumes on a worker thread (ConfigureAwait(False)); the caller owns the UI.</summary>
+        Private Async Function StreamDownloadToAsync(downloadUrl As String, tempExe As String, progress As IProgress(Of DownloadProgressInfo), cancelToken As System.Threading.CancellationToken) As Task
+            DownloadHttp.DefaultRequestHeaders.UserAgent.Clear()
+            DownloadHttp.DefaultRequestHeaders.UserAgent.Add(New ProductInfoHeaderValue("BTA_OSG_Updater", "1.0"))
+            Using response = Await DownloadHttp.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancelToken).ConfigureAwait(False)
+                response.EnsureSuccessStatusCode()
+                Dim total As Long = If(response.Content.Headers.ContentLength.HasValue, response.Content.Headers.ContentLength.Value, -1)
+                Using source = Await response.Content.ReadAsStreamAsync().ConfigureAwait(False)
+                    Using target As New FileStream(tempExe, FileMode.Create, FileAccess.Write)
+                        Dim buffer(81919) As Byte
+                        Dim written As Long = 0
+                        Dim lastMark As Long = -1
+                        While True
+                            Dim read = Await source.ReadAsync(buffer, 0, buffer.Length, cancelToken).ConfigureAwait(False)
+                            If read = 0 Then Exit While
+                            target.Write(buffer, 0, read)
+                            written += read
+                            If progress IsNot Nothing Then
+                                If total > 0 Then
+                                    Dim percent = CInt(written * 100 \ total)
+                                    If percent <> lastMark Then
+                                        lastMark = percent
+                                        progress.Report(New DownloadProgressInfo With {
+                                            .Percent = percent,
+                                            .Label = String.Format("Downloading {0:0.0} of {1:0.0} MB ({2}%)", written / 1048576.0, total / 1048576.0, percent)})
+                                    End If
+                                ElseIf written \ 4194304L <> lastMark Then
+                                    ' Server sent no length: report every ~4 MB, marquee bar.
+                                    lastMark = written \ 4194304L
+                                    progress.Report(New DownloadProgressInfo With {
+                                        .Percent = -1,
+                                        .Label = String.Format("Downloading {0:0.0} MB", written / 1048576.0)})
+                                End If
+                            End If
+                        End While
+                    End Using
+                End Using
+            End Using
+        End Function
+
+        ''' <summary>Writes the swap script (wait for this process to exit, copy the new
+        ''' exe over it, unblock, restart) and launches it. Returning from here means the
+        ''' swap is armed; the caller exits so the script can take over.</summary>
+        Private Sub ArmApplyScript(tempDir As String, tempExe As String)
+            Dim currentExe = Environment.ProcessPath
+            If String.IsNullOrEmpty(currentExe) Then
+                currentExe = Application.ExecutablePath
+            End If
+            Dim currentPid = Environment.ProcessId
+            Dim scriptPath = Path.Combine(tempDir, "apply_update.cmd")
+            Dim safeCurrentExe = currentExe.Replace("'", "''")
+
+            Dim script = "@echo off" & vbCrLf &
+                         ":wait" & vbCrLf &
+                         $"tasklist /fi ""PID eq {currentPid}"" | findstr ""{currentPid}"" >nul" & vbCrLf &
+                         "if not errorlevel 1 (timeout /t 1 /nobreak >nul & goto wait)" & vbCrLf &
+                         "timeout /t 1 /nobreak >nul" & vbCrLf &
+                         ":copyloop" & vbCrLf &
+                         $"copy /y ""{tempExe}"" ""{currentExe}"" >nul" & vbCrLf &
+                         "if errorlevel 1 (" & vbCrLf &
+                         "    timeout /t 1 /nobreak >nul" & vbCrLf &
+                         "    goto copyloop" & vbCrLf &
+                         ")" & vbCrLf &
+                         $"powershell -NoProfile -Command ""Unblock-File '{safeCurrentExe}'"" >nul 2>&1" & vbCrLf &
+                         $"start """" ""{currentExe}""" & vbCrLf &
+                         "(goto) 2>nul & del ""%~f0"""
+
+            File.WriteAllText(scriptPath, script)
+
+            Process.Start(New ProcessStartInfo With {
+                .FileName = "cmd.exe",
+                .Arguments = $"/c ""{scriptPath}""",
+                .CreateNoWindow = True,
+                .UseShellExecute = False
+            })
+        End Sub
+
+        Public Async Function CheckAndApplyUpdateAsync(ownerForm As Form, Optional onChecked As Action = Nothing) As Task
             Dim info = Await CheckUpdateInfoAsync().ConfigureAwait(True)
             If onChecked IsNot Nothing Then onChecked()
             Using dlg As New FormWhatsNew(info.HasUpdate, info.LatestVersion, info.DownloadUrl, info.ReleaseNotes, info.PublishedAt, alreadyChecked:=True, checkSucceeded:=info.Success)

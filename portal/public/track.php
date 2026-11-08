@@ -114,6 +114,7 @@ function format_pst_time(string $utcTimeStr): string {
     <link rel="stylesheet" href="css/portal.css?v=<?= filemtime(__DIR__ . '/css/portal.css') ?>">
 </head>
 <body>
+    <a class="portal-skip-link" href="#main-content">Skip to main content</a>
     <header class="portal-header">
         <div class="portal-header-container">
             <img class="portal-brand-seal" src="assets/bta_logo.png" alt="Bangsamoro Parliament Official Seal" width="56" height="56">
@@ -123,13 +124,13 @@ function format_pst_time(string $utcTimeStr): string {
                 <span class="portal-brand-subtitle">Office of the Secretary-General &bull; OSGPortal Public Intake</span>
             </div>
             <nav class="portal-nav" aria-label="Public Portal Navigation">
-                <a href="index.php" class="portal-nav-link <?= ($activePage === 'index') ? 'active' : '' ?>">Submit Document</a>
-                <a href="track.php" class="portal-nav-link <?= ($activePage === 'track') ? 'active' : '' ?>">Track Document</a>
+                <a href="index.php" class="portal-nav-link <?= ($activePage === 'index') ? 'active' : '' ?>"<?= ($activePage === 'index') ? ' aria-current="page"' : '' ?>>Submit Document</a>
+                <a href="track.php" class="portal-nav-link <?= ($activePage === 'track') ? 'active' : '' ?>"<?= ($activePage === 'track') ? ' aria-current="page"' : '' ?>>Track Document</a>
             </nav>
         </div>
     </header>
 
-    <main class="portal-main">
+    <main class="portal-main" id="main-content">
         <div class="portal-layout-wrapper">
             <div class="portal-layout-main">
                 <section class="portal-card">
@@ -468,6 +469,5 @@ function format_pst_time(string $utcTimeStr): string {
         });
     });
     </script>
-    <script src="assets/header-preview.js"></script>
 </body>
 </html>

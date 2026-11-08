@@ -66,38 +66,7 @@ Namespace BTA_OSG
             Using conn = _docRepo.ConnectionFactory.CreateConnection()
                 Using tx = conn.BeginTransaction()
                     Try
-                        directive.DirectiveID = _directiveRepo.Insert(directive, tx)
-                        If targetStatusId > 0 Then
-                            _docRepo.UpdateStatus(docId, targetStatusId, tx)
-                            If _routingRepo IsNot Nothing Then
-                                _routingRepo.Insert(New RoutingLog With {
-                                    .DocumentID = docId,
-                                    .FromStatusID = If(doc IsNot Nothing, doc.StatusID, CType(Nothing, Integer?)),
-                                    .ToStatusID = targetStatusId,
-                                    .FromOffice = If(doc IsNot Nothing, doc.AssignedSection, ""),
-                                    .ToOffice = If(doc IsNot Nothing, doc.AssignedSection, ""),
-                                    .RoutingRemarks = "SG Directive: " & directiveText,
-                                    .RoutedByUserID = issuedByUserId,
-                                    .RoutedAtUTC = DateTime.UtcNow
-                                }, tx)
-                            End If
-                        End If
-                        If assigneeId.HasValue Then
-                            _docRepo.AddAssignment(New DocumentAssignment With {
-                                .DocumentID = docId,
-                                .AssignedUserID = assigneeId.Value,
-                                .AssignedByUserID = issuedByUserId,
-                                .AssignedAtUTC = DateTime.UtcNow,
-                                .Remarks = "Assigned via SG directive"
-                            }, tx)
-                        End If
-                        If _auditService IsNot Nothing Then
-                            _auditService.LogEvent("DIRECTIVE_ADDED", "Directive", docId.ToString(),
-                                                   If(doc IsNot Nothing, doc.DocCode, Nothing),
-                                                   StatusJson(doc),
-                                                   "{""Directive"":""" & AuditService.JsonText(directiveText) & """,""AssignedTo"":""" & AuditService.JsonText(assignedTo) & """}",
-                                                   True, Nothing, tx)
-                        End If
+                        WriteDirectiveTransaction(directive, targetStatusId, doc, assigneeId, assignedTo, tx)
                         tx.Commit()
                     Catch
                         tx.Rollback()
@@ -127,6 +96,46 @@ Namespace BTA_OSG
             Dim section As String = If(doc IsNot Nothing, doc.AssignedSection, "")
             Return "{""Status"":""" & AuditService.JsonText(code) & """,""Section"":""" & AuditService.JsonText(section) & """}"
         End Function
+
+        ''' <summary>The directive transaction body, inside the caller's transaction: the
+        ''' directive row, the status side effect with its custody log, the optional
+        ''' assignment, and the audit row. Reads the issuer and text off the directive
+        ''' itself so the caller passes one bag plus the resolved context.</summary>
+        Private Sub WriteDirectiveTransaction(directive As ActionDirective, targetStatusId As Integer, doc As Document, assigneeId As Integer?, assignedTo As String, tx As Microsoft.Data.SqlClient.SqlTransaction)
+            Dim docId = directive.DocumentID
+            directive.DirectiveID = _directiveRepo.Insert(directive, tx)
+            If targetStatusId > 0 Then
+                _docRepo.UpdateStatus(docId, targetStatusId, tx)
+                If _routingRepo IsNot Nothing Then
+                    _routingRepo.Insert(New RoutingLog With {
+                        .DocumentID = docId,
+                        .FromStatusID = If(doc IsNot Nothing, doc.StatusID, CType(Nothing, Integer?)),
+                        .ToStatusID = targetStatusId,
+                        .FromOffice = If(doc IsNot Nothing, doc.AssignedSection, ""),
+                        .ToOffice = If(doc IsNot Nothing, doc.AssignedSection, ""),
+                        .RoutingRemarks = "SG Directive: " & directive.DirectiveText,
+                        .RoutedByUserID = directive.IssuedByUserID,
+                        .RoutedAtUTC = DateTime.UtcNow
+                    }, tx)
+                End If
+            End If
+            If assigneeId.HasValue Then
+                _docRepo.AddAssignment(New DocumentAssignment With {
+                    .DocumentID = docId,
+                    .AssignedUserID = assigneeId.Value,
+                    .AssignedByUserID = directive.IssuedByUserID,
+                    .AssignedAtUTC = DateTime.UtcNow,
+                    .Remarks = "Assigned via SG directive"
+                }, tx)
+            End If
+            If _auditService IsNot Nothing Then
+                _auditService.LogEvent("DIRECTIVE_ADDED", "Directive", docId.ToString(),
+                                       If(doc IsNot Nothing, doc.DocCode, Nothing),
+                                       StatusJson(doc),
+                                       "{""Directive"":""" & AuditService.JsonText(directive.DirectiveText) & """,""AssignedTo"":""" & AuditService.JsonText(assignedTo) & """}",
+                                       True, Nothing, tx)
+            End If
+        End Sub
 
         Public Function RequestRevision(docId As Integer, punchlistNotes As String, issuedByUserId As Integer, returnToSection As String) As ActionDirective
             Dim directiveTypeId As Integer = 1

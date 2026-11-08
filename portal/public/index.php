@@ -218,6 +218,7 @@ $activePage = 'index';
     <link rel="stylesheet" href="css/portal.css?v=<?= filemtime(__DIR__ . '/css/portal.css') ?>">
 </head>
 <body>
+    <a class="portal-skip-link" href="#main-content">Skip to main content</a>
     <header class="portal-header">
         <div class="portal-header-container">
             <img class="portal-brand-seal" src="assets/bta_logo.png" alt="Bangsamoro Parliament Official Seal" width="56" height="56">
@@ -227,13 +228,13 @@ $activePage = 'index';
                 <span class="portal-brand-subtitle">Office of the Secretary-General &bull; OSGPortal Public Intake</span>
             </div>
             <nav class="portal-nav" aria-label="Public Portal Navigation">
-                <a href="index.php" class="portal-nav-link <?= ($activePage === 'index') ? 'active' : '' ?>">Submit Document</a>
-                <a href="track.php" class="portal-nav-link <?= ($activePage === 'track') ? 'active' : '' ?>">Track Document</a>
+                <a href="index.php" class="portal-nav-link <?= ($activePage === 'index') ? 'active' : '' ?>"<?= ($activePage === 'index') ? ' aria-current="page"' : '' ?>>Submit Document</a>
+                <a href="track.php" class="portal-nav-link <?= ($activePage === 'track') ? 'active' : '' ?>"<?= ($activePage === 'track') ? ' aria-current="page"' : '' ?>>Track Document</a>
             </nav>
         </div>
     </header>
 
-    <main class="portal-main">
+    <main class="portal-main" id="main-content">
         <div class="portal-layout-wrapper">
             <div class="portal-layout-main">
                 <section class="portal-card">
@@ -293,6 +294,7 @@ $activePage = 'index';
                 </div>
 
                 <div class="portal-form-grid">
+                    <h2 class="portal-form-section">Requester Details</h2>
                     <!-- Row 1: Full Name & Gender -->
                     <div class="portal-col-6">
                         <div class="portal-form-group">
@@ -350,6 +352,8 @@ $activePage = 'index';
                         </div>
                     </div>
 
+                    <h2 class="portal-form-section">Document Details</h2>
+
                     <!-- Row 3: Classification Category (Full Width) -->
                     <div class="portal-col-12">
                         <div class="portal-form-group">
@@ -363,6 +367,10 @@ $activePage = 'index';
                                     </option>
                                 <?php endforeach; ?>
                             </select>
+                            <p class="portal-help-text">
+                                COMM covers general correspondence and endorsements, LEG legal opinions and legislative measures,
+                                FIN financial and budgetary submissions, TO special orders and travel directives.
+                            </p>
                         </div>
                     </div>
 
@@ -383,9 +391,9 @@ $activePage = 'index';
                     <!-- Row 4: Digital Intake Notice Callout -->
                     <div class="portal-col-12">
                         <div class="portal-alert portal-alert-info">
-                            <div class="portal-alert-title">Digital Submission Notice</div>
+                            <div class="portal-alert-title">After You Submit</div>
                             <div>
-                                Documents registered through this portal are directly recorded in the BTA OSG digital intake queue. Upon completing email verification, you will receive an official External Control Number to track your document's status in real time.
+                                Verified registrations enter the Records Section intake queue immediately. Your official External Control Number is issued by email and unlocks live tracking on this portal.
                             </div>
                         </div>
                     </div>
@@ -439,7 +447,7 @@ $activePage = 'index';
 
         <div class="portal-sidebar-card">
             <div class="portal-sidebar-title">
-                <span>Office of the Secretary-General</span>
+                <span>Records Section &amp; Assistance</span>
             </div>
             <div class="portal-info-item">
                 <span class="portal-info-label">Office:</span>
@@ -451,42 +459,18 @@ $activePage = 'index';
                 Monday to Friday: 8:00 AM to 5:00 PM PST<br>
                 (Excluding official holidays)
             </div>
-        </div>
-
-        <div class="portal-sidebar-card">
-            <div class="portal-sidebar-title">
-                <span>Submission Requirements</span>
-            </div>
-            <ul class="portal-sidebar-list">
-                <li>
-                    <span class="portal-side-mark portal-side-mark-success">&#10003;</span>
-                    <span>Valid official email address for authorization</span>
-                </li>
-                <li>
-                    <span class="portal-side-mark portal-side-mark-success">&#10003;</span>
-                    <span>Authorized representative contact information</span>
-                </li>
-                <li>
-                    <span class="portal-side-mark portal-side-mark-success">&#10003;</span>
-                    <span>Descriptive document subject and classification</span>
-                </li>
-            </ul>
-        </div>
-
-        <div class="portal-sidebar-card">
-            <div class="portal-sidebar-title">
-                <span>Assistance Desk</span>
-            </div>
             <p class="portal-sidebar-text">
                 For inquiries regarding tracking, routing verification, or document status:
             </p>
+            <!-- PLACEHOLDER CONTACT POINTS: not yet confirmed by the office. Do not
+                 publish to production until real channels replace them. -->
             <div class="portal-info-item">
                 <span class="portal-info-label">Email:</span>
-                osg.records@bta.gov.ph
+                osg.records@bta.gov.ph <small>(to be confirmed)</small>
             </div>
             <div class="portal-info-item">
                 <span class="portal-info-label">Trunkline:</span>
-                (064) 552-1234 loc. 104
+                (064) 552-1234 loc. 104 <small>(to be confirmed)</small>
             </div>
         </div>
     </aside>
@@ -552,6 +536,5 @@ $activePage = 'index';
         }
     });
     </script>
-    <script src="assets/header-preview.js"></script>
 </body>
 </html>

@@ -1,6 +1,18 @@
 /* BTA OSG External Intake Portal: Civic Calm Stylesheet
    Bangsamoro Transition Authority - Office of the Secretary-General
-   WCAG 2.1 AA Compliant: High contrast, responsive typography, zero bloat. */
+   WCAG 2.1 AA Compliant: High contrast, responsive typography, zero bloat.
+   Typeface: Public Sans (self-hosted, SIL OFL 1.1, see assets/fonts/OFL.txt),
+   chosen because it was drawn for government service interfaces; the Latin
+   subset keeps the portal offline-capable with zero third-party requests. */
+
+@font-face {
+    font-family: 'Public Sans';
+    font-style: normal;
+    font-weight: 400 700;
+    font-display: swap;
+    src: url('../assets/fonts/public-sans-var.woff2') format('woff2');
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
 
 :root {
     --color-canvas: #f4f6f8;
@@ -11,6 +23,8 @@
     --color-accent: #146a3d;
     --color-accent-hover: #0f522f;
     --color-accent-soft: #e6f2eb;
+    /* Light tint of the brand green for use on the navy header (6.35:1 vs primary) */
+    --color-accent-on-dark: #22c55e;
     --color-gold: #8c6414;
     --color-gold-soft: #fef9e7;
     --color-border: #dde2e5;
@@ -27,15 +41,15 @@
     --color-warning: #b45309;
     --color-warning-bg: #fffbeb;
     --color-warning-border: #fde68a;
-    --color-badge-bg: #e2e8f0;
 
-    --font-sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-sans: "Public Sans", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
     --font-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", monospace;
 
-    --shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.08), 0 1px 2px -1px rgba(15, 23, 42, 0.06);
-    --radius-sm: 4px;
-    --radius-md: 6px;
-    --radius-lg: 8px;
+    /* Two-layer shadows: short ambient occlusion + long diffuse depth */
+    --shadow-card: 0 1px 2px 0 rgba(15, 23, 42, 0.05), 0 6px 16px -6px rgba(15, 23, 42, 0.10);
+    --shadow-raised: 0 1px 2px 0 rgba(15, 23, 42, 0.08), 0 18px 40px -14px rgba(15, 23, 42, 0.20);
+    --radius-sm: 6px;
+    --radius-md: 10px;
 }
 
 *, *::before, *::after {
@@ -45,6 +59,9 @@
 }
 
 body {
+    /* Faint navy wash under the header fades into the canvas: connects the
+       ceremonial band to the content plane instead of a hard color stop */
+    background: linear-gradient(180deg, #e9eef3 0%, var(--color-canvas) 280px);
     background-color: var(--color-canvas);
     color: var(--color-text);
     font-family: var(--font-sans);
@@ -56,12 +73,32 @@ body {
     flex-direction: column;
 }
 
-/* Header */
+/* Skip link: first tab stop, invisible until focused */
+.portal-skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    background: #ffffff;
+    color: var(--color-primary);
+    font-weight: 600;
+    padding: 0.625rem 1rem;
+    border-radius: 0 0 var(--radius-sm) 0;
+    z-index: 100;
+    text-decoration: none;
+}
+
+.portal-skip-link:focus {
+    left: 0;
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
+/* Header: vertical navy gradient separates the ceremonial band from the page */
 .portal-header {
-    background-color: var(--color-primary);
+    background: linear-gradient(180deg, #12305b 0%, var(--color-primary) 60%, #0b2240 100%);
     color: #ffffff;
     border-bottom: 4px solid var(--color-accent);
-    padding: 1.25rem 0;
+    padding: 1.375rem 0;
 }
 
 .portal-header-container {
@@ -77,11 +114,21 @@ body {
 
 .portal-brand-seal {
     flex-shrink: 0;
+    /* White disc plate: the RGBA seal reads crisply on navy and reads official */
+    background-color: #ffffff;
+    border-radius: 50%;
+    padding: 4px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35), 0 2px 10px rgba(0, 0, 0, 0.35);
 }
 
 .portal-brand {
     display: flex;
     flex-direction: column;
+    /* Zero basis: flex-wrap places items by their hypothetical (basis) size,
+       so an auto basis (the full republic line) would push the brand onto its
+       own header row. With 0 it shares the seal's row and wraps internally. */
+    flex: 1 1 0;
+    min-width: 0;
 }
 
 .portal-brand-sub {
@@ -89,7 +136,7 @@ body {
     font-size: 0.75rem;
     text-transform: uppercase;
     letter-spacing: 0.08em;
-    color: #93c5fd;
+    color: #cbd5e1;
     font-weight: 600;
     margin-bottom: 0.15rem;
 }
@@ -116,28 +163,10 @@ body {
     margin-left: auto;
 }
 
-/* Header layout variants; the demo switcher sets body[data-header]. Default is seal-left. */
-body[data-header="right"] .portal-brand-seal {
-    order: 3;
-}
-
-body[data-header="right"] .portal-nav {
-    order: 2;
-}
-
-body[data-header="center"] .portal-header-container {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-}
-
-body[data-header="center"] .portal-nav {
-    margin-left: 0;
-}
-
 .portal-nav-link {
     display: inline-flex;
     align-items: center;
+    position: relative;
     min-height: 44px;
     color: #e2e8f0;
     text-decoration: none;
@@ -160,10 +189,19 @@ body[data-header="center"] .portal-nav {
 }
 
 .portal-nav-link.active {
-    background-color: rgba(255, 255, 255, 0.22);
     color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.35);
-    border-bottom: 2px solid #22c55e;
+}
+
+/* Straight tab indicator: a bottom border would curve with the link radius */
+.portal-nav-link.active::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 2px;
+    background-color: var(--color-accent-on-dark);
+    border-radius: 1px;
 }
 
 /* Main Content Area */
@@ -171,7 +209,7 @@ body[data-header="center"] .portal-nav {
     flex: 1;
     max-width: 1228px;
     width: 100%;
-    margin: 2rem auto;
+    margin: 2.25rem auto 3rem;
     padding: 0 1.5rem;
 }
 
@@ -201,6 +239,19 @@ body[data-header="center"] .portal-nav {
     padding: 1.25rem 1.5rem;
 }
 
+/* Badge markers become navy registry stamps (white on navy = 14.5:1) */
+.portal-sidebar-badge {
+    display: inline-block;
+    flex: 0 0 3.5rem;
+    text-align: center;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    border-radius: var(--radius-sm);
+    background-color: var(--color-primary);
+    color: #ffffff;
+}
+
 .portal-sidebar-title {
     font-size: 1rem;
     font-weight: 700;
@@ -224,6 +275,11 @@ body[data-header="center"] .portal-nav {
     margin-bottom: 0.75rem;
 }
 
+/* Intro line mid-card (after info blocks) needs its own separation */
+.portal-info-item + .portal-sidebar-text {
+    margin-top: 0.75rem;
+}
+
 .portal-sidebar-list {
     list-style: none;
     padding: 0;
@@ -240,18 +296,6 @@ body[data-header="center"] .portal-nav {
     display: flex;
     align-items: flex-start;
     gap: 0.5rem;
-}
-
-.portal-sidebar-badge {
-    display: inline-block;
-    flex: 0 0 3.5rem;
-    text-align: center;
-    padding: 0.2rem 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 700;
-    border-radius: var(--radius-sm);
-    background-color: #f1f5f9;
-    color: var(--color-primary);
 }
 
 /* Marker columns (badges, checks, bullets, numbers) share one width so the
@@ -288,6 +332,14 @@ body[data-header="center"] .portal-nav {
     margin-bottom: 0.125rem;
 }
 
+/* Keep the information rail in view while the form scrolls (desktop only) */
+@media (min-width: 961px) {
+    .portal-layout-sidebar {
+        position: sticky;
+        top: 1.5rem;
+    }
+}
+
 @media (max-width: 960px) {
     .portal-layout-wrapper {
         grid-template-columns: 1fr;
@@ -298,8 +350,10 @@ body[data-header="center"] .portal-nav {
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    box-shadow: var(--shadow-card);
-    padding: 2rem;
+    /* The action card is the screen's single focal surface; it alone carries
+       the raised elevation. Sidebar cards and receipts defer to it. */
+    box-shadow: var(--shadow-raised);
+    padding: 2rem 2.25rem;
     margin-bottom: 0;
 }
 
@@ -310,8 +364,9 @@ body[data-header="center"] .portal-nav {
 }
 
 .portal-card-title {
-    font-size: 1.5rem;
+    font-size: 1.625rem;
     font-weight: 700;
+    letter-spacing: -0.01em;
     color: var(--color-primary);
     margin-bottom: 0.25rem;
 }
@@ -321,13 +376,15 @@ body[data-header="center"] .portal-nav {
     color: var(--color-text-muted);
 }
 
-/* 3-Step Intake Journey Bar */
+/* Intake Journey Bar: quiet canvas band groups the four steps as one unit */
 .portal-stepper {
     display: flex;
     justify-content: space-between;
     margin-bottom: 2rem;
-    padding-bottom: 1.25rem;
-    border-bottom: 1px solid var(--color-border);
+    padding: 0.875rem 1.125rem;
+    background-color: var(--color-canvas);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     position: relative;
     gap: 0.5rem;
 }
@@ -367,6 +424,7 @@ body[data-header="center"] .portal-nav {
     background-color: var(--color-primary);
     border-color: var(--color-primary);
     color: #ffffff;
+    box-shadow: 0 0 0 3px rgba(15, 42, 74, 0.15);
 }
 
 .portal-step-item.completed .portal-step-num {
@@ -396,21 +454,20 @@ body[data-header="center"] .portal-nav {
         grid-column: span 12;
     }
     .portal-stepper {
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
         gap: 0.75rem;
     }
 }
 
-/* Category Guidance Microcopy */
-.portal-category-guidance {
-    margin-top: 0.375rem;
-    font-size: 0.8125rem;
-    color: var(--color-text-muted);
-    padding: 0.5rem 0.75rem;
-    background-color: var(--color-canvas);
-    border-radius: var(--radius-sm);
-    border-left: 3px solid var(--color-accent);
-    line-height: 1.4;
+/* Section headings inside the form grid (Requester / Document grouping) */
+.portal-form-section {
+    grid-column: span 12;
+    font-size: 0.9375rem;
+    font-weight: 700;
+    color: var(--color-primary);
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--color-border);
 }
 
 /* Notices and Alerts */
@@ -480,7 +537,7 @@ body[data-header="center"] .portal-nav {
 .portal-select,
 .portal-textarea {
     width: 100%;
-    padding: 0.625rem 0.875rem;
+    padding: 0.6875rem 0.875rem;
     font-size: 0.95rem;
     font-family: inherit;
     color: var(--color-text);
@@ -513,26 +570,27 @@ body[data-header="center"] .portal-nav {
 .portal-checkbox-group {
     display: flex;
     align-items: flex-start;
-    gap: 0.625rem;
+    gap: 0.75rem;
     margin: 0;
-    padding: 1rem;
+    padding: 1.25rem;
     background-color: #f8fafc;
     border-radius: var(--radius-sm);
     border: 1px solid var(--color-border);
 }
 
 .portal-checkbox-group input[type="checkbox"] {
-    margin-top: 0.25rem;
-    width: 1.125rem;
-    height: 1.125rem;
+    margin-top: 0.2rem;
+    width: 1.25rem;
+    height: 1.25rem;
     accent-color: var(--color-primary);
     cursor: pointer;
+    flex-shrink: 0;
 }
 
 .portal-checkbox-label {
     font-size: 0.875rem;
     color: var(--color-text);
-    line-height: 1.4;
+    line-height: 1.5;
     cursor: pointer;
 }
 
@@ -561,6 +619,8 @@ body[data-header="center"] .portal-nav {
 .portal-btn-primary {
     background-color: var(--color-primary);
     color: var(--color-primary-text);
+    /* Inset bottom edge gives the flat button a tactile keyline, not a gradient */
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
 }
 
 .portal-btn-primary:hover:not(:disabled) {
@@ -570,10 +630,15 @@ body[data-header="center"] .portal-nav {
 .portal-btn-success {
     background-color: var(--color-accent);
     color: #ffffff;
+    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18);
 }
 
 .portal-btn-success:hover:not(:disabled) {
     background-color: var(--color-accent-hover);
+}
+
+.portal-btn:active:not(:disabled) {
+    transform: translateY(1px);
 }
 
 .portal-btn-secondary {
@@ -622,7 +687,7 @@ body[data-header="center"] .portal-nav {
     padding: 0.75rem 0.5rem;
     padding-left: 1.1rem;
     border: 2px solid var(--color-border);
-    border-radius: var(--radius-md);
+    border-radius: var(--radius-sm);
 }
 
 .portal-otp-input:focus {
@@ -631,18 +696,13 @@ body[data-header="center"] .portal-nav {
     box-shadow: 0 0 0 3px rgba(15, 42, 74, 0.2);
 }
 
-.portal-cooldown-text {
-    font-size: 0.875rem;
-    color: var(--color-text-light);
-    margin-top: 1rem;
-}
-
 /* Receipt / Tracking Results Card */
 .portal-receipt {
     background: #ffffff;
     border: 2px solid var(--color-primary);
     border-radius: var(--radius-md);
-    padding: 2rem;
+    box-shadow: var(--shadow-card);
+    padding: 2rem 2.25rem;
     margin-bottom: 0;
 }
 
@@ -881,47 +941,10 @@ body[data-header="center"] .portal-nav {
     text-decoration: underline;
 }
 
-/* Floating header-layout preview switcher (demo aid; delete once a layout is chosen) */
-.header-layout-switcher {
-    position: fixed;
-    right: 1rem;
-    bottom: 1rem;
-    z-index: 50;
-    display: flex;
-    gap: 0.25rem;
-    background: #ffffff;
-    border: 1px solid var(--color-border);
-    border-radius: 9999px;
-    padding: 0.25rem;
-    box-shadow: var(--shadow-card);
-    font-size: 0.75rem;
-}
-
-.header-layout-switcher button {
-    border: 0;
-    background: transparent;
-    color: var(--color-text-muted);
-    font: inherit;
-    font-weight: 600;
-    padding: 0.375rem 0.625rem;
-    border-radius: 9999px;
-    cursor: pointer;
-}
-
-.header-layout-switcher button.active {
-    background-color: var(--color-accent-soft);
-    color: var(--color-accent);
-}
-
-.header-layout-switcher button:focus-visible {
-    outline: 2px solid var(--color-primary);
-    outline-offset: 2px;
-}
-
 /* Print Stylesheet: Preserves headers, receipt, and footers without omission */
 @media print {
     .portal-nav, .portal-btn, .portal-actions-bar, .portal-search-guidance, .portal-hp,
-    .portal-layout-sidebar, .portal-stepper, .header-layout-switcher {
+    .portal-layout-sidebar, .portal-stepper, .portal-skip-link {
         display: none !important;
     }
     body, .portal-main {
@@ -962,6 +985,41 @@ body[data-header="center"] .portal-nav {
 }
 
 @media (max-width: 600px) {
+    /* Compact civic header: brand row (seal beside text) + full-width tab row */
+    .portal-header {
+        padding: 1rem 0 1.125rem;
+    }
+    .portal-header-container {
+        gap: 0.75rem 0.875rem;
+        padding-left: 1.25rem;
+        padding-right: 1.25rem;
+    }
+    .portal-brand-seal {
+        width: 44px;
+        height: 44px;
+        padding: 3px;
+    }
+    .portal-brand-sub {
+        /* 12px floor on phones: 10px uppercase tracked text is the edge of legibility
+           for the republic line, and contrast alone does not fix size. */
+        font-size: 0.75rem;
+        letter-spacing: 0.06em;
+    }
+    .portal-brand-title {
+        font-size: 1.125rem;
+    }
+    .portal-brand-subtitle {
+        font-size: 0.75rem;
+    }
+    .portal-nav {
+        margin-left: 0;
+        width: 100%;
+        gap: 0.25rem;
+    }
+    .portal-nav-link {
+        flex: 1 1 0;
+        justify-content: center;
+    }
     .portal-kv-list {
         grid-template-columns: 1fr;
         row-gap: 0.25rem;
@@ -977,5 +1035,22 @@ body[data-header="center"] .portal-nav {
     }
     .portal-receipt-header {
         flex-direction: column;
+    }
+    .portal-stepper {
+        padding: 0.75rem;
+    }
+    /* 16px minimum: iOS Safari auto-zooms any focused field set smaller */
+    .portal-input,
+    .portal-select,
+    .portal-textarea {
+        font-size: 1rem;
+    }
+    /* Compact notices: the intake callout must not dominate a phone screen */
+    .portal-alert {
+        padding: 0.875rem 1rem;
+        font-size: 0.875rem;
+    }
+    .portal-footer {
+        font-size: 0.8125rem;
     }
 }

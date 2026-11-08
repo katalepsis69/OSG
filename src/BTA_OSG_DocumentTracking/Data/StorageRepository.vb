@@ -46,29 +46,6 @@ Namespace BTA_OSG
             End Try
         End Function
 
-        Public Function GetMovements(docId As Integer) As List(Of DocumentMovement)
-            Dim list As New List(Of DocumentMovement)()
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT MovementID, DocumentID, StorageLocationID, MovedByUserID, MovedAtUTC, MovementReason FROM tbl_DocumentMovements WHERE DocumentID = @id ORDER BY MovedAtUTC DESC"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@id", docId)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            list.Add(New DocumentMovement With {
-                                .MovementID = Convert.ToInt32(reader("MovementID")),
-                                .DocumentID = Convert.ToInt32(reader("DocumentID")),
-                                .StorageLocationID = Convert.ToInt32(reader("StorageLocationID")),
-                                .MovedAtUTC = Convert.ToDateTime(reader("MovedAtUTC")),
-                                .MovedByUserID = Convert.ToInt32(reader("MovedByUserID")),
-                                .MovementReason = If(IsDBNull(reader("MovementReason")), Nothing, Convert.ToString(reader("MovementReason")))
-                            })
-                        End While
-                    End Using
-                End Using
-            End Using
-            Return list
-        End Function
-
         Public Function InsertMovement(movement As DocumentMovement, Optional transaction As SqlTransaction = Nothing) As Integer
             Dim sql = "INSERT INTO tbl_DocumentMovements (DocumentID, StorageLocationID, MovedAtUTC, MovedByUserID, MovementReason) " &
                       "OUTPUT INSERTED.MovementID " &
@@ -94,17 +71,6 @@ Namespace BTA_OSG
                     End Using
                 End Using
             End If
-        End Function
-
-        Private Function MapStorageLocation(reader As IDataReader) As StorageLocation
-            Return New StorageLocation With {
-                .StorageLocationID = Convert.ToInt32(reader("StorageLocationID")),
-                .CabinetID = If(IsDBNull(reader("CabinetID")), Nothing, Convert.ToString(reader("CabinetID"))),
-                .ShelfNo = If(IsDBNull(reader("ShelfNo")), Nothing, Convert.ToString(reader("ShelfNo"))),
-                .BoxCode = If(IsDBNull(reader("BoxCode")), Nothing, Convert.ToString(reader("BoxCode"))),
-                .Description = If(IsDBNull(reader("Description")), Nothing, Convert.ToString(reader("Description"))),
-                .IsActive = Convert.ToBoolean(reader("IsActive"))
-            }
         End Function
     End Class
 End Namespace

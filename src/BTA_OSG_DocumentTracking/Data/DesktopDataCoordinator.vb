@@ -90,58 +90,9 @@ Namespace BTA_OSG
                 ' movement either land whole or not at all, so a mid-sequence failure cannot
                 ' strand an orphan SQL document for the outbox to re-register under a fresh code.
                 Using conn = AppStartup.ConnectionFactory.CreateConnection()
-                    Using tx = conn.BeginTransaction()
-                        Try
-                            doc = AppStartup.DocService.RegisterDocumentWithWorkflow(fields.Title, TypeCodeFor(fields.DocType), fields.FlowDirection, fields.Origin, fields.Destination, targetDt, fields.GDriveUrl, fields.LastAction, fields.RegisteredByUserId, transaction:=tx, receivedDate:=receivedDt, externalControlNumber:=fields.ExternalControlNumber, preferredDocCode:=fields.PreferredDocCode, requesterGender:=fields.RequesterGender)
-                            If doc Is Nothing Then Return Nothing
-
-                            ' The desktop registers INTO a workflow: status, desk, and owner are part of the
-                            ' record, not defaults to be discovered later.
-                            Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(If(String.IsNullOrWhiteSpace(fields.InitialStatus), "RECEIVED", fields.InitialStatus))
-                            If status Is Nothing Then status = AppStartup.ReferenceDataRepo.GetStatusByCode("RECEIVED")
-                            Dim statusId As Integer = If(status IsNot Nothing, status.StatusID, 1)
-                            Dim effectiveSection = If(String.IsNullOrWhiteSpace(fields.AssignedSection), DocumentService.GetDefaultSectionForCategory(fields.DocType), fields.AssignedSection)
-                            AppStartup.DocumentRepo.UpdateWorkflowState(doc.DocumentID, statusId, effectiveSection, Nothing, fields.LastAction, fields.RegisteredByUserId, transaction:=tx)
-
-                            Dim ownerId = ResolveUserId(fields.AssignedStaff)
-                            If ownerId.HasValue Then
-                                AppStartup.DocumentRepo.AddAssignment(New DocumentAssignment With {
-                                    .DocumentID = doc.DocumentID,
-                                    .AssignedUserID = ownerId,
-                                    .AssignedByUserID = fields.RegisteredByUserId,
-                                    .AssignedAtUTC = DateTime.UtcNow,
-                                    .Remarks = "Registered and routed to " & effectiveSection
-                                }, tx)
-                            End If
-
-                            AppStartup.RoutingRepo.Insert(New RoutingLog With {
-                                .DocumentID = doc.DocumentID,
-                                .FromStatusID = Nothing,
-                                .ToStatusID = statusId,
-                                .FromOffice = fields.Origin,
-                                .ToOffice = fields.Destination,
-                                .RoutedByUserID = fields.RegisteredByUserId,
-                                .RoutedAtUTC = DateTime.UtcNow,
-                                .RoutingRemarks = "Document registered in OSG System."
-                            }, tx)
-
-                            Dim locationId = AppStartup.StorageRepo.GetOrCreateByKey(fields.Cabinet, fields.Shelf, fields.Box, tx)
-                            AppStartup.StorageRepo.InsertMovement(New DocumentMovement With {
-                                .DocumentID = doc.DocumentID,
-                                .StorageLocationID = locationId,
-                                .MovedByUserID = fields.RegisteredByUserId,
-                                .MovedAtUTC = DateTime.UtcNow,
-                                .MovementReason = "Initial storage assignment."
-                            }, tx)
-                            AppStartup.DocumentRepo.UpdateStorageLocation(doc.DocumentID, locationId, tx)
-
-                            tx.Commit()
-                        Catch
-                            tx.Rollback()
-                            Throw
-                        End Try
-                    End Using
+                    doc = WriteRegistrationWorkflow(fields, targetDt, receivedDt, conn)
                 End Using
+                If doc Is Nothing Then Return Nothing
 
                 ' Refresh the operator's grid in the same click via quick LAN read. This runs
                 ' after the commit: the SQL write is already durable, so a refresh failure
@@ -160,6 +111,66 @@ Namespace BTA_OSG
                 Program.ReportOperatorWarning("Registration was saved to this workstation's offline store because the office server refused the write (" & ex.Message & "). It retries automatically; if this repeats, run Station Setup.")
                 Return Nothing
             End Try
+        End Function
+
+        ''' <summary>The registration transaction body: the six writes (sequence-backed
+        ''' document row, workflow state, assignment, routing log, storage movement,
+        ''' storage location pointer) land whole or not at all. Returns Nothing when the
+        ''' service refused to mint the document; the caller must not fall back to the
+        ''' cache in that case either (Nothing means refused, not failed).</summary>
+        Private Function WriteRegistrationWorkflow(fields As RegistrationInput, targetDt As DateTime?, receivedDt As DateTime?, conn As Microsoft.Data.SqlClient.SqlConnection) As Document
+            Using tx = conn.BeginTransaction()
+                Try
+                    Dim doc = AppStartup.DocService.RegisterDocumentWithWorkflow(fields.Title, TypeCodeFor(fields.DocType), fields.FlowDirection, fields.Origin, fields.Destination, targetDt, fields.GDriveUrl, fields.LastAction, fields.RegisteredByUserId, transaction:=tx, receivedDate:=receivedDt, externalControlNumber:=fields.ExternalControlNumber, preferredDocCode:=fields.PreferredDocCode, requesterGender:=fields.RequesterGender)
+                    If doc Is Nothing Then Return Nothing
+
+                    ' The desktop registers INTO a workflow: status, desk, and owner are part of the
+                    ' record, not defaults to be discovered later.
+                    Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(If(String.IsNullOrWhiteSpace(fields.InitialStatus), "RECEIVED", fields.InitialStatus))
+                    If status Is Nothing Then status = AppStartup.ReferenceDataRepo.GetStatusByCode("RECEIVED")
+                    Dim statusId As Integer = If(status IsNot Nothing, status.StatusID, 1)
+                    Dim effectiveSection = If(String.IsNullOrWhiteSpace(fields.AssignedSection), DocumentService.GetDefaultSectionForCategory(fields.DocType), fields.AssignedSection)
+                    AppStartup.DocumentRepo.UpdateWorkflowState(doc.DocumentID, statusId, effectiveSection, Nothing, fields.LastAction, fields.RegisteredByUserId, transaction:=tx)
+
+                    Dim ownerId = ResolveUserId(fields.AssignedStaff)
+                    If ownerId.HasValue Then
+                        AppStartup.DocumentRepo.AddAssignment(New DocumentAssignment With {
+                            .DocumentID = doc.DocumentID,
+                            .AssignedUserID = ownerId,
+                            .AssignedByUserID = fields.RegisteredByUserId,
+                            .AssignedAtUTC = DateTime.UtcNow,
+                            .Remarks = "Registered and routed to " & effectiveSection
+                        }, tx)
+                    End If
+
+                    AppStartup.RoutingRepo.Insert(New RoutingLog With {
+                        .DocumentID = doc.DocumentID,
+                        .FromStatusID = Nothing,
+                        .ToStatusID = statusId,
+                        .FromOffice = fields.Origin,
+                        .ToOffice = fields.Destination,
+                        .RoutedByUserID = fields.RegisteredByUserId,
+                        .RoutedAtUTC = DateTime.UtcNow,
+                        .RoutingRemarks = "Document registered in OSG System."
+                    }, tx)
+
+                    Dim locationId = AppStartup.StorageRepo.GetOrCreateByKey(fields.Cabinet, fields.Shelf, fields.Box, tx)
+                    AppStartup.StorageRepo.InsertMovement(New DocumentMovement With {
+                        .DocumentID = doc.DocumentID,
+                        .StorageLocationID = locationId,
+                        .MovedByUserID = fields.RegisteredByUserId,
+                        .MovedAtUTC = DateTime.UtcNow,
+                        .MovementReason = "Initial storage assignment."
+                    }, tx)
+                    AppStartup.DocumentRepo.UpdateStorageLocation(doc.DocumentID, locationId, tx)
+
+                    tx.Commit()
+                    Return doc
+                Catch
+                    tx.Rollback()
+                    Throw
+                End Try
+            End Using
         End Function
 
         ''' <summary>
@@ -188,30 +199,7 @@ Namespace BTA_OSG
                                 AppStartup.UserRepo.Update(existing, enrolledByUserId, tx)
                                 AppStartup.UserRepo.AssignRole(existing.UserID, RoleCodeFor(role), enrolledByUserId, tx)
                             Else
-                                If claimGuard AndAlso RoleCodeFor(role) = RbacPolicy.ROLE_SYSADMIN AndAlso
-                                   AppStartup.UserRepo.HasAnyUserWithRole(RbacPolicy.ROLE_SYSADMIN) Then
-                                    Throw New GuardRefusedException("An administrator has already been claimed on this server.")
-                                End If
-                                Dim newUser As New User With {
-                                    .Username = SanitizeUsername(fullName),
-                                    .FullName = fullName,
-                                    .Office = office,
-                                    .IsActive = True,
-                                    .CanRoute = canRoute,
-                                    .CanMove = canMove,
-                                    .CanSoftCopy = canSoftCopy
-                                }
-                                Dim userId As Integer
-                                Try
-                                    userId = AppStartup.UserRepo.Insert(newUser, enrolledByUserId, tx)
-                                Catch dup As Microsoft.Data.SqlClient.SqlException
-                                    ' Username is UNIQUE too; two staff with the same name get the badge suffix.
-                                    newUser.Username = SanitizeUsername(fullName) & "_" & Right(cleanUid, 4).ToLowerInvariant()
-                                    userId = AppStartup.UserRepo.Insert(newUser, enrolledByUserId, tx)
-                                End Try
-
-                                AppStartup.CardService.IssueCard(userId, cleanUid, "Enrolled from desktop Admin", enrolledByUserId, tx)
-                                AppStartup.UserRepo.AssignRole(userId, RoleCodeFor(role), enrolledByUserId, tx)
+                                InsertUserWithCard(fullName, role, office, cleanUid, canRoute, canMove, canSoftCopy, enrolledByUserId, tx, claimGuard)
                             End If
                             tx.Commit()
                             Return True
@@ -231,6 +219,37 @@ Namespace BTA_OSG
                 Return False
             End Try
         End Function
+
+        ''' <summary>The new-user enrolment contract, inside the caller's transaction: the
+        ''' claim guard (only one SYSADMIN may ever be claimed), the insert with the
+        ''' UNIQUE-username badge-suffix retry, the badge issue, and the role assign.
+        ''' Any guard refusal or SQL failure rethrows so the caller rolls back whole.</summary>
+        Private Sub InsertUserWithCard(fullName As String, role As String, office As String, cleanUid As String, canRoute As Boolean, canMove As Boolean, canSoftCopy As Boolean, enrolledByUserId As Integer, tx As Microsoft.Data.SqlClient.SqlTransaction, claimGuard As Boolean)
+            If claimGuard AndAlso RoleCodeFor(role) = RbacPolicy.ROLE_SYSADMIN AndAlso
+               AppStartup.UserRepo.HasAnyUserWithRole(RbacPolicy.ROLE_SYSADMIN) Then
+                Throw New GuardRefusedException("An administrator has already been claimed on this server.")
+            End If
+            Dim newUser As New User With {
+                .Username = SanitizeUsername(fullName),
+                .FullName = fullName,
+                .Office = office,
+                .IsActive = True,
+                .CanRoute = canRoute,
+                .CanMove = canMove,
+                .CanSoftCopy = canSoftCopy
+            }
+            Dim userId As Integer
+            Try
+                userId = AppStartup.UserRepo.Insert(newUser, enrolledByUserId, tx)
+            Catch dup As Microsoft.Data.SqlClient.SqlException
+                ' Username is UNIQUE too; two staff with the same name get the badge suffix.
+                newUser.Username = SanitizeUsername(fullName) & "_" & Right(cleanUid, 4).ToLowerInvariant()
+                userId = AppStartup.UserRepo.Insert(newUser, enrolledByUserId, tx)
+            End Try
+
+            AppStartup.CardService.IssueCard(userId, cleanUid, "Enrolled from desktop Admin", enrolledByUserId, tx)
+            AppStartup.UserRepo.AssignRole(userId, RoleCodeFor(role), enrolledByUserId, tx)
+        End Sub
 
         ''' <summary>
         ''' One document registration handed to the SQL path, either from the registry form
@@ -308,57 +327,7 @@ Namespace BTA_OSG
             If IsDatabaseConnected AndAlso AppStartup.RoutingService IsNot Nothing Then
                 ' Status update and custody log are one fact: a crash between them must not
                 ' leave a moved document with no routing entry, so both join one transaction.
-                If TryRunSql("RouteDocument", Sub()
-                                                  Using conn = AppStartup.ConnectionFactory.CreateConnection()
-                                                      Using tx = conn.BeginTransaction()
-                                                          Try
-                                                              Dim currentDoc = AppStartup.DocumentRepo.GetById(docId)
-                                                              If currentDoc Is Nothing Then Throw New InvalidOperationException("Document " & docId.ToString() & " no longer exists.")
-                                                              Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(If(String.IsNullOrWhiteSpace(action), "ROUTED", action))
-
-                                                              ' A filed, released, archived, or completed document has left the
-                                                              ' active workflow: refuse the re-route instead of silently
-                                                              ' reopening it with nothing but a routine custody log.
-                                                              Dim currentCode = StatusCodeFor(currentDoc.StatusID)
-                                                              If DocumentStatus.IsTerminalStatus(currentCode) AndAlso
-                                                                 (status Is Nothing OrElse Not String.Equals(status.StatusCode, currentCode, StringComparison.OrdinalIgnoreCase)) Then
-                                                                  Throw New GuardRefusedException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer be routed.")
-                                                              End If
-
-                                                              ' An action that is not a status code must not regress the
-                                                              ' document: keep its current status, exactly as the offline
-                                                              ' and replay paths do. Only the destination and custody log
-                                                              ' record the transmittal.
-                                                              Dim statusId As Integer = If(status IsNot Nothing, status.StatusID, currentDoc.StatusID)
-
-                                                              ' A destination office is not a desk: AssignedSection stays
-                                                              ' (COALESCE via Nothing), matching the offline path, so a
-                                                              ' document routed connected and one routed offline end up
-                                                              ' visible at the same desk after sync.
-                                                              AppStartup.DocumentRepo.UpdateWorkflowState(docId, statusId, Nothing, Nothing, "Routed to " & toOffice & ": " & action, routedByUserId, destinationOffice:=toOffice, originOffice:=fromOffice, transaction:=tx)
-
-                                                              Dim log As New RoutingLog With {
-                                                                  .DocumentID = docId,
-                                                                  .FromStatusID = Nothing,
-                                                                  .ToStatusID = statusId,
-                                                                  .FromOffice = fromOffice,
-                                                                  .ToOffice = toOffice,
-                                                                  .RoutingRemarks = remarks,
-                                                                  .RoutedByUserID = routedByUserId,
-                                                                  .RoutedAtUTC = DateTime.UtcNow
-                                                              }
-                                                              AppStartup.RoutingRepo.Insert(log, tx)
-                                                              If AppStartup.AuditService IsNot Nothing Then
-                                                                  AppStartup.AuditService.LogEvent("ROUTING_LOG_ADDED", "RoutingLog", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, tx)
-                                                              End If
-                                                              tx.Commit()
-                                                          Catch
-                                                              tx.Rollback()
-                                                              Throw
-                                                          End Try
-                                                      End Using
-                                                  End Using
-                                              End Sub) Then
+                If TryRunSql("RouteDocument", Sub() WriteRouteTransaction(docId, fromOffice, toOffice, action, remarks, routedByUserId)) Then
                     PullAfterWrite("Documents", "RoutingLogs", "AuditTrail")
                     Return
                 End If
@@ -413,26 +382,88 @@ Namespace BTA_OSG
                 Dim cab = If(parts.Length > 0, parts(0), "")
                 Dim shelf = If(parts.Length > 1, parts(1), "")
                 Dim box = If(parts.Length > 2, parts(2), "")
-                If TryRunSql("MoveStorage", Sub()
-                                                Using conn = AppStartup.ConnectionFactory.CreateConnection()
-                                                    Using tx = conn.BeginTransaction()
-                                                        Try
-                                                            Dim locationId = AppStartup.StorageRepo.GetOrCreateByKey(cab, shelf, box, tx)
-                                                            AppStartup.StorageService.MoveDocument(docId, locationId, movedByUserId, reason, tx)
-                                                            tx.Commit()
-                                                        Catch
-                                                            tx.Rollback()
-                                                            Throw
-                                                        End Try
-                                                    End Using
-                                                End Using
-                                            End Sub) Then
+                If TryRunSql("MoveStorage", Sub() WriteMoveTransaction(docId, cab, shelf, box, reason, movedByUserId)) Then
                     PullAfterWrite("Documents", "Movements", "AuditTrail")
                     Return
                 End If
             End If
             EmbeddedDB.AddMovementLog(docId, fromLoc, toLoc, movedByName, reason)
             EmbeddedDB.LogAudit(movedByName, String.Format("Transferred Doc #{0} storage location from {1} to {2}", docId, fromLoc, toLoc))
+        End Sub
+
+        ''' <summary>The connected routing transaction body: status update, custody log,
+        ''' and audit row are one fact (a crash between them must not leave a moved
+        ''' document with no routing entry). The terminal-state guard and the
+        ''' non-regression rule throw here so TryRunSql sees the refusal exactly as
+        ''' before the body was named.</summary>
+        Private Sub WriteRouteTransaction(docId As Integer, fromOffice As String, toOffice As String, action As String, remarks As String, routedByUserId As Integer)
+            Using conn = AppStartup.ConnectionFactory.CreateConnection()
+                Using tx = conn.BeginTransaction()
+                    Try
+                        Dim currentDoc = AppStartup.DocumentRepo.GetById(docId)
+                        If currentDoc Is Nothing Then Throw New InvalidOperationException("Document " & docId.ToString() & " no longer exists.")
+                        Dim status = AppStartup.ReferenceDataRepo.GetStatusByCode(If(String.IsNullOrWhiteSpace(action), "ROUTED", action))
+
+                        ' A filed, released, archived, or completed document has left the
+                        ' active workflow: refuse the re-route instead of silently
+                        ' reopening it with nothing but a routine custody log.
+                        Dim currentCode = StatusCodeFor(currentDoc.StatusID)
+                        If DocumentStatus.IsTerminalStatus(currentCode) AndAlso
+                           (status Is Nothing OrElse Not String.Equals(status.StatusCode, currentCode, StringComparison.OrdinalIgnoreCase)) Then
+                            Throw New GuardRefusedException("This document is already " & DocumentStatus.DisplayName(currentCode) & " and can no longer be routed.")
+                        End If
+
+                        ' An action that is not a status code must not regress the
+                        ' document: keep its current status, exactly as the offline
+                        ' and replay paths do. Only the destination and custody log
+                        ' record the transmittal.
+                        Dim statusId As Integer = If(status IsNot Nothing, status.StatusID, currentDoc.StatusID)
+
+                        ' A destination office is not a desk: AssignedSection stays
+                        ' (COALESCE via Nothing), matching the offline path, so a
+                        ' document routed connected and one routed offline end up
+                        ' visible at the same desk after sync.
+                        AppStartup.DocumentRepo.UpdateWorkflowState(docId, statusId, Nothing, Nothing, "Routed to " & toOffice & ": " & action, routedByUserId, destinationOffice:=toOffice, originOffice:=fromOffice, transaction:=tx)
+
+                        Dim log As New RoutingLog With {
+                            .DocumentID = docId,
+                            .FromStatusID = Nothing,
+                            .ToStatusID = statusId,
+                            .FromOffice = fromOffice,
+                            .ToOffice = toOffice,
+                            .RoutingRemarks = remarks,
+                            .RoutedByUserID = routedByUserId,
+                            .RoutedAtUTC = DateTime.UtcNow
+                        }
+                        AppStartup.RoutingRepo.Insert(log, tx)
+                        If AppStartup.AuditService IsNot Nothing Then
+                            AppStartup.AuditService.LogEvent("ROUTING_LOG_ADDED", "RoutingLog", docId.ToString(), Nothing, Nothing, Nothing, True, Nothing, tx)
+                        End If
+                        tx.Commit()
+                    Catch
+                        tx.Rollback()
+                        Throw
+                    End Try
+                End Using
+            End Using
+        End Sub
+
+        ''' <summary>The connected move transaction body: landmark creation and the
+        ''' movement commit together, because a movement pointing at a landmark that
+        ''' failed to commit is the one outcome the move must never produce.</summary>
+        Private Sub WriteMoveTransaction(docId As Integer, cab As String, shelf As String, box As String, reason As String, movedByUserId As Integer)
+            Using conn = AppStartup.ConnectionFactory.CreateConnection()
+                Using tx = conn.BeginTransaction()
+                    Try
+                        Dim locationId = AppStartup.StorageRepo.GetOrCreateByKey(cab, shelf, box, tx)
+                        AppStartup.StorageService.MoveDocument(docId, locationId, movedByUserId, reason, tx)
+                        tx.Commit()
+                    Catch
+                        tx.Rollback()
+                        Throw
+                    End Try
+                End Using
+            End Using
         End Sub
 
         Public Sub RequestRevision(docId As Integer, punchlistNotes As String, returnSection As String, staffName As String, staffUserId As Integer)

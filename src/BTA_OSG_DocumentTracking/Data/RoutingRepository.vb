@@ -13,32 +13,6 @@ Namespace BTA_OSG
             _connectionFactory = connectionFactory
         End Sub
 
-        Public Function GetByDocumentId(docId As Integer) As List(Of RoutingLog)
-            Dim list As New List(Of RoutingLog)()
-            Using conn = _connectionFactory.CreateConnection()
-                Dim sql = "SELECT * FROM tbl_RoutingLogs WHERE DocumentID = @id ORDER BY RoutedAtUTC DESC"
-                Using cmd = New SqlCommand(sql, conn)
-                    cmd.Parameters.AddWithValue("@id", docId)
-                    Using reader = cmd.ExecuteReader()
-                        While reader.Read()
-                            list.Add(New RoutingLog With {
-                                .RoutingLogID = Convert.ToInt32(reader("RoutingLogID")),
-                                .DocumentID = Convert.ToInt32(reader("DocumentID")),
-                                .FromStatusID = If(IsDBNull(reader("FromStatusID")), CType(Nothing, Integer?), Convert.ToInt32(reader("FromStatusID"))),
-                                .ToStatusID = If(IsDBNull(reader("ToStatusID")), CType(Nothing, Integer?), Convert.ToInt32(reader("ToStatusID"))),
-                                .FromOffice = If(IsDBNull(reader("FromOffice")), Nothing, Convert.ToString(reader("FromOffice"))),
-                                .ToOffice = If(IsDBNull(reader("ToOffice")), Nothing, Convert.ToString(reader("ToOffice"))),
-                                .RoutedByUserID = Convert.ToInt32(reader("RoutedByUserID")),
-                                .RoutedAtUTC = Convert.ToDateTime(reader("RoutedAtUTC")),
-                                .RoutingRemarks = If(IsDBNull(reader("RoutingRemarks")), Nothing, Convert.ToString(reader("RoutingRemarks")))
-                            })
-                        End While
-                    End Using
-                End Using
-            End Using
-            Return list
-        End Function
-
         Public Function Insert(log As RoutingLog, Optional transaction As SqlTransaction = Nothing) As Integer
             Dim sql = "INSERT INTO tbl_RoutingLogs (DocumentID, FromStatusID, ToStatusID, FromOffice, ToOffice, RoutedByUserID, RoutedAtUTC, RoutingRemarks) " &
                       "OUTPUT INSERTED.RoutingLogID " &

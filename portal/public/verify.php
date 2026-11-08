@@ -396,6 +396,7 @@ function format_pst_time(string $utcTimeStr): string {
     <link rel="stylesheet" href="css/portal.css?v=<?= filemtime(__DIR__ . '/css/portal.css') ?>">
 </head>
 <body>
+    <a class="portal-skip-link" href="#main-content">Skip to main content</a>
     <header class="portal-header">
         <div class="portal-header-container">
             <img class="portal-brand-seal" src="assets/bta_logo.png" alt="Bangsamoro Parliament Official Seal" width="56" height="56">
@@ -405,13 +406,13 @@ function format_pst_time(string $utcTimeStr): string {
                 <span class="portal-brand-subtitle">Office of the Secretary-General &bull; OSGPortal Public Intake</span>
             </div>
             <nav class="portal-nav" aria-label="Public Portal Navigation">
-                <a href="index.php" class="portal-nav-link <?= ($activePage === 'index') ? 'active' : '' ?>">Submit Document</a>
-                <a href="track.php" class="portal-nav-link <?= ($activePage === 'track') ? 'active' : '' ?>">Track Document</a>
+                <a href="index.php" class="portal-nav-link <?= ($activePage === 'index') ? 'active' : '' ?>"<?= ($activePage === 'index') ? ' aria-current="page"' : '' ?>>Submit Document</a>
+                <a href="track.php" class="portal-nav-link <?= ($activePage === 'track') ? 'active' : '' ?>"<?= ($activePage === 'track') ? ' aria-current="page"' : '' ?>>Track Document</a>
             </nav>
         </div>
     </header>
 
-    <main class="portal-main">
+    <main class="portal-main" id="main-content">
         <div class="portal-layout-wrapper">
             <div class="portal-layout-main">
                 <?php if ($verifiedDocument): ?>
@@ -677,13 +678,15 @@ function format_pst_time(string $utcTimeStr): string {
                 <p class="portal-sidebar-text">
                     For inquiries regarding tracking, routing verification, or document status:
                 </p>
+                <!-- PLACEHOLDER CONTACT POINTS: not yet confirmed by the office. Do not
+                     publish to production until real channels replace them. -->
                 <div class="portal-info-item">
                     <span class="portal-info-label">Email:</span>
-                    osg.records@bta.gov.ph
+                    osg.records@bta.gov.ph <small>(to be confirmed)</small>
                 </div>
                 <div class="portal-info-item">
                     <span class="portal-info-label">Trunkline:</span>
-                    (064) 552-1234 loc. 104
+                    (064) 552-1234 loc. 104 <small>(to be confirmed)</small>
                 </div>
             </div>
         <?php else: ?>
@@ -754,13 +757,15 @@ function format_pst_time(string $utcTimeStr): string {
                 <div class="portal-sidebar-title">
                     <span>Assistance Desk</span>
                 </div>
+                <!-- PLACEHOLDER CONTACT POINTS: not yet confirmed by the office. Do not
+                     publish to production until real channels replace them. -->
                 <div class="portal-info-item">
                     <span class="portal-info-label">Email:</span>
-                    osg.records@bta.gov.ph
+                    osg.records@bta.gov.ph <small>(to be confirmed)</small>
                 </div>
                 <div class="portal-info-item">
                     <span class="portal-info-label">Trunkline:</span>
-                    (064) 552-1234 loc. 104
+                    (064) 552-1234 loc. 104 <small>(to be confirmed)</small>
                 </div>
             </div>
         <?php endif; ?>
@@ -780,6 +785,5 @@ function format_pst_time(string $utcTimeStr): string {
             </div>
         </div>
     </footer>
-    <script src="assets/header-preview.js"></script>
 </body>
 </html>

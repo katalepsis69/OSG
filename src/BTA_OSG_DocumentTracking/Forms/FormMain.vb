@@ -328,7 +328,7 @@ Namespace BTA_OSG
                 .IsLink = True,
                 .LinkBehavior = LinkBehavior.HoverUnderline
             }
-            AddHandler lblVersion.Click, Async Sub() Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True)
+            AddHandler lblVersion.Click, Async Sub() Await AppUpdateService.CheckAndApplyUpdateAsync(Me)
 
             stsFooter.Items.AddRange(New ToolStripItem() {lblStatusMessage, lblStatusCount, lblDbState, lblVersion, lblStatusClock})
             Me.Controls.Add(stsFooter)
@@ -689,7 +689,7 @@ Namespace BTA_OSG
                 Dim origText = btnCheckUpdate.Text
                 btnCheckUpdate.Text = "Checking..."
                 Try
-                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, True, Sub()
+                    Await AppUpdateService.CheckAndApplyUpdateAsync(Me, Sub()
                         btnCheckUpdate.Text = origText
                         btnCheckUpdate.Enabled = True
                     End Sub)
@@ -965,6 +965,11 @@ Namespace BTA_OSG
         ''' view exists.
         ''' </summary>
         Private Sub SetPortalStatusThreadSafe(message As String)
+            ' InvokeRequired returns False before the handle exists, which would let the
+            ' earliest startup callback write the label from its worker thread; drop that
+            ' one transient message instead (the label carries its own state until the
+            ' intake view refreshes it).
+            If Not Me.IsHandleCreated Then Return
             If Me.InvokeRequired Then
                 Me.Invoke(Sub()
                               If lblPortalStatus IsNot Nothing Then lblPortalStatus.Text = message

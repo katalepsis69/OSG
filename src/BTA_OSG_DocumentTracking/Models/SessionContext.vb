@@ -25,13 +25,5 @@ Namespace BTA_OSG
             If Permissions Is Nothing Then Return False
             Return Permissions.Contains(code)
         End Function
-
-        Public Function IsExpired(timeoutMinutes As Integer) As Boolean
-            Return (DateTime.UtcNow - LastActivityUTC).TotalMinutes > timeoutMinutes
-        End Function
-
-        Public Sub Touch()
-            LastActivityUTC = DateTime.UtcNow
-        End Sub
     End Class
 End Namespace

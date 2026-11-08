@@ -164,10 +164,6 @@ Namespace BTA_OSG
             End Using
         End Sub
 
-        Private Shared Sub ExecuteScript(scriptName As String, catalog As String, adminConnectionString As String)
-            ExecuteBatches(scriptName, ReadEmbeddedScript(scriptName), catalog, adminConnectionString)
-        End Sub
-
         Private Shared Sub ExecuteBatches(scriptName As String, sql As String, catalog As String, adminConnectionString As String)
             Dim builder As New SqlConnectionStringBuilder(adminConnectionString) With {.InitialCatalog = catalog}
             Using conn As New SqlConnection(builder.ConnectionString)

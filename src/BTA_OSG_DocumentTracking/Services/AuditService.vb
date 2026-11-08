@@ -62,26 +62,5 @@ Namespace BTA_OSG
 
             _auditRepo.Insert(entry, transaction)
         End Sub
-
-        Public Sub LogLoginEvent(actionType As String, userId As Integer?, username As String, fullName As String, role As String, cardPublicIdMasked As String, success As Boolean, failureReason As String)
-            Dim entry As New AuditEntry With {
-                .EventAtUTC = DateTime.UtcNow,
-                .ActionType = actionType,
-                .UserID = userId,
-                .UsernameSnapshot = username,
-                .FullNameSnapshot = fullName,
-                .RoleSnapshot = role,
-                .CardPublicIDMasked = cardPublicIdMasked,
-                .Success = success,
-                .FailureReason = failureReason,
-                .MachineName = Environment.MachineName
-            }
-
-            _auditRepo.Insert(entry)
-        End Sub
-
-        Public Function GetAuditLog(actionType As String, dateFrom As DateTime?, dateTo As DateTime?, pageSize As Integer, pageNumber As Integer) As List(Of AuditEntry)
-            Return _auditRepo.GetByFilter(Nothing, actionType, Nothing, dateFrom, dateTo, pageSize, pageNumber)
-        End Function
     End Class
 End Namespace

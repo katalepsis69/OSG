@@ -78,20 +78,20 @@ Namespace BTA_OSG
             ApplyStatusTint(lblStatus, status)
 
             Dim dueText = doc("TargetDeadlineUTC").ToString().Trim()
-            Dim dueValue As DateTime
             Dim dueColor = CivicCalmTheme.ColorInk
             Dim dueFont = CivicCalmTheme.FontBody
-            If DateTime.TryParse(dueText, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.None, dueValue) AndAlso
-               Not DocumentStatus.IsTerminalStatus(status) Then
-                If dueValue < DateTime.Now Then
-                    dueText &= "  (overdue)"
-                    dueColor = CivicCalmTheme.ColorDanger
-                    dueFont = CivicCalmTheme.FontFieldLabel
-                ElseIf dueValue <= DateTime.Now.AddHours(24) Then
-                    dueText &= "  (due within 24 h)"
-                    dueColor = CivicCalmTheme.ColorStatusReceivedFg
-                    dueFont = CivicCalmTheme.FontFieldLabel
+            ' The overdue / due-soon / terminal-plain decision is the canonical
+            ' DataGridStyler.DeadlineTint; only the suffix wording stays local (it needs
+            ' the parsed value, and the tint already agreed the deadline qualifies).
+            Dim tintBg As Color = Nothing
+            Dim tintFg As Color = Nothing
+            If DataGridStyler.DeadlineTint(dueText, status, tintBg, tintFg) Then
+                Dim dueValue As DateTime
+                If DateTime.TryParse(dueText, Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.None, dueValue) Then
+                    dueText &= If(dueValue < DateTime.Now, "  (overdue)", "  (due within 24 h)")
                 End If
+                dueColor = tintFg
+                dueFont = CivicCalmTheme.FontFieldLabel
             End If
 
             Dim tbl As New TableLayoutPanel With {

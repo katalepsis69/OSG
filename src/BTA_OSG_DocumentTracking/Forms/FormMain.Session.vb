@@ -90,87 +90,103 @@ Namespace BTA_OSG
             Else
                 Dim maskedUid As String = EmbeddedDB.MaskUid(uid)
                 Dim user = EmbeddedDB.AuthenticateRFID(uid)
+                Dim continueSession As Boolean
                 If user IsNot Nothing Then
-                    ' The mirror carries IsLocked: a locked account must not unlock itself by
-                    ' tapping, and the success path below clears the SQL-side counter, which
-                    ' would reset the lock along with it. Refuse here instead.
-                    If user.Table.Columns.Contains("IsLocked") AndAlso Not IsDBNull(user("IsLocked")) AndAlso Convert.ToBoolean(user("IsLocked")) Then
-                        EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Blocked: account is locked [Card: " & maskedUid & "]", actionType:="LOGIN_LOCKED")
-                        ReportRefusal("Access Denied: this account is locked after repeated failed badge reads. Ask a System Administrator to unlock it.")
-                        lblStatusMessage.ForeColor = CivicCalmTheme.ColorDanger
-                        Return
-                    End If
-                    CurrentUser = user
-                    Dim role = user("Role").ToString()
-                    Dim office = If(user.Table.Columns.Contains("Office") AndAlso Not IsDBNull(user("Office")), user("Office").ToString(), "")
-                    Dim effectiveDesk = If(Not String.IsNullOrWhiteSpace(office), office, role)
-                    Dim isGlobal As Boolean = (role = "Secretary-General" OrElse role = "System Administrator" OrElse role = "OSG Chief")
-                    Dim displayRole = If(Not String.IsNullOrWhiteSpace(office) AndAlso Not office.Equals(role, StringComparison.OrdinalIgnoreCase), String.Format("{0} - {1}", role.ToUpperInvariant(), office.ToUpperInvariant()), role.ToUpperInvariant())
-                    lblUserBadge.Text = String.Format("AUTHENTICATED: {0} [{1}] : {2}", user("FullName").ToString().ToUpperInvariant(), displayRole, If(isGlobal, "GLOBAL ACCESS", "SECTION DESK VIEW"))
-                    lblUserBadge.ForeColor = CivicCalmTheme.ColorPrimary
-                    lblStatusMessage.Text = "Authenticated: " & user("FullName").ToString()
-                    lblStatusMessage.ForeColor = CivicCalmTheme.ColorInk
-                    EmbeddedDB.LogAudit(user("FullName").ToString(), If(simulated,
-                        "On-screen badge selection authenticated [Card: " & maskedUid & "] (no reader tap)",
-                        "RFID Badge Tap Authenticated [Card: " & maskedUid & "]"), actionType:="LOGIN_SUCCESS")
-
-                    ' Successful tap clears the SQL-side failed tap counter so the per-user
-                    ' lockout (tbl_Users.FailedTapCount) tracks live state, not stale counts.
-                    If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
-                        Try
-                            Dim userId = If(user.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(user("UserID")), Convert.ToInt32(user("UserID")), 0)
-                            If userId > 0 Then AppStartup.UserRepo.ResetFailedTaps(userId)
-                        Catch
-                        End Try
-                    End If
-
-                    If cmbDashSection IsNot Nothing Then
-                        If isGlobal Then
-                            cmbDashSection.Enabled = True
-                        Else
-                            If effectiveDesk.EndsWith("Section", StringComparison.OrdinalIgnoreCase) OrElse effectiveDesk.Equals("Secretariat", StringComparison.OrdinalIgnoreCase) Then
-                                Dim idx = cmbDashSection.Items.IndexOf(effectiveDesk)
-                                If idx >= 0 Then
-                                    cmbDashSection.SelectedIndex = idx
-                                End If
-                            End If
-                            cmbDashSection.Enabled = False
-                        End If
-                    End If
+                    continueSession = HandleRecognizedUser(user, maskedUid, simulated)
                 Else
-                    ' A cache miss with a live SQL host means one of two things: a truly
-                    ' unknown card, or a badge the server knows but this seat's Users mirror
-                    ' predates. GetByCardPublicID only matches active badges, so a hit here is
-                    ' the stale-mirror case: the owner must not be punished for the seat's
-                    ' lag. Refresh the mirror and invite a second tap instead of counting a
-                    ' failed tap against the account.
-                    Dim staleMirrorResolved As Boolean = False
-                    If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
-                        Try
-                            Dim knownUser = AppStartup.UserRepo.GetByCardPublicID(uid.Trim().ToUpperInvariant())
-                            If knownUser IsNot Nothing Then
-                                If Program.Coordinator IsNot Nothing Then Program.Coordinator.RefreshFromServer("Users")
-                                EmbeddedDB.LogAudit("SYSTEM", "Badge recognized on the server; this seat's staff mirror was stale and has been refreshed [Card: " & maskedUid & "]", actionType:="MIRROR_REFRESH")
-                                lblStatusMessage.Text = "This badge is valid on the server; the seat's staff list was stale and has been refreshed. Tap the badge again."
-                                lblStatusMessage.ForeColor = CivicCalmTheme.ColorWarning
-                                staleMirrorResolved = True
-                            End If
-                        Catch
-                        End Try
-                    End If
-                    If Not staleMirrorResolved Then
-                        If EmbeddedDB.IsTerminalLockedOut() Then
-                            lblStatusMessage.Text = "Security Lockout: Terminal locked for 5 minutes due to 5 consecutive failed card reads."
-                            MessageBox.Show("Terminal has been temporarily locked out due to 5 consecutive failed RFID smart card badge reads. Please notify the System Administrator or wait 5 minutes.", "Security Lockout", MessageBoxButtons.OK, MessageBoxIcon.Error)
-                        Else
-                            ReportRefusal("Access Denied: Unrecognized RFID card [" & maskedUid & "]")
-                            MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & maskedUid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
-                        End If
-                    End If
+                    HandleUnrecognizedCard(uid, maskedUid)
+                    continueSession = True
                 End If
+                ' The locked-account refusal never reached the trailing refreshes before;
+                ' keep that exact early-exit.
+                If Not continueSession Then Return
             End If
             PopulateStaffDropdowns()
             RefreshActiveTabGrid()
+        End Sub
+
+        ''' <summary>The recognized-badge path: the locked-account refusal first (a locked
+        ''' account must not unlock itself by tapping, and the success path clears the
+        ''' SQL-side counter, which would reset the lock along with it), then the success
+        ''' story (badge text, audit, SQL failed-tap reset, dashboard desk pinning).
+        ''' Returns False when the tap was refused and the session must not continue.</summary>
+        Private Function HandleRecognizedUser(user As DataRow, maskedUid As String, simulated As Boolean) As Boolean
+            If user.Table.Columns.Contains("IsLocked") AndAlso Not IsDBNull(user("IsLocked")) AndAlso Convert.ToBoolean(user("IsLocked")) Then
+                EmbeddedDB.LogAudit(user("FullName").ToString(), "RFID Badge Tap Blocked: account is locked [Card: " & maskedUid & "]", actionType:="LOGIN_LOCKED")
+                ReportRefusal("Access Denied: this account is locked after repeated failed badge reads. Ask a System Administrator to unlock it.")
+                lblStatusMessage.ForeColor = CivicCalmTheme.ColorDanger
+                Return False
+            End If
+            CurrentUser = user
+            Dim role = user("Role").ToString()
+            Dim office = If(user.Table.Columns.Contains("Office") AndAlso Not IsDBNull(user("Office")), user("Office").ToString(), "")
+            Dim effectiveDesk = If(Not String.IsNullOrWhiteSpace(office), office, role)
+            Dim isGlobal As Boolean = (role = "Secretary-General" OrElse role = "System Administrator" OrElse role = "OSG Chief")
+            Dim displayRole = If(Not String.IsNullOrWhiteSpace(office) AndAlso Not office.Equals(role, StringComparison.OrdinalIgnoreCase), String.Format("{0} - {1}", role.ToUpperInvariant(), office.ToUpperInvariant()), role.ToUpperInvariant())
+            lblUserBadge.Text = String.Format("AUTHENTICATED: {0} [{1}] : {2}", user("FullName").ToString().ToUpperInvariant(), displayRole, If(isGlobal, "GLOBAL ACCESS", "SECTION DESK VIEW"))
+            lblUserBadge.ForeColor = CivicCalmTheme.ColorPrimary
+            lblStatusMessage.Text = "Authenticated: " & user("FullName").ToString()
+            lblStatusMessage.ForeColor = CivicCalmTheme.ColorInk
+            EmbeddedDB.LogAudit(user("FullName").ToString(), If(simulated,
+                "On-screen badge selection authenticated [Card: " & maskedUid & "] (no reader tap)",
+                "RFID Badge Tap Authenticated [Card: " & maskedUid & "]"), actionType:="LOGIN_SUCCESS")
+
+            ' Successful tap clears the SQL-side failed tap counter so the per-user
+            ' lockout (tbl_Users.FailedTapCount) tracks live state, not stale counts.
+            If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
+                Try
+                    Dim userId = If(user.Table.Columns.Contains("UserID") AndAlso Not IsDBNull(user("UserID")), Convert.ToInt32(user("UserID")), 0)
+                    If userId > 0 Then AppStartup.UserRepo.ResetFailedTaps(userId)
+                Catch
+                End Try
+            End If
+
+            If cmbDashSection IsNot Nothing Then
+                If isGlobal Then
+                    cmbDashSection.Enabled = True
+                Else
+                    If effectiveDesk.EndsWith("Section", StringComparison.OrdinalIgnoreCase) OrElse effectiveDesk.Equals("Secretariat", StringComparison.OrdinalIgnoreCase) Then
+                        Dim idx = cmbDashSection.Items.IndexOf(effectiveDesk)
+                        If idx >= 0 Then
+                            cmbDashSection.SelectedIndex = idx
+                        End If
+                    End If
+                    cmbDashSection.Enabled = False
+                End If
+            End If
+            Return True
+        End Function
+
+        ''' <summary>The unrecognized-card path. A cache miss with a live SQL host means
+        ''' one of two things: a truly unknown card, or a badge the server knows but this
+        ''' seat's Users mirror predates. GetByCardPublicID only matches active badges,
+        ''' so a hit there is the stale-mirror case: the owner must not be punished for
+        ''' the seat's lag. Refresh the mirror and invite a second tap instead of
+        ''' counting a failed tap against the account; otherwise lockout or refusal.</summary>
+        Private Sub HandleUnrecognizedCard(uid As String, maskedUid As String)
+            Dim staleMirrorResolved As Boolean = False
+            If AppStartup.UserRepo IsNot Nothing AndAlso Program.IsDatabaseConnected Then
+                Try
+                    Dim knownUser = AppStartup.UserRepo.GetByCardPublicID(uid.Trim().ToUpperInvariant())
+                    If knownUser IsNot Nothing Then
+                        If Program.Coordinator IsNot Nothing Then Program.Coordinator.RefreshFromServer("Users")
+                        EmbeddedDB.LogAudit("SYSTEM", "Badge recognized on the server; this seat's staff mirror was stale and has been refreshed [Card: " & maskedUid & "]", actionType:="MIRROR_REFRESH")
+                        lblStatusMessage.Text = "This badge is valid on the server; the seat's staff list was stale and has been refreshed. Tap the badge again."
+                        lblStatusMessage.ForeColor = CivicCalmTheme.ColorWarning
+                        staleMirrorResolved = True
+                    End If
+                Catch
+                End Try
+            End If
+            If Not staleMirrorResolved Then
+                If EmbeddedDB.IsTerminalLockedOut() Then
+                    lblStatusMessage.Text = "Security Lockout: Terminal locked for 5 minutes due to 5 consecutive failed card reads."
+                    MessageBox.Show("Terminal has been temporarily locked out due to 5 consecutive failed RFID smart card badge reads. Please notify the System Administrator or wait 5 minutes.", "Security Lockout", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Else
+                    ReportRefusal("Access Denied: Unrecognized RFID card [" & maskedUid & "]")
+                    MessageBox.Show("Unrecognized RFID Smart Card Badge UID: " & maskedUid, "Access Denied", MessageBoxButtons.OK, MessageBoxIcon.Warning)
+                End If
+            End If
         End Sub
 
         ''' <summary>

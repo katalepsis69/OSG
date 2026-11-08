@@ -201,49 +201,62 @@ Namespace BTA_OSG
                     incoming.Add(source(pk.ColumnName))
                 Next
 
-                Dim changed As Boolean = False
-
-                ' Merge row by row instead of Load(OverwriteChanges): a PK match on a
-                ' PendingSync row must keep the offline data, not be overwritten by the
-                ' mirrored SQL row that happens to carry the same local id.
-                For Each source As DataRow In snapshot.Rows
-                    Dim existing = target.Rows.Find(source(pk.ColumnName))
-                    If existing IsNot Nothing AndAlso IsPendingRow(target, existing) Then Continue For
-                    If existing Is Nothing Then
-                        Dim added = target.NewRow()
-                        CopySnapshotValues(source, added, target)
-                        target.Rows.Add(added)
-                        changed = True
-                    ElseIf CopySnapshotValues(source, existing, target) Then
-                        changed = True
-                    End If
-                Next
-
-                If incoming.Count > 0 Then
-                    Dim doomed As New List(Of DataRow)()
-                    For Each row As DataRow In target.Rows
-                        If Not IsPendingRow(target, row) AndAlso Not incoming.Contains(row(pk)) Then
-                            ' Protect initial seeded local documents (IDs 1-4) from deletion if
-                            ' incoming is a partial set. A mirrored row carries RowVersion; a
-                            ' seeded local row does not, so a real voided document with an early
-                            ' identity is not immortalised on the seat.
-                            If tableName.Equals("Documents", StringComparison.OrdinalIgnoreCase) Then
-                                Dim idVal = If(pk.ColumnName = "DocumentID", Convert.ToInt32(row(pk)), 0)
-                                Dim neverMirrored = row.Table.Columns.Contains("RowVersion") AndAlso IsDBNull(row("RowVersion"))
-                                If idVal <= 4 AndAlso Not incoming.Contains(row(pk)) AndAlso neverMirrored Then Continue For
-                            End If
-                            doomed.Add(row)
-                        End If
-                    Next
-                    For Each row As DataRow In doomed
-                        target.Rows.Remove(row)
-                    Next
-                    If doomed.Count > 0 Then changed = True
+                ' Two mirror phases: merge the incoming rows in (offline work preserved),
+                ' then prune rows the server no longer has. Both mutate under the caller's
+                ' SyncLock above.
+                Dim changed = MergeSnapshotRows(target, pk, snapshot)
+                If incoming.Count > 0 AndAlso RemoveRowsMissingFromSnapshot(tableName, target, pk, incoming) Then
+                    changed = True
                 End If
 
                 If persist AndAlso changed Then MarkDirty()
                 Return changed
             End SyncLock
+        End Function
+
+        ''' <summary>Merge row by row instead of Load(OverwriteChanges): a PK match on a
+        ''' PendingSync row must keep the offline data, not be overwritten by the mirrored
+        ''' SQL row that happens to carry the same local id. Returns True when a row was
+        ''' added or actually differs.</summary>
+        Private Shared Function MergeSnapshotRows(target As DataTable, pk As DataColumn, snapshot As DataTable) As Boolean
+            Dim changed As Boolean = False
+            For Each source As DataRow In snapshot.Rows
+                Dim existing = target.Rows.Find(source(pk.ColumnName))
+                If existing IsNot Nothing AndAlso IsPendingRow(target, existing) Then Continue For
+                If existing Is Nothing Then
+                    Dim added = target.NewRow()
+                    CopySnapshotValues(source, added, target)
+                    target.Rows.Add(added)
+                    changed = True
+                ElseIf CopySnapshotValues(source, existing, target) Then
+                    changed = True
+                End If
+            Next
+            Return changed
+        End Function
+
+        ''' <summary>Deletes mirror rows the snapshot no longer carries. Returns True when
+        ''' anything was removed.</summary>
+        Private Shared Function RemoveRowsMissingFromSnapshot(tableName As String, target As DataTable, pk As DataColumn, incoming As HashSet(Of Object)) As Boolean
+            Dim doomed As New List(Of DataRow)()
+            For Each row As DataRow In target.Rows
+                If Not IsPendingRow(target, row) AndAlso Not incoming.Contains(row(pk)) Then
+                    ' Protect initial seeded local documents (IDs 1-4) from deletion if
+                    ' incoming is a partial set. A mirrored row carries RowVersion; a
+                    ' seeded local row does not, so a real voided document with an early
+                    ' identity is not immortalised on the seat.
+                    If tableName.Equals("Documents", StringComparison.OrdinalIgnoreCase) Then
+                        Dim idVal = If(pk.ColumnName = "DocumentID", Convert.ToInt32(row(pk)), 0)
+                        Dim neverMirrored = row.Table.Columns.Contains("RowVersion") AndAlso IsDBNull(row("RowVersion"))
+                        If idVal <= 4 AndAlso Not incoming.Contains(row(pk)) AndAlso neverMirrored Then Continue For
+                    End If
+                    doomed.Add(row)
+                End If
+            Next
+            For Each row As DataRow In doomed
+                target.Rows.Remove(row)
+            Next
+            Return doomed.Count > 0
         End Function
 
         Private Shared Function IsPendingRow(table As DataTable, row As DataRow) As Boolean
@@ -466,35 +479,34 @@ Namespace BTA_OSG
             ' the hash column existed still resolve.
             Dim existing = dt.Select(String.Format("RFID_UID_HASH = '{0}' OR RFID_UID = '{1}' OR RFID_UID_RAW = '{1}'", uidHash.Replace("'", "''"), cleanUid.Replace("'", "''")))
             If existing.Length > 0 Then
-                existing(0)("RFID_UID") = uidMask
-                existing(0)("RFID_UID_HASH") = uidHash
-                existing(0)("RFID_UID_RAW") = rawForReplay
-                existing(0)("FullName") = name
-                existing(0)("Role") = role
-                If dt.Columns.Contains("Office") Then existing(0)("Office") = effOffice
-                If dt.Columns.Contains("CanRoute") Then existing(0)("CanRoute") = canRoute
-                If dt.Columns.Contains("CanMove") Then existing(0)("CanMove") = canMove
-                If dt.Columns.Contains("CanSoftCopy") Then existing(0)("CanSoftCopy") = canSoftCopy
-                existing(0)("IsActive") = True
+                ApplyUserFields(existing(0), dt, uidMask, uidHash, rawForReplay, name, role, effOffice, canRoute, canMove, canSoftCopy)
                 ' A pending row survives snapshot pulls; without the flag an offline
                 ' enrolment or edit would be wiped by the next Users pull as unknown.
+                ' Never un-pend: the update branch only ever sets the flag.
                 If pendingSync AndAlso dt.Columns.Contains("PendingSync") Then existing(0)("PendingSync") = True
             Else
                 Dim r = dt.NewRow()
-                r("RFID_UID") = uidMask
-                r("RFID_UID_HASH") = uidHash
-                r("RFID_UID_RAW") = rawForReplay
-                r("FullName") = name
-                r("Role") = role
-                If dt.Columns.Contains("Office") Then r("Office") = effOffice
-                If dt.Columns.Contains("CanRoute") Then r("CanRoute") = canRoute
-                If dt.Columns.Contains("CanMove") Then r("CanMove") = canMove
-                If dt.Columns.Contains("CanSoftCopy") Then r("CanSoftCopy") = canSoftCopy
-                r("IsActive") = True
+                ApplyUserFields(r, dt, uidMask, uidHash, rawForReplay, name, role, effOffice, canRoute, canMove, canSoftCopy)
                 If dt.Columns.Contains("PendingSync") Then r("PendingSync") = pendingSync
                 dt.Rows.Add(r)
             End If
             MarkDirty()
+        End Sub
+
+        ''' <summary>The shared user-row field block for both AddUser branches: the badge
+        ''' carrier columns, the identity fields, the three permissions (column-guarded
+        ''' so caches predating a column still load), and the active flag.</summary>
+        Private Shared Sub ApplyUserFields(row As DataRow, dt As DataTable, uidMask As String, uidHash As String, rawForReplay As String, name As String, role As String, effOffice As String, canRoute As Boolean, canMove As Boolean, canSoftCopy As Boolean)
+            row("RFID_UID") = uidMask
+            row("RFID_UID_HASH") = uidHash
+            row("RFID_UID_RAW") = rawForReplay
+            row("FullName") = name
+            row("Role") = role
+            If dt.Columns.Contains("Office") Then row("Office") = effOffice
+            If dt.Columns.Contains("CanRoute") Then row("CanRoute") = canRoute
+            If dt.Columns.Contains("CanMove") Then row("CanMove") = canMove
+            If dt.Columns.Contains("CanSoftCopy") Then row("CanSoftCopy") = canSoftCopy
+            row("IsActive") = True
         End Sub
 
         Public Shared Function GenerateDocCode(docType As String) As String

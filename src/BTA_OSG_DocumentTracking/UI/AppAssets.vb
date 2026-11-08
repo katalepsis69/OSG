@@ -78,8 +78,7 @@ Namespace BTA_OSG
 
                 ' Check for pre-baked high-fidelity sharpened asset
                 Dim candidateNames = New String() {
-                    $"logo_{targetSize}.png",
-                    $"bta_logo_{targetSize}.png"
+                    $"logo_{targetSize}.png"
                 }
                 For Each candidate In candidateNames
                     Dim candidatePath = Path.Combine(baseDir, "Resources", candidate)

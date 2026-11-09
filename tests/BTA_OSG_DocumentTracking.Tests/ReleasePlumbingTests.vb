@@ -2,15 +2,12 @@ Option Explicit On
 Option Strict On
 
 Imports System
+Imports System.Drawing
+Imports System.Windows.Forms
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
 Imports BTA_OSG
 
 Namespace BTA_OSG.Tests
-    ''' <summary>
-    ''' Release plumbing in dotnet test, not only in the self-check: stamp parsing,
-    ''' same-version republish detection, and two-part version normalization are pure
-    ''' functions, so the merge gate can run them directly.
-    ''' </summary>
     <TestClass>
     Public Class ReleasePlumbingTests
 
@@ -66,6 +63,36 @@ Namespace BTA_OSG.Tests
         Public Sub NormalizeVersion_MatchesTwoPartTagsAgainstCuratedEntries()
             Assert.AreEqual(FormWhatsNew.NormalizeVersion("v2.1"), FormWhatsNew.NormalizeVersion("2.1.0.0"))
             Assert.AreNotEqual(FormWhatsNew.NormalizeVersion("v2.1"), FormWhatsNew.NormalizeVersion("v2.1.6"))
+        End Sub
+
+        <TestMethod>
+        Public Sub AppendMarkdownBody_JoinsWrappedBulletsAndPreservesSubheaders()
+            Dim md = "### What's New in v3.2" & vbLf & vbLf &
+                     "#### Keyboard" & vbLf &
+                     "- Alt+C closes the What's New window again. Download stop button renamed Stop Download," & vbLf &
+                     "  shortcut Alt+S (old Cancel button fought Close for the same shortcut)." & vbLf &
+                     "- Enter and Escape close the What's New window." & vbLf & vbLf &
+                     "#### Fixes" & vbLf &
+                     "- Closing the What's New window during an update download now stops the download." & vbLf & vbLf &
+                     "<!-- build:2026-11-08T23:01:39Z -->"
+
+            Using rtb As New RichTextBox()
+                Dim h = rtb.Handle
+                FormWhatsNew.AppendMarkdownBody(rtb, md)
+                Dim rendered = rtb.Text
+
+                Assert.IsFalse(rendered.Contains("What's New in v3.2"), "Top release heading is already shown in the section header")
+                Assert.IsFalse(rendered.Contains("build:"), "Build stamp comment must not appear in rendered text")
+                Assert.IsTrue(rendered.Contains("Keyboard"), "Category subheader Keyboard must be rendered")
+                Assert.IsTrue(rendered.Contains("Fixes"), "Category subheader Fixes must be rendered")
+                Assert.IsTrue(rendered.Contains("Stop Download, shortcut Alt+S"), "Hard-wrapped bullet lines must join into one paragraph")
+
+                ' Subheader after bullets must not inherit the bullet's hanging indent.
+                Dim fixesIdx = rendered.IndexOf("Fixes", StringComparison.Ordinal)
+                rtb.Select(fixesIdx, 5)
+                Assert.AreEqual(0, rtb.SelectionHangingIndent, "Subheader must not inherit bullet hanging indent")
+                Assert.IsTrue(rtb.SelectionFont.Bold, "Subheader must be bold")
+            End Using
         End Sub
     End Class
 End Namespace

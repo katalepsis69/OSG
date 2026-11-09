@@ -5,9 +5,8 @@ Imports System.Drawing
 Imports System.Windows.Forms
 
 Namespace BTA_OSG
-    ''' Panels and PrintPreviewControl only receive the mouse wheel when they can hold focus,
-    ''' and neither can, so they scroll solely by dragging the thumb. This routes the wheel to
-    ''' whatever the cursor is actually hovering over.
+    ' Panels and PrintPreviewControl do not receive mouse wheel events without focus;
+    ' this message filter routes the wheel to the scrollable container under the cursor.
     Public Class WheelScroller
         Implements IMessageFilter
 
@@ -21,8 +20,7 @@ Namespace BTA_OSG
         Public Function PreFilterMessage(ByRef m As Message) As Boolean Implements IMessageFilter.PreFilterMessage
             If m.Msg <> WM_MOUSEWHEEL Then Return False
 
-            ' A message filter runs on every wheel event for the life of the app; any throw
-            ' here surfaces as an app-wide System Error dialog, so it must fail open.
+            ' Runs on every wheel event app-wide; fail open rather than raising an unhandled dialog.
             Try
                 Dim wheelDelta As Integer = WheelDeltaFromWParam(m.WParam)
                 Dim down As Boolean = wheelDelta < 0
@@ -30,9 +28,6 @@ Namespace BTA_OSG
                 Dim hovered = ControlAtCursor()
                 If hovered Is Nothing Then Return False
 
-                ' Only controls that scroll their own content may keep the wheel. Bailing out on
-                ' every interactive control left the wheel dead wherever the cursor happened to
-                ' sit on a text box, combo, or date picker, which is most of a form.
                 If KeepsWheelForItself(hovered) Then Return False
 
                 Dim preview = FindAncestor(Of PrintPreviewControl)(hovered)
@@ -45,12 +40,12 @@ Namespace BTA_OSG
 
                 Dim panel = FindScrollableAncestor(hovered)
                 If panel IsNot Nothing Then
-                    ' AutoScrollPosition reports a negative offset, so scrolling down subtracts.
+                    ' AutoScrollPosition returns negative offsets on read but takes positive offsets on write.
                     Dim current = panel.AutoScrollPosition
                     Dim notches As Integer = Math.Max(1, Math.Abs(wheelDelta) \ WheelNotch)
-                    Dim proposed As New Point(current.X, current.Y + If(down, -1, 1) * notches * WheelNotch)
-                    If proposed.Y = current.Y Then Return False
-                    panel.AutoScrollPosition = proposed
+                    Dim proposedTop As Integer = Math.Max(0, -current.Y + If(down, 1, -1) * notches * WheelNotch)
+                    If proposedTop = -current.Y Then Return False
+                    panel.AutoScrollPosition = New Point(-current.X, proposedTop)
                     Return True
                 End If
 
@@ -60,35 +55,42 @@ Namespace BTA_OSG
             End Try
         End Function
 
-        ''' The delta is the signed high word of wParam. CShort would throw here on wheel-down
-        ''' (0xFF88 does not fit a Short under VB's checked conversion), so sign-extend by hand.
+        ' Signed high word of wParam; sign-extended manually because 0xFF88 overflows checked Short.
         Public Shared Function WheelDeltaFromWParam(wParam As IntPtr) As Integer
             Dim hiWord As Long = (wParam.ToInt64() >> 16) And &HFFFF
             Return CInt(If(hiWord >= &H8000, hiWord - &H10000, hiWord))
         End Function
 
-        ''' Top-most first: with a modal dialog open, the main form still contains the cursor point
-        ''' and GetChildAtPoint ignores overlapping windows.
+        ' Top-most form first, then drill down to the leaf child under the cursor.
         Private Shared Function ControlAtCursor() As Control
             Dim screenPoint As Point = Cursor.Position
             Dim forms = Application.OpenForms
             For i As Integer = forms.Count - 1 To 0 Step -1
                 Dim openForm = forms(i)
                 If openForm.Bounds.Contains(screenPoint) Then
-                    Dim found = openForm.GetChildAtPoint(openForm.PointToClient(screenPoint), GetChildAtPointSkip.Invisible)
-                    If found IsNot Nothing Then Return found
+                    Dim current As Control = openForm
+                    While True
+                        Dim child = current.GetChildAtPoint(current.PointToClient(screenPoint), GetChildAtPointSkip.Invisible)
+                        If child Is Nothing OrElse child Is current Then Exit While
+                        current = child
+                    End While
+                    If current IsNot openForm Then Return current
                 End If
             Next
             Return Nothing
         End Function
 
-        ''' A grid, list, tree, or multiline editor scrolls itself; a single-line box, combo,
-        ''' date picker, or numeric up-down cannot, so those must fall through to the panel.
+        ' Scrollable grids, lists, trees, and editors with scrollbars keep the wheel; non-scrolling controls fall through.
         Private Shared Function KeepsWheelForItself(start As Control) As Boolean
             Dim current As Control = start
             While current IsNot Nothing
-                Dim editor = TryCast(current, TextBoxBase)
-                If editor IsNot Nothing AndAlso editor.Multiline Then Return True
+                Dim rtb = TryCast(current, RichTextBox)
+                If rtb IsNot Nothing Then
+                    If rtb.ScrollBars <> RichTextBoxScrollBars.None Then Return True
+                Else
+                    Dim editor = TryCast(current, TextBoxBase)
+                    If editor IsNot Nothing AndAlso editor.Multiline Then Return True
+                End If
                 If TypeOf current Is DataGridView OrElse TypeOf current Is ListBox OrElse TypeOf current Is TreeView Then Return True
                 current = current.Parent
             End While
@@ -104,8 +106,6 @@ Namespace BTA_OSG
             Return Nothing
         End Function
 
-        ''' TableLayoutPanel and FlowLayoutPanel are Panels, so the first ancestor of that type
-        ''' is usually an inner layout container that does not scroll. Keep climbing.
         Private Shared Function FindScrollableAncestor(start As Control) As Panel
             Dim current As Control = start
             While current IsNot Nothing
